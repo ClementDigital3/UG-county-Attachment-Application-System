@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container wide">
+      <section class="card">
+        <div class="row-between">
+          <h1>Applications Dashboard</h1>
+          <form action="/admin/logout" method="post">
+            <button class="btn secondary" type="submit">Logout</button>
+          </form>
+        </div>
+
+        <div class="stats compact">
+          <div>
+            <strong><%= stats.total %></strong>
+            <span>Total</span>
+          </div>
+          <div>
+            <strong><%= stats.pending %></strong>
+            <span>Pending</span>
+          </div>
+          <div>
+            <strong><%= stats.verified %></strong>
+            <span>Verified</span>
+          </div>
+          <div>
+            <strong><%= stats.rejected %></strong>
+            <span>Rejected</span>
+          </div>
+        </div>
+
+        <form method="get" action="/admin/applications" class="filter-row">
+          <label>
+            Filter by status
+            <select name="status">
+              <option value="All" <%= statusFilter === 'All' ? 'selected' : '' %>>All</option>
+              <option value="Pending" <%= statusFilter === 'Pending' ? 'selected' : '' %>>Pending</option>
+              <option value="Verified" <%= statusFilter === 'Verified' ? 'selected' : '' %>>Verified</option>
+              <option value="Rejected" <%= statusFilter === 'Rejected' ? 'selected' : '' %>>Rejected</option>
+            </select>
+          </label>
+          <button class="btn" type="submit">Apply Filter</button>
+        </form>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Institution</th>
+                <th>Status</th>
+                <th>Submitted</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (!applications.length) { %>
+                <tr>
+                  <td colspan="7">No applications found for this filter.</td>
+                </tr>
+              <% } %>
+
+              <% applications.forEach((application) => { %>
+                <tr>
+                  <td><%= application.id %></td>
+                  <td><%= application.fullName %></td>
+                  <td><%= application.email %></td>
+                  <td><%= application.institution %></td>
+                  <td><span class="badge <%= application.status.toLowerCase() %>"><%= application.status %></span></td>
+                  <td><%= formatDate(application.submittedAt) %></td>
+                  <td>
+                    <div class="table-actions">
+                      <a href="/admin/applications/<%= application.id %>">Review</a>
+                      <form action="/admin/applications/<%= application.id %>/delete" method="post" onsubmit="return confirm('Delete this applicant and all uploaded documents? This cannot be undone.');">
+                        <button type="submit" class="link-btn danger-text">Delete</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Review Application</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <section class="card">
+        <div class="row-between">
+          <h1>Review Application</h1>
+          <a class="btn secondary" href="/admin/applications">Back to List</a>
+        </div>
+
+        <% if (error) { %>
+          <div class="alert"><%= error %></div>
+        <% } %>
+
+        <div class="summary">
+          <p><strong>ID:</strong> <%= application.id %></p>
+          <p><strong>Name:</strong> <%= application.fullName %></p>
+          <p><strong>Email:</strong> <%= application.email %></p>
+          <p><strong>Phone:</strong> <%= application.phone %></p>
+          <p><strong>Institution:</strong> <%= application.institution %></p>
+          <p><strong>Course:</strong> <%= application.course %></p>
+          <p><strong>Requested Dates:</strong> <%= application.startDate %> to <%= application.endDate %></p>
+          <p><strong>Status:</strong> <span class="badge <%= application.status.toLowerCase() %>"><%= application.status %></span></p>
+          <p><strong>Submitted:</strong> <%= formatDate(application.submittedAt) %></p>
+          <p><strong>Cover Note:</strong> <%= application.coverNote || 'No cover note.' %></p>
+        </div>
+
+        <h2>Edit Applicant Information</h2>
+        <form action="/admin/applications/<%= application.id %>/edit" method="post" class="form-grid">
+          <label>
+            Full Name *
+            <input type="text" name="fullName" value="<%= application.fullName %>" required />
+          </label>
+
+          <label>
+            Email Address *
+            <input type="email" name="email" value="<%= application.email %>" required />
+          </label>
+
+          <label>
+            Phone Number *
+            <input type="text" name="phone" value="<%= application.phone %>" required />
+          </label>
+
+          <label>
+            Institution *
+            <input type="text" name="institution" value="<%= application.institution %>" required />
+          </label>
+
+          <label>
+            Course/Program *
+            <input type="text" name="course" value="<%= application.course %>" required />
+          </label>
+
+          <label>
+            Attachment Start Date *
+            <input type="date" name="startDate" value="<%= application.startDate %>" required />
+          </label>
+
+          <label>
+            Attachment End Date *
+            <input type="date" name="endDate" value="<%= application.endDate %>" required />
+          </label>
+
+          <label class="full-width">
+            Cover Note
+            <textarea name="coverNote" rows="4"><%= application.coverNote %></textarea>
+          </label>
+
+          <div class="actions full-width">
+            <button class="btn" type="submit">Save Applicant Changes</button>
+          </div>
+        </form>
+
+        <h2>Submitted Documents</h2>
+        <ul>
+          <li><a href="/admin/files/<%= application.documents.nationalId %>" target="_blank">National/Student ID</a></li>
+          <li><a href="/admin/files/<%= application.documents.introLetter %>" target="_blank">Introductory Letter</a></li>
+          <li><a href="/admin/files/<%= application.documents.cv %>" target="_blank">CV/Resume</a></li>
+        </ul>
+
+        <h2>Update Verification Status</h2>
+        <form action="/admin/applications/<%= application.id %>/status" method="post" class="form-grid">
+          <label>
+            Status
+            <select name="status" required>
+              <option value="Pending" <%= application.status === 'Pending' ? 'selected' : '' %>>Pending</option>
+              <option value="Verified" <%= application.status === 'Verified' ? 'selected' : '' %>>Verified</option>
+              <option value="Rejected" <%= application.status === 'Rejected' ? 'selected' : '' %>>Rejected</option>
+            </select>
+          </label>
+
+          <label class="full-width">
+            Reviewer Comment
+            <textarea name="reviewerComment" rows="4" placeholder="Reason or notes"><%= application.reviewerComment %></textarea>
+          </label>
+
+          <div class="actions full-width">
+            <button class="btn" type="submit">Save Decision</button>
+          </div>
+        </form>
+
+        <h2>Danger Zone</h2>
+        <form action="/admin/applications/<%= application.id %>/delete" method="post" onsubmit="return confirm('Delete this applicant and all uploaded documents? This cannot be undone.');">
+          <button class="btn danger" type="submit">Delete Applicant</button>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>

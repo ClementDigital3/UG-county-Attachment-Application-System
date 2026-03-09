@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Track Application</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container small">
+      <section class="card">
+        <h1>Track Application Status</h1>
+        <p>Enter the application ID and email used during submission.</p>
+
+        <% if (error) { %>
+          <div class="alert"><%= error %></div>
+        <% } %>
+
+        <form action="/track" method="post" class="form-grid">
+          <label class="full-width">
+            Application ID
+            <input type="text" name="applicationId" placeholder="ATT-123456789" required />
+          </label>
+
+          <label class="full-width">
+            Email
+            <input type="email" name="email" required />
+          </label>
+
+          <div class="actions full-width">
+            <button class="btn" type="submit">Check Status</button>
+            <a class="btn secondary" href="/">Back</a>
+          </div>
+        </form>
+
+        <% if (result) { %>
+          <hr />
+          <div class="summary">
+            <p><strong>Name:</strong> <%= result.fullName %></p>
+            <p><strong>Status:</strong> <span class="badge <%= result.status.toLowerCase() %>"><%= result.status %></span></p>
+            <p><strong>Submitted:</strong> <%= formatDate(result.submittedAt) %></p>
+            <p><strong>Last Updated:</strong> <%= formatDate(result.updatedAt) %></p>
+            <p><strong>Reviewer Comment:</strong> <%= result.reviewerComment || 'No comment yet.' %></p>
+          </div>
+        <% } %>
+      </section>
+    </main>
+  </body>
+</html>

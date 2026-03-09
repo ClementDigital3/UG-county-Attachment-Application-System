@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>County Attachment Portal</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <section class="card hero">
+        <h1>County Attachment Application Portal</h1>
+        <p>
+          Submit your attachment request with required documents and wait for official verification.
+        </p>
+        <div class="stats">
+          <div>
+            <strong><%= total %></strong>
+            <span>Total applications</span>
+          </div>
+          <div>
+            <strong><%= pending %></strong>
+            <span>Pending review</span>
+          </div>
+        </div>
+        <div class="actions">
+          <a class="btn" href="/apply">Apply Now</a>
+          <a class="btn secondary" href="/track">Track Application</a>
+          <a class="btn secondary" href="/admin/login">Admin</a>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

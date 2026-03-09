@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Apply - County Attachment Portal</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <section class="card">
+        <h1>Attachment Application Form</h1>
+        <p>Fill in your details and upload all required documents.</p>
+
+        <% if (error) { %>
+          <div class="alert"><%= error %></div>
+        <% } %>
+
+        <form action="/apply" method="post" enctype="multipart/form-data" class="form-grid">
+          <label>
+            Full Name *
+            <input type="text" name="fullName" required />
+          </label>
+
+          <label>
+            Email Address *
+            <input type="email" name="email" required />
+          </label>
+
+          <label>
+            Phone Number *
+            <input type="text" name="phone" required />
+          </label>
+
+          <label>
+            Institution *
+            <input type="text" name="institution" required />
+          </label>
+
+          <label>
+            Course/Program *
+            <input type="text" name="course" required />
+          </label>
+
+          <label>
+            Attachment Start Date *
+            <input type="date" name="startDate" required />
+          </label>
+
+          <label>
+            Attachment End Date *
+            <input type="date" name="endDate" required />
+          </label>
+
+          <label class="full-width">
+            Cover Note
+            <textarea name="coverNote" rows="4" placeholder="Optional message to the county HR office"></textarea>
+          </label>
+
+          <label>
+            National ID / Student ID (PDF/JPG) *
+            <input type="file" name="nationalId" required />
+          </label>
+
+          <label>
+            Introductory Letter (PDF) *
+            <input type="file" name="introLetter" required />
+          </label>
+
+          <label>
+            CV / Resume (PDF) *
+            <input type="file" name="cv" required />
+          </label>
+
+          <div class="full-width actions">
+            <button class="btn" type="submit">Submit Application</button>
+            <a class="btn secondary" href="/">Cancel</a>
+          </div>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>
