@@ -1,17 +1,10 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>County Attachment Portal</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <main class="container">
+<%- include("partials/layout-open", { pageTitle: "County Attachment Portal", activePortal: "home" }) %>
+<main class="container">
       <section class="card hero">
         <h1>County Attachment Application Portal</h1>
         <p>
-          Submit your attachment request with required documents and wait for official verification.
+          Student applications are accepted only during open county attachment windows.
+          Admin staff control which period is open.
         </p>
         <div class="stats">
           <div>
@@ -22,13 +15,61 @@
             <strong><%= pending %></strong>
             <span>Pending review</span>
           </div>
+          <% if (remainingApplicants !== null) { %>
+            <div>
+              <strong><%= remainingApplicants %></strong>
+              <span>Remaining slots</span>
+            </div>
+          <% } %>
+          <div>
+            <strong><%= openPeriodOptions.length %></strong>
+            <span>Open periods</span>
+          </div>
         </div>
-        <div class="actions">
-          <a class="btn" href="/apply">Apply Now</a>
-          <a class="btn secondary" href="/track">Track Application</a>
-          <a class="btn secondary" href="/admin/login">Admin</a>
+        <% if (remainingApplicants !== null) { %>
+          <p>Intake capacity: <strong><%= maxApplicants %></strong> applicants.</p>
+        <% } %>
+      </section>
+
+      <section class="card">
+        <h2>Attachment Period Windows</h2>
+        <p>County attachment runs in three windows per year.</p>
+        <div class="period-chip-wrap">
+          <% periodOptions.forEach((period) => { %>
+            <span class="period-chip <%= period.isOpen ? 'open' : 'closed' %>">
+              <%= period.label %> - <%= period.isOpen ? 'Open' : 'Closed' %>
+            </span>
+          <% }) %>
         </div>
       </section>
+
+      <section class="card">
+        <h2>Institution Distribution</h2>
+        <% if (institutionDepartmentLimits && institutionDepartmentLimits.length) { %>
+          <div class="stats compact">
+            <% institutionDepartmentLimits.forEach((department) => { %>
+              <div>
+                <strong><%= department.institutionLimit %></strong>
+                <span><%= department.label %> per institution</span>
+              </div>
+            <% }) %>
+          </div>
+        <% } else { %>
+          <p>No department slot capacities are configured yet.</p>
+        <% } %>
+        <% if (topInstitutions && topInstitutions.length) { %>
+          <div class="stats compact">
+            <% topInstitutions.forEach((institution) => { %>
+              <div>
+                <strong><%= institution.count %></strong>
+                <span><%= institution.label %></span>
+              </div>
+            <% }) %>
+          </div>
+        <% } else { %>
+          <p>No applications submitted yet.</p>
+        <% } %>
+      </section>
     </main>
-  </body>
-</html>
+<%- include("partials/layout-close") %>
+

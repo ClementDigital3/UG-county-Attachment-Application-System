@@ -1,0 +1,101 @@
+<%- include("partials/layout-open", { pageTitle: "HR Review Application", activePortal: "hr" }) %>
+<main class="container">
+      <section class="card">
+        <div class="row-between">
+          <h1>HR Review Application</h1>
+          <div class="actions tight">
+            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+            <a class="btn secondary" href="/hr/applications">Back to HR Queue</a>
+            <form action="/hr/logout" method="post">
+              <button class="btn secondary" type="submit">Logout</button>
+            </form>
+          </div>
+        </div>
+
+        <% if (error) { %>
+          <div class="alert"><%= error %></div>
+        <% } %>
+
+        <% if (notice) { %>
+          <div class="notice"><%= notice %></div>
+        <% } %>
+
+        <div class="summary">
+          <p><strong>ID:</strong> <%= application.id %></p>
+          <p><strong>Tracking / Placement Number:</strong> <%= application.placementNumber || application.id %></p>
+          <p><strong>Name:</strong> <%= application.fullName %></p>
+          <p><strong>Email:</strong> <%= application.email %></p>
+          <p><strong>Phone:</strong> <%= application.phone %></p>
+          <p><strong>Institution:</strong> <%= application.institution %></p>
+          <p><strong>Course:</strong> <%= application.course %></p>
+          <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
+          <p><strong>Assigned Department:</strong> <%= application.assignedDepartment ? getDepartmentLabel(application.assignedDepartment) : 'Not assigned' %></p>
+          <p><strong>Period:</strong> <%= application.period ? getPeriodLabel(application.period) : 'Not set' %></p>
+          <p><strong>Requested Dates:</strong> <%= application.startDate %> to <%= application.endDate %></p>
+          <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
+          <p><strong>Submitted:</strong> <%= formatDate(application.submittedAt) %></p>
+          <p><strong>Last Updated:</strong> <%= formatDate(application.updatedAt) %></p>
+          <p><strong>Department/HR Comment:</strong> <%= application.reviewerComment || 'No comment yet.' %></p>
+        </div>
+
+        <h2>Submitted Documents</h2>
+        <% if (application.combinedDocument && application.combinedDocument.filename) { %>
+          <ul>
+            <li>
+              <a href="/hr/files/<%= application.combinedDocument.filename %>" target="_blank"><%= combinedDocumentDefinition.label %></a>
+              <% const combinedSecurity = application.combinedDocument.security || (application.documentSecurity && application.documentSecurity[combinedDocumentDefinition.key]); %>
+              <% if (combinedSecurity) { %>
+                <small>
+                  (Scan: passed, type: <%= combinedSecurity.detectedType %>,
+                  size: <%= combinedSecurity.size %> bytes)
+                </small>
+              <% } %>
+            </li>
+          </ul>
+        <% } else { %>
+          <p>No combined document uploaded.</p>
+        <% } %>
+
+        <h2>HR Final Decision</h2>
+        <p>Department admins verify first. HR then approves/rejects and uploads joining letter for approved students.</p>
+        <form action="/hr/applications/<%= application.id %>/status" method="post" class="form-grid">
+          <label>
+            HR Status
+            <select name="status" required>
+              <% hrStatusOptions.forEach((status) => { %>
+                <option value="<%= status %>" <%= application.status === status ? 'selected' : '' %>><%= status %></option>
+              <% }) %>
+            </select>
+          </label>
+
+          <label class="full-width">
+            HR Comment
+            <textarea name="reviewerComment" rows="4" placeholder="Decision notes"><%= application.reviewerComment %></textarea>
+          </label>
+
+          <div class="actions full-width">
+            <button class="btn" type="submit">Save HR Decision</button>
+          </div>
+        </form>
+
+        <h2>Joining Letter Upload (HR Only)</h2>
+        <p>Set status to <strong>Approved</strong> first, then upload the joining letter.</p>
+        <form action="/hr/applications/<%= application.id %>/joining-letter" method="post" enctype="multipart/form-data" class="form-grid">
+          <label class="full-width">
+            Joining Letter (PDF only)
+            <input type="file" name="joiningLetter" accept=".pdf,application/pdf" required />
+          </label>
+          <div class="actions full-width">
+            <button class="btn" type="submit">Upload Joining Letter</button>
+          </div>
+        </form>
+
+        <% if (application.joiningLetter && application.joiningLetter.filename) { %>
+          <div class="actions">
+            <a class="btn secondary" href="/hr/files/<%= application.joiningLetter.filename %>" target="_blank">Download Current Joining Letter</a>
+          </div>
+        <% } %>
+      </section>
+    </main>
+<%- include("partials/layout-close") %>
+

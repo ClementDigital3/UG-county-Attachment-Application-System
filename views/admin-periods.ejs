@@ -1,0 +1,109 @@
+<%- include("partials/layout-open", { pageTitle: "Manage Period Windows", activePortal: "admin" }) %>
+<main class="container">
+      <section class="card">
+        <div class="row-between">
+          <h1><%= isHrAdmin ? 'HR Period and Slot Control' : 'Department Slot Control' %></h1>
+          <div class="actions tight">
+            <% if (isHrAdmin) { %>
+              <a class="btn secondary" href="/hr/applications">HR Queue</a>
+            <% } else { %>
+              <a class="btn secondary" href="/admin/departments">Departments</a>
+              <a class="btn secondary" href="/admin/applications">Applications</a>
+            <% } %>
+            <form action="<%= isHrAdmin ? '/hr/logout' : '/admin/logout' %>" method="post">
+              <button class="btn secondary" type="submit">Logout</button>
+            </form>
+          </div>
+        </div>
+
+        <% if (canManageOpenPeriods) { %>
+          <p>
+            Select period windows that are open for student applications.
+            Students can only apply in periods marked open.
+          </p>
+        <% } else { %>
+          <p>
+            You can set the attachment slots for your department.
+            Period windows are controlled by the system administrator.
+          </p>
+        <% } %>
+
+        <% if (adminScopeDepartmentLabel) { %>
+          <p><strong>Department Access:</strong> <%= adminScopeDepartmentLabel %></p>
+        <% } %>
+
+        <% if (saved) { %>
+          <div class="notice">Period settings updated successfully.</div>
+        <% } %>
+
+        <% if (error) { %>
+          <div class="alert"><%= error %></div>
+        <% } %>
+
+        <form action="<%= isHrAdmin ? '/hr/periods' : '/admin/periods' %>" method="post" class="form-grid">
+          <% if (canManageOpenPeriods) { %>
+            <div class="full-width period-admin-grid">
+              <% periodOptions.forEach((period) => { %>
+                <label class="checkbox-card">
+                  <input type="checkbox" name="openPeriods" value="<%= period.key %>" <%= period.isOpen ? 'checked' : '' %> />
+                  <span><%= period.label %></span>
+                </label>
+              <% }) %>
+            </div>
+          <% } %>
+
+          <label class="full-width">
+            Institution Fairness Ratio (%)
+            <% if (canManageOpenPeriods) { %>
+              <input
+                type="number"
+                name="institutionMaxSharePercent"
+                min="1"
+                max="100"
+                step="1"
+                value="<%= Number(institutionMaxSharePercent || 40) %>"
+                required
+              />
+            <% } else { %>
+              <input type="number" value="<%= Number(institutionMaxSharePercent || 40) %>" readonly />
+            <% } %>
+            <span class="field-hint">
+              Maximum share of each department's slots that one institution can use.
+            </span>
+          </label>
+
+          <div class="full-width">
+            <h2>Department Slot Capacity</h2>
+            <div class="form-grid">
+              <% editableDepartments.forEach((department) => { %>
+                <label>
+                  <%= department.label %>
+                  <input
+                    type="number"
+                    name="capacity_<%= department.key %>"
+                    min="0"
+                    step="1"
+                    value="<%= Number(departmentCapacities[department.key] || 0) %>"
+                    required
+                  />
+                </label>
+              <% }) %>
+            </div>
+          </div>
+
+          <label class="full-width">
+            Total Capacity (All Departments)
+            <input type="number" value="<%= maxApplicants %>" readonly />
+            <span class="field-hint">Landing page remaining slots are calculated from total department capacities.</span>
+          </label>
+
+          <div class="actions full-width">
+            <button class="btn" type="submit"><%= canManageOpenPeriods ? 'Save Period Windows And Slot Capacity' : 'Save Department Slot Capacity' %></button>
+          </div>
+        </form>
+
+        <p class="muted-note">Last updated: <%= formatDate(updatedAt) %></p>
+      </section>
+    </main>
+<%- include("partials/layout-close") %>
+

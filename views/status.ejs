@@ -1,31 +1,30 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Application Status</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <main class="container">
+<%- include("partials/layout-open", { pageTitle: "Application Status", activePortal: "student" }) %>
+<main class="container">
       <section class="card">
         <h1>Application Received</h1>
         <p>Your application has been submitted successfully.</p>
 
         <div class="summary">
+          <p><strong>Tracking / Placement Number:</strong> <%= application.placementNumber || application.id %></p>
           <p><strong>Application ID:</strong> <%= application.id %></p>
           <p><strong>Name:</strong> <%= application.fullName %></p>
-          <p><strong>Status:</strong> <span class="badge <%= application.status.toLowerCase() %>"><%= application.status %></span></p>
+          <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
+          <p><strong>Assigned Department:</strong> <%= application.assignedDepartment ? getDepartmentLabel(application.assignedDepartment) : 'Not assigned yet' %></p>
+          <p><strong>Period:</strong> <%= application.period ? getPeriodLabel(application.period) : 'Not set' %></p>
+          <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
           <p><strong>Submitted:</strong> <%= formatDate(application.submittedAt) %></p>
           <p><strong>Last Updated:</strong> <%= formatDate(application.updatedAt) %></p>
           <p><strong>Reviewer Comment:</strong> <%= application.reviewerComment || 'No comment yet.' %></p>
+          <p><strong>Next Step:</strong> Your application is received. Department admin verifies it first, then HR gives final approval.</p>
+          <p><strong>Joining Letter:</strong> After HR approval, check the Track Status page to download your joining letter.</p>
         </div>
 
         <div class="actions">
+          <a class="btn" href="/track">Track Status</a>
           <a class="btn" href="/apply">Submit Another Application</a>
           <a class="btn secondary" href="/">Back to Home</a>
         </div>
       </section>
     </main>
-  </body>
-</html>
+<%- include("partials/layout-close") %>
+

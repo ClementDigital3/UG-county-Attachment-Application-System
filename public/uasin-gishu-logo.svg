@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="County Government of Uasin Gishu">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#1e5f34" />
+      <stop offset="100%" stop-color="#2d7a43" />
+    </linearGradient>
+    <linearGradient id="shield" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f6cb56" />
+      <stop offset="100%" stop-color="#d5a62a" />
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="116" height="116" rx="58" fill="url(#bg)" />
+  <path
+    d="M60 20l26 10v24c0 17-10 32-26 42-16-10-26-25-26-42V30l26-10z"
+    fill="url(#shield)"
+    stroke="#ffffff"
+    stroke-width="2.8"
+  />
+  <text
+    x="60"
+    y="60"
+    text-anchor="middle"
+    dominant-baseline="middle"
+    fill="#1e5f34"
+    font-size="23"
+    font-family="Trebuchet MS, Verdana, sans-serif"
+    font-weight="700"
+  >
+    UG
+  </text>
+  <circle cx="60" cy="60" r="57" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="2.4" />
+</svg>

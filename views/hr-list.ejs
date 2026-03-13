@@ -1,0 +1,88 @@
+<%- include("partials/layout-open", { pageTitle: "HR Applications Queue", activePortal: "hr" }) %>
+<main class="container wide">
+      <section class="card">
+        <div class="row-between">
+          <h1>HR Applications Queue</h1>
+          <div class="actions tight">
+            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+            <form action="/hr/logout" method="post">
+              <button class="btn secondary" type="submit">Logout</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="stats compact">
+          <div>
+            <strong><%= stats.total %></strong>
+            <span>Total</span>
+          </div>
+          <div>
+            <strong><%= stats.verified %></strong>
+            <span>Verified</span>
+          </div>
+          <div>
+            <strong><%= stats.approved %></strong>
+            <span>Approved</span>
+          </div>
+          <div>
+            <strong><%= stats.rejected %></strong>
+            <span>Rejected</span>
+          </div>
+        </div>
+
+        <form method="get" action="/hr/applications" class="filter-row">
+          <label>
+            Filter by status
+            <select name="status">
+              <option value="Verified" <%= statusFilter === 'Verified' ? 'selected' : '' %>>Verified</option>
+              <option value="Approved" <%= statusFilter === 'Approved' ? 'selected' : '' %>>Approved</option>
+              <option value="Rejected" <%= statusFilter === 'Rejected' ? 'selected' : '' %>>Rejected</option>
+              <option value="All" <%= statusFilter === 'All' ? 'selected' : '' %>>All</option>
+            </select>
+          </label>
+          <button class="btn" type="submit">Apply Filter</button>
+        </form>
+        <p class="muted-note">Only department-verified applications enter this HR queue.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Tracking Number</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Department</th>
+                <th>Period</th>
+                <th>Status</th>
+                <th>Submitted</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (!applications.length) { %>
+                <tr>
+                  <td colspan="9">No applications found for this filter.</td>
+                </tr>
+              <% } %>
+
+              <% applications.forEach((application) => { %>
+                <tr>
+                  <td><%= application.id %></td>
+                  <td><%= application.placementNumber || application.id %></td>
+                  <td><%= application.fullName %></td>
+                  <td><%= application.email %></td>
+                  <td><%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></td>
+                  <td><%= application.period ? getPeriodLabel(application.period) : 'Not set' %></td>
+                  <td><span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></td>
+                  <td><%= formatDate(application.submittedAt) %></td>
+                  <td><a href="/hr/applications/<%= application.id %>">Review</a></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+<%- include("partials/layout-close") %>
+

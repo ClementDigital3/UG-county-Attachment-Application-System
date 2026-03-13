@@ -1,0 +1,22 @@
+{
+  "openPeriods": {
+    "JAN_APR": false,
+    "MAY_AUG": true,
+    "SEP_DEC": false
+  },
+  "maxApplicants": 100,
+  "institutionMaxSharePercent": 30,
+  "departmentCapacities": {
+    "ict": 10,
+    "finance": 10,
+    "health": 10,
+    "agriculture": 10,
+    "roads": 10,
+    "education": 10,
+    "lands": 10,
+    "water": 10,
+    "trade": 10,
+    "public_service": 10
+  },
+  "updatedAt": "2026-03-13T12:46:54.875Z"
+}

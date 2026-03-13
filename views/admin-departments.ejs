@@ -1,0 +1,39 @@
+<%- include("partials/layout-open", { pageTitle: "Department Access", activePortal: "admin" }) %>
+<main class="container wide">
+      <section class="card">
+        <div class="row-between">
+          <h1>Department Access</h1>
+          <div class="actions tight">
+            <a class="btn secondary" href="/admin/applications">Applications</a>
+            <a class="btn secondary" href="/admin/periods">Periods and Slots</a>
+            <form action="/admin/logout" method="post">
+              <button class="btn secondary" type="submit">Logout</button>
+            </form>
+          </div>
+        </div>
+
+        <% if (adminScopeDepartmentLabel) { %>
+          <p><strong>Department Access:</strong> <%= adminScopeDepartmentLabel %></p>
+        <% } else { %>
+          <p>Select a department to view applications and place students accordingly.</p>
+        <% } %>
+
+        <section class="portal-grid">
+          <% departmentSummaries.forEach((department) => { %>
+            <article class="card portal-card">
+              <h2><%= department.label %></h2>
+              <div class="summary">
+                <p><strong>Applied:</strong> <%= department.appliedCount %></p>
+                <p><strong>Assigned:</strong> <%= department.assignedCount %></p>
+                <p><strong>Pending:</strong> <%= department.pendingCount %></p>
+              </div>
+              <div class="actions">
+                <a class="btn" href="/admin/applications?status=All&department=<%= department.key %>">Open Department</a>
+              </div>
+            </article>
+          <% }) %>
+        </section>
+      </section>
+    </main>
+<%- include("partials/layout-close") %>
+

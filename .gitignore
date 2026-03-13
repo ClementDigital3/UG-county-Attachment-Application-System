@@ -1,6 +1,9 @@
 node_modules/
 .env
+data/department-admins.json
+data/notifications.json
 uploads/
+temp_test/
 .DS_Store
 Thumbs.db
 npm-debug.log*

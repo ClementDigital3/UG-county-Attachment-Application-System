@@ -1,32 +1,40 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Review Application</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <main class="container">
+<%- include("partials/layout-open", { pageTitle: "Review Application", activePortal: "admin" }) %>
+<main class="container">
       <section class="card">
         <div class="row-between">
           <h1>Review Application</h1>
-          <a class="btn secondary" href="/admin/applications">Back to List</a>
+          <div class="actions tight">
+            <a class="btn secondary" href="/admin/departments">Departments</a>
+            <a class="btn secondary" href="/admin/periods">Periods and Slots</a>
+            <a class="btn secondary" href="/admin/applications">Back to List</a>
+          </div>
         </div>
+
+        <% if (adminScopeDepartmentLabel) { %>
+          <p><strong>Department Access:</strong> <%= adminScopeDepartmentLabel %></p>
+        <% } %>
 
         <% if (error) { %>
           <div class="alert"><%= error %></div>
         <% } %>
 
+        <% if (notice) { %>
+          <div class="notice"><%= notice %></div>
+        <% } %>
+
         <div class="summary">
           <p><strong>ID:</strong> <%= application.id %></p>
+          <p><strong>Tracking / Placement Number:</strong> <%= application.placementNumber || application.id %></p>
           <p><strong>Name:</strong> <%= application.fullName %></p>
           <p><strong>Email:</strong> <%= application.email %></p>
           <p><strong>Phone:</strong> <%= application.phone %></p>
           <p><strong>Institution:</strong> <%= application.institution %></p>
           <p><strong>Course:</strong> <%= application.course %></p>
+          <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
+          <p><strong>Assigned Department:</strong> <%= application.assignedDepartment ? getDepartmentLabel(application.assignedDepartment) : 'Not assigned' %></p>
+          <p><strong>Period:</strong> <%= application.period ? getPeriodLabel(application.period) : 'Not set' %></p>
           <p><strong>Requested Dates:</strong> <%= application.startDate %> to <%= application.endDate %></p>
-          <p><strong>Status:</strong> <span class="badge <%= application.status.toLowerCase() %>"><%= application.status %></span></p>
+          <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
           <p><strong>Submitted:</strong> <%= formatDate(application.submittedAt) %></p>
           <p><strong>Cover Note:</strong> <%= application.coverNote || 'No cover note.' %></p>
         </div>
@@ -45,17 +53,43 @@
 
           <label>
             Phone Number *
+            <span class="field-hint field-hint-spacer">Alignment spacer</span>
             <input type="text" name="phone" value="<%= application.phone %>" required />
           </label>
 
           <label>
             Institution *
+            <span class="field-hint">Use full institution name (no abbreviations).</span>
             <input type="text" name="institution" value="<%= application.institution %>" required />
           </label>
 
           <label>
             Course/Program *
             <input type="text" name="course" value="<%= application.course %>" required />
+          </label>
+
+          <label>
+            Applied Department *
+            <select name="appliedDepartment" required>
+              <option value="">Select department</option>
+              <% departmentOptions.forEach((department) => { %>
+                <option value="<%= department.key %>" <%= application.appliedDepartment === department.key ? 'selected' : '' %>>
+                  <%= department.label %>
+                </option>
+              <% }) %>
+            </select>
+          </label>
+
+          <label>
+            Attachment Period *
+            <select name="period" required>
+              <option value="">Select period</option>
+              <% periodOptions.forEach((period) => { %>
+                <option value="<%= period.key %>" <%= application.period === period.key ? 'selected' : '' %>>
+                  <%= period.label %> (<%= period.isOpen ? 'Open' : 'Closed' %>)
+                </option>
+              <% }) %>
+            </select>
           </label>
 
           <label>
@@ -78,21 +112,104 @@
           </div>
         </form>
 
-        <h2>Submitted Documents</h2>
-        <ul>
-          <li><a href="/admin/files/<%= application.documents.nationalId %>" target="_blank">National/Student ID</a></li>
-          <li><a href="/admin/files/<%= application.documents.introLetter %>" target="_blank">Introductory Letter</a></li>
-          <li><a href="/admin/files/<%= application.documents.cv %>" target="_blank">CV/Resume</a></li>
-        </ul>
+        <h2>Department Placement</h2>
+        <p>Assign the department where this student will be placed for attachment.</p>
+        <form action="/admin/applications/<%= application.id %>/placement" method="post" class="form-grid">
+          <label class="full-width">
+            Assigned Department *
+            <select name="assignedDepartment" required>
+              <option value="">Select department</option>
+              <% departmentOptions.forEach((department) => { %>
+                <option value="<%= department.key %>" <%= application.assignedDepartment === department.key ? 'selected' : '' %>>
+                  <%= department.label %>
+                </option>
+              <% }) %>
+            </select>
+          </label>
+          <div class="actions full-width">
+            <button class="btn" type="submit">Save Placement</button>
+          </div>
+        </form>
 
-        <h2>Update Verification Status</h2>
+        <h2>Submitted Documents</h2>
+        <% if (application.combinedDocument && application.combinedDocument.filename) { %>
+          <ul>
+            <li>
+              <a href="/admin/files/<%= application.combinedDocument.filename %>" target="_blank"><%= combinedDocumentDefinition.label %></a>
+              <% const combinedSecurity = application.combinedDocument.security || (application.documentSecurity && application.documentSecurity[combinedDocumentDefinition.key]); %>
+              <% if (combinedSecurity) { %>
+                <small>
+                  (Scan: passed, type: <%= combinedSecurity.detectedType %>,
+                  size: <%= combinedSecurity.size %> bytes)
+                </small>
+              <% } %>
+            </li>
+          </ul>
+        <% } else { %>
+          <ul>
+            <% documentDefinitions.forEach((document) => { %>
+              <li>
+                <% if (application.documents && application.documents[document.key]) { %>
+                  <a href="/admin/files/<%= application.documents[document.key] %>" target="_blank"><%= document.label %></a>
+                  <% if (application.documentSecurity && application.documentSecurity[document.key]) { %>
+                    <small>
+                      (Scan: passed, type: <%= application.documentSecurity[document.key].detectedType %>,
+                      size: <%= application.documentSecurity[document.key].size %> bytes)
+                    </small>
+                  <% } %>
+                <% } else { %>
+                  <span><%= document.label %> - Not uploaded</span>
+                <% } %>
+              </li>
+            <% }) %>
+          </ul>
+        <% } %>
+
+        <h2>Document Review And Correction Request</h2>
+        <p>Mark documents as rejected and provide comments. Student will re-upload rejected documents from the Track page.</p>
+
+        <form action="/admin/applications/<%= application.id %>/documents-review" method="post" class="form-grid">
+          <% if (application.combinedDocument && application.combinedDocument.filename) { %>
+            <label class="full-width">
+              <%= combinedDocumentDefinition.label %>
+              <select name="docStatus_<%= combinedDocumentDefinition.key %>" required>
+                <option value="Pending" <%= application.combinedDocumentReview.status === 'Pending' ? 'selected' : '' %>>Pending</option>
+                <option value="Accepted" <%= application.combinedDocumentReview.status === 'Accepted' ? 'selected' : '' %>>Accepted</option>
+                <option value="Rejected" <%= application.combinedDocumentReview.status === 'Rejected' ? 'selected' : '' %>>Rejected</option>
+              </select>
+              <input type="text" name="docComment_<%= combinedDocumentDefinition.key %>" value="<%= application.combinedDocumentReview.comment %>" placeholder="Comment for student (optional)" />
+            </label>
+          <% } else { %>
+            <% documentDefinitions.forEach((document) => { %>
+              <label>
+                <%= document.label %>
+                <select name="docStatus_<%= document.key %>" required>
+                  <option value="Pending" <%= application.documentsReview[document.key].status === 'Pending' ? 'selected' : '' %>>Pending</option>
+                  <option value="Accepted" <%= application.documentsReview[document.key].status === 'Accepted' ? 'selected' : '' %>>Accepted</option>
+                  <option value="Rejected" <%= application.documentsReview[document.key].status === 'Rejected' ? 'selected' : '' %>>Rejected</option>
+                </select>
+                <input type="text" name="docComment_<%= document.key %>" value="<%= application.documentsReview[document.key].comment %>" placeholder="Comment for student (optional)" />
+              </label>
+            <% }) %>
+          <% } %>
+
+          <div class="actions full-width">
+            <button class="btn" type="submit">Save Document Review</button>
+          </div>
+        </form>
+
+        <h2>Attachment Joining Letter</h2>
+        <p>Joining letters are uploaded by HR after final approval in the HR portal.</p>
+
+        <h2>Update Application Status</h2>
+        <p>When documents are correct, set status to <strong>Verified</strong> so HR can review final approval.</p>
         <form action="/admin/applications/<%= application.id %>/status" method="post" class="form-grid">
           <label>
             Status
             <select name="status" required>
-              <option value="Pending" <%= application.status === 'Pending' ? 'selected' : '' %>>Pending</option>
-              <option value="Verified" <%= application.status === 'Verified' ? 'selected' : '' %>>Verified</option>
-              <option value="Rejected" <%= application.status === 'Rejected' ? 'selected' : '' %>>Rejected</option>
+              <% statusOptions.forEach((status) => { %>
+                <option value="<%= status %>" <%= application.status === status ? 'selected' : '' %>><%= status %></option>
+              <% }) %>
             </select>
           </label>
 
@@ -102,7 +219,7 @@
           </label>
 
           <div class="actions full-width">
-            <button class="btn" type="submit">Save Decision</button>
+            <button class="btn" type="submit">Save Application Status</button>
           </div>
         </form>
 
@@ -112,5 +229,5 @@
         </form>
       </section>
     </main>
-  </body>
-</html>
+<%- include("partials/layout-close") %>
+

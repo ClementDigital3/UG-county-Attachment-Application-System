@@ -1,83 +1,143 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Apply - County Attachment Portal</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <main class="container">
+<%- include("partials/layout-open", { pageTitle: "Apply - County Attachment Portal", activePortal: "student" }) %>
+<main class="container">
       <section class="card">
         <h1>Attachment Application Form</h1>
-        <p>Fill in your details and upload all required documents.</p>
+        <p>Fill in your details and upload one combined scanned file for quick admin review.</p>
 
         <% if (error) { %>
           <div class="alert"><%= error %></div>
         <% } %>
 
+        <% if (!hasOpenPeriods) { %>
+          <div class="alert">
+            Applications are currently closed for all periods. Please check back when county admin opens a period.
+          </div>
+        <% } %>
+
+        <% if (slotsFull) { %>
+          <div class="alert">
+            Application slots are currently full for this intake. Please check again later.
+          </div>
+        <% } %>
+
+        <% if (remainingApplicants !== null) { %>
+          <div class="summary">
+            <p><strong>Application Capacity:</strong> <%= maxApplicants %></p>
+            <p><strong>Remaining Slots:</strong> <%= remainingApplicants %></p>
+            <p>
+              <strong>Institution Fairness Rule:</strong>
+              A single institution can use up to <%= institutionMaxSharePercent %>% of each department's slots.
+            </p>
+          </div>
+        <% } %>
+
+        <div class="summary">
+          <p><strong>Already Applied?</strong></p>
+          <p>
+            Use the Track Application page to check whether your application is pending,
+            verified, approved, rejected, or needs correction.
+          </p>
+          <p>
+            Once HR uploads your joining letter, you will download it from the same tracking page
+            using your tracking number and email address.
+          </p>
+          <div class="actions tight">
+            <a class="btn secondary" href="/track">Track Application</a>
+          </div>
+        </div>
+
         <form action="/apply" method="post" enctype="multipart/form-data" class="form-grid">
           <label>
             Full Name *
-            <input type="text" name="fullName" required />
+            <input type="text" name="fullName" value="<%= formData.fullName || '' %>" required />
           </label>
 
           <label>
             Email Address *
-            <input type="email" name="email" required />
+            <input type="email" name="email" value="<%= formData.email || '' %>" required />
           </label>
 
           <label>
             Phone Number *
-            <input type="text" name="phone" required />
+            <span class="field-hint field-hint-spacer">Alignment spacer</span>
+            <input type="text" name="phone" value="<%= formData.phone || '' %>" required />
           </label>
 
           <label>
             Institution *
-            <input type="text" name="institution" required />
+            <span class="field-hint">Write the institution name in full (no abbreviations), for example: University of Nairobi.</span>
+            <input type="text" name="institution" value="<%= formData.institution || '' %>" required />
           </label>
 
           <label>
             Course/Program *
-            <input type="text" name="course" required />
+            <input type="text" name="course" value="<%= formData.course || '' %>" required />
+          </label>
+
+          <label>
+            Department Applied For *
+            <select name="appliedDepartment" required>
+              <option value="">Select department</option>
+              <% departmentOptions.forEach((department) => { %>
+                <option value="<%= department.key %>" <%= formData.appliedDepartment === department.key ? 'selected' : '' %>>
+                  <%= department.label %>
+                </option>
+              <% }) %>
+            </select>
+          </label>
+
+          <label>
+            Attachment Period *
+            <select name="period" required>
+              <option value="">Select period</option>
+              <% periodOptions.forEach((period) => { %>
+                <option
+                  value="<%= period.key %>"
+                  <%= formData.period === period.key ? 'selected' : '' %>
+                  <%= !period.isOpen ? 'disabled' : '' %>
+                >
+                  <%= period.label %> (<%= period.isOpen ? 'Open' : 'Closed' %>)
+                </option>
+              <% }) %>
+            </select>
           </label>
 
           <label>
             Attachment Start Date *
-            <input type="date" name="startDate" required />
+            <input type="date" name="startDate" value="<%= formData.startDate || '' %>" required />
           </label>
 
           <label>
             Attachment End Date *
-            <input type="date" name="endDate" required />
+            <input type="date" name="endDate" value="<%= formData.endDate || '' %>" required />
           </label>
 
           <label class="full-width">
             Cover Note
-            <textarea name="coverNote" rows="4" placeholder="Optional message to the county HR office"></textarea>
+            <textarea name="coverNote" rows="4" placeholder="Optional message to the county HR office"><%= formData.coverNote || '' %></textarea>
           </label>
 
-          <label>
-            National ID / Student ID (PDF/JPG) *
-            <input type="file" name="nationalId" required />
-          </label>
-
-          <label>
-            Introductory Letter (PDF) *
-            <input type="file" name="introLetter" required />
-          </label>
-
-          <label>
-            CV / Resume (PDF) *
-            <input type="file" name="cv" required />
+          <label class="full-width">
+            <%= combinedDocumentDefinition.label %> *
+            <span class="field-hint">
+              Upload one scanned file that includes passport photo, application letter, school cover letter, insurance copy, ID copy and NITA copy.
+            </span>
+            <input
+              type="file"
+              name="<%= combinedDocumentDefinition.key %>"
+              accept="<%= combinedDocumentDefinition.accept %>"
+              required
+            />
           </label>
 
           <div class="full-width actions">
-            <button class="btn" type="submit">Submit Application</button>
+            <button class="btn" type="submit" <%= ((!hasOpenPeriods || slotsFull) ? 'disabled' : '') %>>
+              Submit Application
+            </button>
             <a class="btn secondary" href="/">Cancel</a>
           </div>
         </form>
       </section>
     </main>
-  </body>
-</html>
+<%- include("partials/layout-close") %>
+
