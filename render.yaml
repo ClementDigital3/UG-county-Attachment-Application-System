@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: ug-county-attachment-application-system
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    disk:
+      name: attachment-system-storage
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: STORAGE_ROOT
+        value: /var/data
+      - key: ADMIN_PORTAL_PATH
+        value: /staff-portal
+      - key: HR_PORTAL_PATH
+        value: /hr-portal
+      - key: HR_USERNAME
+        value: hr_admin
+      - key: HR_PASSWORD
+        sync: false
+      - key: PRESENTATION_LOGIN_USERNAME
+        sync: false
+      - key: PRESENTATION_LOGIN_PASSWORD
+        sync: false
+      - key: DEFAULT_DEPARTMENT_ADMIN_PASSWORD
+        sync: false
+      - key: ALLOW_ANY_TEST_UPLOADS
+        value: "false"

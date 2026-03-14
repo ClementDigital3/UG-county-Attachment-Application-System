@@ -10,6 +10,14 @@ const crypto = require("crypto");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024;
+const APP_ROOT = __dirname;
+const STORAGE_ROOT = process.env.STORAGE_ROOT
+  ? path.resolve(process.env.STORAGE_ROOT)
+  : APP_ROOT;
+const DATA_DIR = path.join(STORAGE_ROOT, "data");
+const UPLOAD_DIR = path.join(STORAGE_ROOT, "uploads");
+const PUBLIC_DIR = path.join(APP_ROOT, "public");
+const VIEWS_DIR = path.join(APP_ROOT, "views");
 
 const FILE_TYPE_HEADERS = {
   pdf: Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d]), // %PDF-
@@ -24,10 +32,9 @@ const STATUS_OPTIONS = ["Pending", "Needs Correction", "Verified", "Approved", "
 const HR_VISIBLE_STATUSES = new Set(["Verified", "Approved", "Rejected"]);
 const DEFAULT_INSTITUTION_MAX_SHARE_PERCENT = 40;
 
-const DATA_FILE = path.join(__dirname, "data", "applications.json");
-const SETTINGS_FILE = path.join(__dirname, "data", "portal-settings.json");
-const DEPARTMENT_ADMINS_FILE = path.join(__dirname, "data", "department-admins.json");
-const UPLOAD_DIR = path.join(__dirname, "uploads");
+const DATA_FILE = path.join(DATA_DIR, "applications.json");
+const SETTINGS_FILE = path.join(DATA_DIR, "portal-settings.json");
+const DEPARTMENT_ADMINS_FILE = path.join(DATA_DIR, "department-admins.json");
 
 const PERIODS = [
   { key: "JAN_APR", label: "January - April" },
@@ -140,9 +147,14 @@ const ALLOW_ANY_TEST_UPLOADS = process.env.ALLOW_ANY_TEST_UPLOADS === "true";
 const DEFAULT_DEPARTMENT_ADMIN_PASSWORD =
   process.env.DEFAULT_DEPARTMENT_ADMIN_PASSWORD || "change_me";
 
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+function ensureDirectoryExists(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
 }
+
+ensureDirectoryExists(DATA_DIR);
+ensureDirectoryExists(UPLOAD_DIR);
 
 if (!fs.existsSync(DATA_FILE)) {
   fs.writeFileSync(DATA_FILE, "[]", "utf-8");
@@ -245,11 +257,11 @@ const studentDocumentsUploadMiddleware = upload.fields(
 const joiningLetterUploadMiddleware = upload.single(JOINING_LETTER_FIELD);
 
 app.set("view engine", "ejs");
-app.set("views", path.join(__dirname, "views"));
+app.set("views", VIEWS_DIR);
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(PUBLIC_DIR));
 app.use(
   session({
     secret: SESSION_SECRET,
@@ -2741,4 +2753,5 @@ app.listen(PORT, () => {
   console.log(`Attachment application system running on http://localhost:${PORT}`);
   console.log(`Department admin portal: http://localhost:${PORT}${ADMIN_PORTAL_PATH}`);
   console.log(`HR portal entry: http://localhost:${PORT}${HR_PORTAL_PATH}`);
+  console.log(`Storage root: ${STORAGE_ROOT}`);
 });

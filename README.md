@@ -314,6 +314,7 @@ Current important keys:
 
 - `PORT`
 - `SESSION_SECRET`
+- `STORAGE_ROOT`
 - `ADMIN_PORTAL_PATH`
 - `HR_PORTAL_PATH`
 - `HR_USERNAME`
@@ -322,6 +323,12 @@ Current important keys:
 - `PRESENTATION_LOGIN_PASSWORD`
 - `DEFAULT_DEPARTMENT_ADMIN_PASSWORD`
 - `ALLOW_ANY_TEST_UPLOADS`
+
+### Storage root
+
+- Leave `STORAGE_ROOT` empty for local development.
+- For Render with a persistent disk, set `STORAGE_ROOT=/var/data`.
+- The app will store JSON data and uploaded files inside the configured storage root.
 
 ## How To Run
 
@@ -346,6 +353,43 @@ npm start
 - Track: `http://localhost:3000/track`
 - Admin Portal: `http://localhost:3000/staff-portal`
 - HR Portal: `http://localhost:3000/hr-portal`
+
+## Render Deployment
+
+This repository now includes `render.yaml` for Render deployment.
+
+### Render setup
+
+- Create a Render `Web Service`
+- Connect the GitHub repository
+- Use:
+  - Build command: `npm install`
+  - Start command: `npm start`
+- Attach a persistent disk mounted at `/var/data`
+- Set `STORAGE_ROOT=/var/data`
+
+### Required Render environment values
+
+- `SESSION_SECRET`
+- `HR_USERNAME`
+- `HR_PASSWORD`
+- `DEFAULT_DEPARTMENT_ADMIN_PASSWORD`
+
+### Optional Render environment values
+
+- `PRESENTATION_LOGIN_USERNAME`
+- `PRESENTATION_LOGIN_PASSWORD`
+- `ALLOW_ANY_TEST_UPLOADS`
+
+### Why the disk is required
+
+The application writes live data and uploads to the filesystem. Without a persistent disk, redeploys or restarts can remove:
+
+- applications
+- portal settings
+- department admin bootstrap data
+- uploaded combined documents
+- uploaded joining letters
 
 ## What Has Been Removed
 
@@ -373,5 +417,3 @@ Removed or intentionally not active:
 - add audit logs
 - improve institution balancing dashboards per department
 - add stronger production authentication and authorization
-#   U G - c o u n t y - A t t a c h m e n t - A p p l i c a t i o n - S y s t e m  
- 
