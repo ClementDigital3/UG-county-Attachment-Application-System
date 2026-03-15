@@ -45,6 +45,20 @@
 
       <section class="card">
         <h2>Institution Distribution</h2>
+        <div class="summary">
+          <p>
+            Institution distribution helps the county share attachment opportunities fairly
+            across different institutions.
+          </p>
+          <p>
+            It prevents one institution from taking all the slots in the same department and
+            helps give students from other institutions a fair chance to apply.
+          </p>
+          <p>
+            Students should enter institution names in full so the system can count each
+            institution correctly.
+          </p>
+        </div>
         <% if (institutionDepartmentLimits && institutionDepartmentLimits.length) { %>
           <div class="stats compact">
             <% institutionDepartmentLimits.forEach((department) => { %>
@@ -56,18 +70,6 @@
           </div>
         <% } else { %>
           <p>No department slot capacities are configured yet.</p>
-        <% } %>
-        <% if (topInstitutions && topInstitutions.length) { %>
-          <div class="stats compact">
-            <% topInstitutions.forEach((institution) => { %>
-              <div>
-                <strong><%= institution.count %></strong>
-                <span><%= institution.label %></span>
-              </div>
-            <% }) %>
-          </div>
-        <% } else { %>
-          <p>No applications submitted yet.</p>
         <% } %>
       </section>
     </main>

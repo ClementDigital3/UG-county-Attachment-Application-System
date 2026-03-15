@@ -6,6 +6,7 @@ const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { createDatabase } = require("./database");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,6 +36,9 @@ const DEFAULT_INSTITUTION_MAX_SHARE_PERCENT = 40;
 const DATA_FILE = path.join(DATA_DIR, "applications.json");
 const SETTINGS_FILE = path.join(DATA_DIR, "portal-settings.json");
 const DEPARTMENT_ADMINS_FILE = path.join(DATA_DIR, "department-admins.json");
+const DATABASE_FILE = process.env.DATABASE_FILE
+  ? path.resolve(process.env.DATABASE_FILE)
+  : path.join(DATA_DIR, "attachment-application-system.db");
 
 const PERIODS = [
   { key: "JAN_APR", label: "January - April" },
@@ -143,6 +147,7 @@ const PRESENTATION_LOGIN_PASSWORD = process.env.PRESENTATION_LOGIN_PASSWORD || "
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-secret";
 const ADMIN_PORTAL_PATH = process.env.ADMIN_PORTAL_PATH || "/staff-portal";
 const HR_PORTAL_PATH = process.env.HR_PORTAL_PATH || "/hr-portal";
+const DISPLAY_TIMEZONE = process.env.DISPLAY_TIMEZONE || "Africa/Nairobi";
 const ALLOW_ANY_TEST_UPLOADS = process.env.ALLOW_ANY_TEST_UPLOADS === "true";
 const DEFAULT_DEPARTMENT_ADMIN_PASSWORD =
   process.env.DEFAULT_DEPARTMENT_ADMIN_PASSWORD || "change_me";
@@ -155,10 +160,6 @@ function ensureDirectoryExists(dirPath) {
 
 ensureDirectoryExists(DATA_DIR);
 ensureDirectoryExists(UPLOAD_DIR);
-
-if (!fs.existsSync(DATA_FILE)) {
-  fs.writeFileSync(DATA_FILE, "[]", "utf-8");
-}
 
 function createDefaultDepartmentCapacities(defaultCapacity = 10) {
   return DEPARTMENTS.reduce((acc, department) => {
@@ -183,10 +184,6 @@ function createDefaultSettings() {
   };
 }
 
-if (!fs.existsSync(SETTINGS_FILE)) {
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(createDefaultSettings(), null, 2), "utf-8");
-}
-
 function createDefaultDepartmentAdmins() {
   return DEPARTMENTS.map((department) => ({
     username: `${department.key}_admin`,
@@ -197,13 +194,17 @@ function createDefaultDepartmentAdmins() {
   }));
 }
 
-if (!fs.existsSync(DEPARTMENT_ADMINS_FILE)) {
-  fs.writeFileSync(
-    DEPARTMENT_ADMINS_FILE,
-    JSON.stringify(createDefaultDepartmentAdmins(), null, 2),
-    "utf-8"
-  );
-}
+const database = createDatabase({
+  dataDir: DATA_DIR,
+  databaseFile: DATABASE_FILE,
+  legacyPaths: {
+    applications: DATA_FILE,
+    settings: SETTINGS_FILE,
+    departmentAdmins: DEPARTMENT_ADMINS_FILE
+  },
+  createDefaultSettings,
+  createDefaultDepartmentAdmins
+});
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -349,63 +350,45 @@ function ensureApplicationDefaults(application) {
 }
 
 function readApplications() {
-  try {
-    const raw = fs.readFileSync(DATA_FILE, "utf-8");
-    const parsed = JSON.parse(raw);
-
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed.map((application) => ensureApplicationDefaults(application));
-  } catch (_error) {
-    return [];
-  }
+  return database.readApplications().map((application) => ensureApplicationDefaults(application));
 }
 
 function writeApplications(applications) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(applications, null, 2), "utf-8");
+  database.writeApplications(applications);
 }
 
 function readSettings() {
-  try {
-    const raw = fs.readFileSync(SETTINGS_FILE, "utf-8");
-    const parsed = JSON.parse(raw);
-    const normalized = createDefaultSettings();
+  const parsed = database.readSettings();
+  const normalized = createDefaultSettings();
 
-    PERIODS.forEach((period) => {
-      normalized.openPeriods[period.key] = Boolean(parsed?.openPeriods?.[period.key]);
-    });
+  PERIODS.forEach((period) => {
+    normalized.openPeriods[period.key] = Boolean(parsed?.openPeriods?.[period.key]);
+  });
 
-    DEPARTMENTS.forEach((department) => {
-      const rawCapacity = Number(parsed?.departmentCapacities?.[department.key]);
-      normalized.departmentCapacities[department.key] =
-        Number.isInteger(rawCapacity) && rawCapacity >= 0
-          ? rawCapacity
-          : normalized.departmentCapacities[department.key];
-    });
+  DEPARTMENTS.forEach((department) => {
+    const rawCapacity = Number(parsed?.departmentCapacities?.[department.key]);
+    normalized.departmentCapacities[department.key] =
+      Number.isInteger(rawCapacity) && rawCapacity >= 0
+        ? rawCapacity
+        : normalized.departmentCapacities[department.key];
+  });
 
-    normalized.maxApplicants = Object.values(normalized.departmentCapacities).reduce(
-      (sum, value) => sum + value,
-      0
-    );
-    const institutionShare = Number(parsed?.institutionMaxSharePercent);
-    normalized.institutionMaxSharePercent =
-      Number.isInteger(institutionShare) && institutionShare >= 1 && institutionShare <= 100
-        ? institutionShare
-        : DEFAULT_INSTITUTION_MAX_SHARE_PERCENT;
+  normalized.maxApplicants = Object.values(normalized.departmentCapacities).reduce(
+    (sum, value) => sum + value,
+    0
+  );
+  const institutionShare = Number(parsed?.institutionMaxSharePercent);
+  normalized.institutionMaxSharePercent =
+    Number.isInteger(institutionShare) && institutionShare >= 1 && institutionShare <= 100
+      ? institutionShare
+      : DEFAULT_INSTITUTION_MAX_SHARE_PERCENT;
 
-    normalized.updatedAt = parsed?.updatedAt || normalized.updatedAt;
-    return normalized;
-  } catch (_error) {
-    const fallback = createDefaultSettings();
-    writeSettings(fallback);
-    return fallback;
-  }
+  normalized.updatedAt = parsed?.updatedAt || normalized.updatedAt;
+  return normalized;
 }
 
 function writeSettings(settings) {
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
+  database.writeSettings(settings);
 }
 
 function getCapacitySummary(settings, applications) {
@@ -488,26 +471,18 @@ function normalizeDepartmentAdminUser(user) {
 }
 
 function readDepartmentAdmins() {
-  try {
-    const raw = fs.readFileSync(DEPARTMENT_ADMINS_FILE, "utf-8");
-    const parsed = JSON.parse(raw);
-    const normalized = Array.isArray(parsed)
-      ? parsed.map((item) => normalizeDepartmentAdminUser(item)).filter(Boolean)
-      : [];
+  const normalized = database
+    .readDepartmentAdmins()
+    .map((item) => normalizeDepartmentAdminUser(item))
+    .filter(Boolean);
 
-    const seen = new Set();
-    return normalized.filter((item) => {
-      if (seen.has(item.username)) {
-        return false;
-      }
-      seen.add(item.username);
-      return true;
-    });
-  } catch (_error) {
-    const defaults = createDefaultDepartmentAdmins();
-    fs.writeFileSync(DEPARTMENT_ADMINS_FILE, JSON.stringify(defaults, null, 2), "utf-8");
-    return defaults.map((item) => normalizeDepartmentAdminUser(item)).filter(Boolean);
+  if (normalized.length) {
+    return normalized;
   }
+
+  const defaults = createDefaultDepartmentAdmins();
+  database.writeDepartmentAdmins(defaults);
+  return defaults.map((item) => normalizeDepartmentAdminUser(item)).filter(Boolean);
 }
 
 function findAdminUserByCredentials(usernameInput, passwordInput) {
@@ -647,37 +622,87 @@ function getInstitutionUsageCount(applications, departmentKey, institutionName, 
   }).length;
 }
 
-function getInstitutionDistribution(applications, { departmentKey = null, limit = 6 } = {}) {
+function buildInstitutionCatalog(applications) {
   const buckets = new Map();
 
   applications.forEach((application) => {
-    if (departmentKey && application.appliedDepartment !== departmentKey) {
-      return;
-    }
-
     const key = normalizeInstitutionName(application.institution);
     if (!key) {
       return;
     }
 
+    const label = (application.institution || "").toString().trim();
     if (!buckets.has(key)) {
       buckets.set(key, {
         key,
-        label: (application.institution || "").toString().trim(),
+        label,
         count: 0
       });
     }
 
     const current = buckets.get(key);
     current.count += 1;
-    if (!current.label && application.institution) {
-      current.label = (application.institution || "").toString().trim();
+
+    if (!current.label && label) {
+      current.label = label;
     }
   });
 
-  return Array.from(buckets.values())
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+  return Array.from(buckets.values()).sort(
+    (a, b) => b.count - a.count || a.label.localeCompare(b.label)
+  );
+}
+
+function getInstitutionDistribution(applications, { departmentKey = null, limit = 6 } = {}) {
+  const catalog = buildInstitutionCatalog(
+    departmentKey
+      ? applications.filter((application) => application.appliedDepartment === departmentKey)
+      : applications
+  );
+
+  return catalog
     .slice(0, Math.max(1, limit));
+}
+
+function getInstitutionSuggestions(applications, settings, departmentKey, query, limit = 6) {
+  const trimmedQuery = (query || "").toString().trim();
+  const normalizedQuery = normalizeInstitutionName(trimmedQuery);
+  const institutionLimit = getInstitutionLimitForDepartment(settings, departmentKey);
+  const catalog = buildInstitutionCatalog(applications);
+
+  const createSuggestion = (item) => {
+    const usedSlots = getInstitutionUsageCount(applications, departmentKey, item.label);
+    const remainingSlots =
+      institutionLimit > 0 ? Math.max(0, institutionLimit - usedSlots) : 0;
+
+    return {
+      label: item.label,
+      usedSlots,
+      remainingSlots,
+      institutionLimit,
+      isFull: institutionLimit > 0 && remainingSlots <= 0
+    };
+  };
+
+  const matches = catalog
+    .filter((item) => !normalizedQuery || item.key.includes(normalizedQuery))
+    .map((item) => createSuggestion(item))
+    .sort(
+      (a, b) =>
+        Number(a.isFull) - Number(b.isFull) ||
+        b.remainingSlots - a.remainingSlots ||
+        a.label.localeCompare(b.label)
+    )
+    .slice(0, Math.max(1, limit));
+
+  const exactMatchItem = catalog.find((item) => item.key === normalizedQuery);
+  const exactMatch = exactMatchItem ? createSuggestion(exactMatchItem) : null;
+
+  return {
+    institutionLimit,
+    exactMatch,
+    suggestions: matches
+  };
 }
 
 function getInstitutionFullNameError(institutionName) {
@@ -1120,9 +1145,20 @@ function ensureHrAdmin(req, res, next) {
 }
 
 function formatDate(dateStr) {
-  return new Date(dateStr).toLocaleString("en-KE", {
-    dateStyle: "medium",
-    timeStyle: "short"
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) {
+    return "Not available";
+  }
+
+  return parsed.toLocaleString("en-KE", {
+    timeZone: DISPLAY_TIMEZONE,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZoneName: "short"
   });
 }
 
@@ -1232,7 +1268,6 @@ app.get("/", (_req, res) => {
   const settings = readSettings();
   const periodOptions = getPeriodOptions(settings);
   const capacitySummary = getCapacitySummary(settings, applications);
-  const topInstitutions = getInstitutionDistribution(applications, { limit: 8 });
   const institutionDepartmentLimits = DEPARTMENTS.map((department) => ({
     key: department.key,
     label: department.label,
@@ -1248,7 +1283,6 @@ app.get("/", (_req, res) => {
     institutionMaxSharePercent:
       Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
     institutionDepartmentLimits,
-    topInstitutions,
     periodOptions,
     openPeriodOptions: periodOptions.filter((period) => period.isOpen)
   });
@@ -1256,6 +1290,33 @@ app.get("/", (_req, res) => {
 
 app.get("/apply", (_req, res) => {
   return renderApplyPage(res);
+});
+
+app.get("/api/institution-suggestions", (req, res) => {
+  const departmentKey = (req.query.department || "").toString().trim();
+  const query = (req.query.q || "").toString().trim().slice(0, 120);
+
+  if (!departmentKey || !isValidDepartment(departmentKey)) {
+    return res.json({
+      departmentSelected: false,
+      departmentLabel: "",
+      institutionLimit: 0,
+      exactMatch: null,
+      suggestions: []
+    });
+  }
+
+  const applications = readApplications();
+  const settings = readSettings();
+  const suggestions = getInstitutionSuggestions(applications, settings, departmentKey, query, 8);
+
+  return res.json({
+    departmentSelected: true,
+    departmentKey,
+    departmentLabel: getDepartmentLabel(departmentKey),
+    typedQuery: query,
+    ...suggestions
+  });
 });
 
 app.post("/apply", (req, res) => {
@@ -2754,4 +2815,5 @@ app.listen(PORT, () => {
   console.log(`Department admin portal: http://localhost:${PORT}${ADMIN_PORTAL_PATH}`);
   console.log(`HR portal entry: http://localhost:${PORT}${HR_PORTAL_PATH}`);
   console.log(`Storage root: ${STORAGE_ROOT}`);
+  console.log(`Database file: ${DATABASE_FILE}`);
 });

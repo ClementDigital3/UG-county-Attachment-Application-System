@@ -2,6 +2,76 @@
 
 Portal for managing county government attachment applications from student submission through department verification and HR final approval.
 
+## Presentation Summary
+
+This project is a digital attachment application portal for the County Government of Uasin Gishu.
+
+It was designed to solve the manual attachment application process by:
+
+- allowing students to apply online
+- allowing department admins to verify applications in their own departments
+- allowing HR to approve verified applications centrally
+- allowing students to track application progress and download joining letters
+
+In summary, the system moves the process from manual document submission to a structured online workflow.
+
+## What To Say During Presentation
+
+You can present the system in this order:
+
+1. Problem:
+   - attachment applications are often manual, slow, and difficult to track
+   - students may not know whether their documents were received or approved
+2. Solution:
+   - this portal allows online application, department-level verification, and HR final approval
+3. Main users:
+   - student
+   - department admin
+   - HR
+4. Main benefit:
+   - easier application
+   - easier review
+   - clearer tracking
+   - better control of departmental slots and fairness
+
+## Database Explanation For Presentation
+
+This system now uses SQLite as its database.
+
+You can explain it like this:
+
+- the first version used JSON files for storage during early development
+- the current version uses SQLite, which is a real relational database
+- SQLite stores:
+  - student applications
+  - portal settings
+  - department admin accounts
+- SQLite was chosen because it is lightweight, easy to deploy, and suitable for the current project stage
+
+If asked how the application connects to the database, explain:
+
+- the Node.js backend connects directly to a SQLite database file
+- the database is accessed through the `better-sqlite3` package
+- the application reads and writes data through a dedicated storage layer
+
+If asked about future growth, explain:
+
+- SQLite is appropriate for the current prototype and demonstration stage
+- for larger production use with many simultaneous users, the next step would be PostgreSQL or another managed server database
+
+## Short Demo Script
+
+You can use this short script:
+
+1. Open the landing page and explain the system purpose.
+2. Open `Apply` and show how a student submits an attachment application.
+3. Mention that the student must choose a department and can later track the application.
+4. Open the Department Admin Portal and show that each department reviews only its own applicants.
+5. Verify one application and explain that verified applications move to HR.
+6. Open the HR Portal and show final approval.
+7. Upload the joining letter and return to the student tracking page.
+8. Show that the student can see the status and download the joining letter.
+
 ## Current Scope
 
 This project currently covers:
@@ -12,7 +82,7 @@ This project currently covers:
 - Department admin portal with department-scoped access.
 - HR portal for final approval and joining letter upload.
 - Period control, department slot control, and institution fairness control.
-- Local JSON storage for applications, settings, and department accounts.
+- Local SQLite database storage for applications, settings, and department accounts.
 
 ## End-To-End Workflow
 
@@ -259,9 +329,7 @@ Completed UI work:
 
 ### Department admin accounts
 
-Department admin accounts are stored in:
-
-- `data/department-admins.json`
+Department admin accounts are stored in the SQLite database.
 
 Default first-run pattern:
 
@@ -301,10 +369,16 @@ Do not store real production credentials in `README.md`.
 
 Main project data files:
 
-- `data/applications.json` -> submitted applications
-- `data/portal-settings.json` -> periods, slot capacities, institution fairness
-- `data/department-admins.json` -> department admin accounts
+- `data/attachment-application-system.db` -> SQLite database for applications, settings, and department admin accounts
 - `uploads/` -> uploaded documents and joining letters
+
+Legacy migration files:
+
+- `data/applications.json`
+- `data/portal-settings.json`
+- `data/department-admins.json`
+
+These JSON files are only used as one-time import sources if they exist and the database is empty.
 
 ## Environment Configuration
 
@@ -315,6 +389,7 @@ Current important keys:
 - `PORT`
 - `SESSION_SECRET`
 - `STORAGE_ROOT`
+- `DATABASE_FILE`
 - `ADMIN_PORTAL_PATH`
 - `HR_PORTAL_PATH`
 - `HR_USERNAME`
@@ -328,7 +403,13 @@ Current important keys:
 
 - Leave `STORAGE_ROOT` empty for local development.
 - For Render with a persistent disk, set `STORAGE_ROOT=/var/data`.
-- The app will store JSON data and uploaded files inside the configured storage root.
+- The app will store the SQLite database and uploaded files inside the configured storage root.
+
+### Database file
+
+- Leave `DATABASE_FILE` empty to use the default path:
+  - `<storage_root>/data/attachment-application-system.db`
+- Set `DATABASE_FILE` only if you want the database file in a different location.
 
 ## How To Run
 
@@ -365,8 +446,12 @@ This repository now includes `render.yaml` for Render deployment.
 - Use:
   - Build command: `npm install`
   - Start command: `npm start`
-- Attach a persistent disk mounted at `/var/data`
-- Set `STORAGE_ROOT=/var/data`
+- On paid Render with a persistent disk:
+  - attach the disk mounted at `/var/data`
+  - set `STORAGE_ROOT=/var/data`
+- On free Render without a disk:
+  - leave `STORAGE_ROOT` empty
+  - the SQLite database will run, but data will not persist across rebuilds or resets
 
 ### Required Render environment values
 
@@ -380,10 +465,11 @@ This repository now includes `render.yaml` for Render deployment.
 - `PRESENTATION_LOGIN_USERNAME`
 - `PRESENTATION_LOGIN_PASSWORD`
 - `ALLOW_ANY_TEST_UPLOADS`
+- `DATABASE_FILE` if you want a custom SQLite path
 
 ### Why the disk is required
 
-The application writes live data and uploads to the filesystem. Without a persistent disk, redeploys or restarts can remove:
+The application writes the SQLite database file and uploads to the filesystem. Without a persistent disk, redeploys or restarts can remove:
 
 - applications
 - portal settings
@@ -407,12 +493,13 @@ Removed or intentionally not active:
 - Keep real credentials only in local `.env`
 - `.env` should not be pushed to GitHub
 - do not expose production usernames/passwords in documentation
-- current storage is JSON-based and suitable for development/demo, not production scale
+- SQLite is a real database and is better than JSON files for this project stage
+- on free Render without a persistent disk, the SQLite file is still temporary
 
 ## Recommended Future Work
 
-- move from JSON files to a real database
 - add admin account management UI instead of editing JSON manually
+- move from SQLite file storage to PostgreSQL or another managed database for multi-user production deployment
 - add reporting and export tools
 - add audit logs
 - improve institution balancing dashboards per department

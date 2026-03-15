@@ -59,14 +59,7 @@
 
           <label>
             Phone Number *
-            <span class="field-hint field-hint-spacer">Alignment spacer</span>
             <input type="text" name="phone" value="<%= formData.phone || '' %>" required />
-          </label>
-
-          <label>
-            Institution *
-            <span class="field-hint">Write the institution name in full (no abbreviations), for example: University of Nairobi.</span>
-            <input type="text" name="institution" value="<%= formData.institution || '' %>" required />
           </label>
 
           <label>
@@ -74,9 +67,34 @@
             <input type="text" name="course" value="<%= formData.course || '' %>" required />
           </label>
 
+          <label class="institution-field full-width">
+            Institution *
+            <span class="field-hint">Write the institution name in full (no abbreviations), for example: University of Nairobi.</span>
+            <input
+              id="institutionInput"
+              type="text"
+              name="institution"
+              value="<%= formData.institution || '' %>"
+              autocomplete="off"
+              aria-autocomplete="list"
+              aria-controls="institutionSuggestions"
+              aria-expanded="false"
+              required
+            />
+            <span class="field-hint institution-status-note" id="institutionStatusNote">
+              Select a department first, then start typing the institution name to see saved suggestions and remaining institution slots.
+            </span>
+            <div
+              class="institution-suggestions"
+              id="institutionSuggestions"
+              role="listbox"
+              hidden
+            ></div>
+          </label>
+
           <label>
             Department Applied For *
-            <select name="appliedDepartment" required>
+            <select id="appliedDepartmentSelect" name="appliedDepartment" required>
               <option value="">Select department</option>
               <% departmentOptions.forEach((department) => { %>
                 <option value="<%= department.key %>" <%= formData.appliedDepartment === department.key ? 'selected' : '' %>>
@@ -131,7 +149,12 @@
           </label>
 
           <div class="full-width actions">
-            <button class="btn" type="submit" <%= ((!hasOpenPeriods || slotsFull) ? 'disabled' : '') %>>
+            <button
+              id="applySubmitButton"
+              class="btn"
+              type="submit"
+              <%= ((!hasOpenPeriods || slotsFull) ? 'disabled' : '') %>
+            >
               Submit Application
             </button>
             <a class="btn secondary" href="/">Cancel</a>
@@ -139,5 +162,318 @@
         </form>
       </section>
     </main>
+<script>
+  (() => {
+    const institutionInput = document.getElementById("institutionInput");
+    const departmentSelect = document.getElementById("appliedDepartmentSelect");
+    const statusNote = document.getElementById("institutionStatusNote");
+    const suggestionsBox = document.getElementById("institutionSuggestions");
+    const submitButton = document.getElementById("applySubmitButton");
+    const baseSubmitDisabled = <%= (!hasOpenPeriods || slotsFull) ? "true" : "false" %>;
+
+    if (!institutionInput || !departmentSelect || !statusNote || !suggestionsBox || !submitButton) {
+      return;
+    }
+
+    let activeController = null;
+    let debounceTimer = null;
+    let currentSuggestions = [];
+    let highlightedIndex = -1;
+
+    function resetInputState() {
+      institutionInput.classList.remove("input-danger-blink", "input-ok");
+    }
+
+    function setSubmitDisabled(extraDisabled) {
+      submitButton.disabled = baseSubmitDisabled || extraDisabled;
+    }
+
+    function setStatus(message, tone = "muted", blink = false) {
+      statusNote.textContent = message;
+      statusNote.className = `field-hint institution-status-note tone-${tone}`;
+
+      resetInputState();
+
+      if (tone === "success") {
+        institutionInput.classList.add("input-ok");
+      }
+
+      if (blink) {
+        void institutionInput.offsetWidth;
+        institutionInput.classList.add("input-danger-blink");
+      }
+    }
+
+    function clearSuggestions() {
+      suggestionsBox.hidden = true;
+      suggestionsBox.innerHTML = "";
+      currentSuggestions = [];
+      highlightedIndex = -1;
+      institutionInput.setAttribute("aria-expanded", "false");
+      institutionInput.removeAttribute("aria-activedescendant");
+    }
+
+    function selectSuggestion(item, departmentLabel) {
+      institutionInput.value = item.label;
+      clearSuggestions();
+      updateStatus({
+        departmentLabel,
+        institutionLimit: item.institutionLimit,
+        exactMatch: item
+      });
+      institutionInput.focus();
+    }
+
+    function setHighlightedSuggestion(index) {
+      const buttons = Array.from(
+        suggestionsBox.querySelectorAll(".institution-suggestion")
+      );
+
+      buttons.forEach((button, buttonIndex) => {
+        const isActive = buttonIndex === index;
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-selected", isActive ? "true" : "false");
+
+        if (isActive) {
+          institutionInput.setAttribute("aria-activedescendant", button.id);
+          button.scrollIntoView({ block: "nearest" });
+        }
+      });
+
+      highlightedIndex = index;
+
+      if (index < 0) {
+        institutionInput.removeAttribute("aria-activedescendant");
+      }
+    }
+
+    function moveHighlightedSuggestion(direction) {
+      if (!currentSuggestions.length) {
+        return;
+      }
+
+      if (highlightedIndex < 0) {
+        setHighlightedSuggestion(direction > 0 ? 0 : currentSuggestions.length - 1);
+        return;
+      }
+
+      const nextIndex =
+        (highlightedIndex + direction + currentSuggestions.length) %
+        currentSuggestions.length;
+      setHighlightedSuggestion(nextIndex);
+    }
+
+    function createSuggestionButton(item, departmentLabel, index) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "institution-suggestion";
+      button.id = `institutionSuggestion${index}`;
+      button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", "false");
+
+      if (item.isFull) {
+        button.classList.add("is-full");
+      }
+
+      const name = document.createElement("span");
+      name.className = "institution-suggestion-name";
+      name.textContent = item.label;
+
+      const meta = document.createElement("span");
+      meta.className = "institution-suggestion-meta";
+      meta.textContent = item.isFull
+        ? `0 slots left in ${departmentLabel}`
+        : `${item.remainingSlots} of ${item.institutionLimit} slots left`;
+
+      button.appendChild(name);
+      button.appendChild(meta);
+
+      button.addEventListener("click", () => {
+        selectSuggestion(item, departmentLabel);
+      });
+
+      button.addEventListener("mouseenter", () => {
+        setHighlightedSuggestion(index);
+      });
+
+      return button;
+    }
+
+    function renderSuggestions(data) {
+      const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+
+      if (!suggestions.length) {
+        clearSuggestions();
+        return;
+      }
+
+      suggestionsBox.hidden = false;
+      suggestionsBox.innerHTML = "";
+      institutionInput.setAttribute("aria-expanded", "true");
+      currentSuggestions = suggestions;
+      highlightedIndex = -1;
+
+      suggestions.forEach((item, index) => {
+        suggestionsBox.appendChild(createSuggestionButton(item, data.departmentLabel, index));
+      });
+    }
+
+    function updateStatus(data) {
+      const departmentLabel = data.departmentLabel || "the selected department";
+      const institutionLimit = Number(data.institutionLimit || 0);
+      const exactMatch = data.exactMatch || null;
+      const typedValue = institutionInput.value.trim();
+
+      if (!departmentSelect.value) {
+        setSubmitDisabled(false);
+        clearSuggestions();
+        setStatus(
+          "Select a department first, then start typing the institution name to see saved suggestions and remaining institution slots.",
+          "muted"
+        );
+        return;
+      }
+
+      if (!typedValue) {
+        setSubmitDisabled(false);
+        clearSuggestions();
+        setStatus(
+          "Start typing the institution name to see matching institutions and how many slots remain for that institution in the selected department.",
+          "muted"
+        );
+        return;
+      }
+
+      if (exactMatch && exactMatch.remainingSlots <= 0) {
+        setSubmitDisabled(true);
+        setStatus(
+          `${exactMatch.label} has 0 institution slots remaining in ${departmentLabel}. Choose another institution or a different department.`,
+          "danger",
+          true
+        );
+        return;
+      }
+
+      setSubmitDisabled(false);
+
+      if (exactMatch) {
+        const tone = exactMatch.remainingSlots <= 1 ? "warning" : "success";
+        setStatus(
+          `${exactMatch.label} has ${exactMatch.remainingSlots} of ${exactMatch.institutionLimit} institution slots remaining in ${departmentLabel}.`,
+          tone
+        );
+        return;
+      }
+
+      if (institutionLimit > 0) {
+        setStatus(
+          `No exact saved match selected yet. ${departmentLabel} allows up to ${institutionLimit} slot(s) per institution.`,
+          "muted"
+        );
+      } else {
+        setStatus(
+          `No institution slots are currently configured for ${departmentLabel}.`,
+          "warning"
+        );
+      }
+    }
+
+    async function fetchSuggestions() {
+      const query = institutionInput.value.trim();
+      const department = departmentSelect.value.trim();
+
+      if (!department) {
+        updateStatus({ institutionLimit: 0, exactMatch: null, departmentLabel: "" });
+        return;
+      }
+
+      if (!query) {
+        updateStatus({ institutionLimit: 0, exactMatch: null, departmentLabel: departmentSelect.options[departmentSelect.selectedIndex]?.text || "" });
+        return;
+      }
+
+      if (activeController) {
+        activeController.abort();
+      }
+
+      activeController = new AbortController();
+
+      try {
+        const response = await fetch(
+          `/api/institution-suggestions?department=${encodeURIComponent(department)}&q=${encodeURIComponent(query)}`,
+          { signal: activeController.signal }
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to load institution suggestions.");
+        }
+
+        const data = await response.json();
+        renderSuggestions(data);
+        updateStatus(data);
+      } catch (error) {
+        if (error.name === "AbortError") {
+          return;
+        }
+
+        clearSuggestions();
+        setSubmitDisabled(false);
+        setStatus(
+          "Institution suggestions are temporarily unavailable. You can still type the institution name in full.",
+          "warning"
+        );
+      }
+    }
+
+    function queueFetch() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(fetchSuggestions, 180);
+    }
+
+    institutionInput.addEventListener("input", queueFetch);
+    institutionInput.addEventListener("focus", queueFetch);
+    institutionInput.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown") {
+        if (currentSuggestions.length) {
+          event.preventDefault();
+          moveHighlightedSuggestion(1);
+        }
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        if (currentSuggestions.length) {
+          event.preventDefault();
+          moveHighlightedSuggestion(-1);
+        }
+        return;
+      }
+
+      if (event.key === "Enter") {
+        if (highlightedIndex >= 0 && currentSuggestions[highlightedIndex]) {
+          event.preventDefault();
+          selectSuggestion(
+            currentSuggestions[highlightedIndex],
+            departmentSelect.options[departmentSelect.selectedIndex]?.text || ""
+          );
+        }
+        return;
+      }
+
+      if (event.key === "Escape") {
+        clearSuggestions();
+      }
+    });
+    departmentSelect.addEventListener("change", queueFetch);
+
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest(".institution-field")) {
+        clearSuggestions();
+      }
+    });
+
+    queueFetch();
+  })();
+</script>
 <%- include("partials/layout-close") %>
 
