@@ -501,6 +501,7 @@ Removed or intentionally not active:
 
 ## Recommended Future Work
 
+- See the full build backlog in [ROADMAP.md](ROADMAP.md)
 - add admin account management UI instead of editing JSON manually
 - move from SQLite file storage to PostgreSQL or another managed database for multi-user production deployment
 - add reporting and export tools
