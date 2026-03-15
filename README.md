@@ -369,16 +369,8 @@ Do not store real production credentials in `README.md`.
 
 Main project data files:
 
-- `data/attachment-application-system.db` -> SQLite database for applications, settings, and department admin accounts
+- `data/attachment-application-system.db` -> SQLite database for applications, settings, department admin accounts, and login sessions
 - `uploads/` -> uploaded documents and joining letters
-
-Legacy migration files:
-
-- `data/applications.json`
-- `data/portal-settings.json`
-- `data/department-admins.json`
-
-These JSON files are only used as one-time import sources if they exist and the database is empty.
 
 ## Environment Configuration
 
@@ -388,6 +380,7 @@ Current important keys:
 
 - `PORT`
 - `SESSION_SECRET`
+- `SESSION_COOKIE_MAX_AGE_HOURS`
 - `STORAGE_ROOT`
 - `DATABASE_FILE`
 - `ADMIN_PORTAL_PATH`
@@ -410,6 +403,13 @@ Current important keys:
 - Leave `DATABASE_FILE` empty to use the default path:
   - `<storage_root>/data/attachment-application-system.db`
 - Set `DATABASE_FILE` only if you want the database file in a different location.
+
+### Session storage
+
+- Admin and HR login sessions are stored in the SQLite database instead of Express MemoryStore.
+- This removes the default session warning and makes session handling consistent with the rest of the system.
+- Session lifetime is controlled by:
+  - `SESSION_COOKIE_MAX_AGE_HOURS`
 
 ## How To Run
 
@@ -456,6 +456,7 @@ This repository now includes `render.yaml` for Render deployment.
 ### Required Render environment values
 
 - `SESSION_SECRET`
+- `DISPLAY_TIMEZONE`
 - `HR_USERNAME`
 - `HR_PASSWORD`
 - `DEFAULT_DEPARTMENT_ADMIN_PASSWORD`
@@ -466,6 +467,7 @@ This repository now includes `render.yaml` for Render deployment.
 - `PRESENTATION_LOGIN_PASSWORD`
 - `ALLOW_ANY_TEST_UPLOADS`
 - `DATABASE_FILE` if you want a custom SQLite path
+- `SESSION_COOKIE_MAX_AGE_HOURS`
 
 ### Why the disk is required
 
@@ -474,6 +476,7 @@ The application writes the SQLite database file and uploads to the filesystem. W
 - applications
 - portal settings
 - department admin bootstrap data
+- login sessions
 - uploaded combined documents
 - uploaded joining letters
 

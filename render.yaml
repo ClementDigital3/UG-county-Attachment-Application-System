@@ -9,8 +9,14 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
+      - key: NODE_ENV
+        value: production
+      - key: DISPLAY_TIMEZONE
+        value: Africa/Nairobi
       - key: SESSION_SECRET
         generateValue: true
+      - key: SESSION_COOKIE_MAX_AGE_HOURS
+        value: "12"
       - key: ADMIN_PORTAL_PATH
         value: /staff-portal
       - key: HR_PORTAL_PATH

@@ -8,23 +8,9 @@ function ensureDirectoryExists(dirPath) {
   }
 }
 
-function safeReadJson(filePath, fallback) {
-  if (!filePath || !fs.existsSync(filePath)) {
-    return fallback;
-  }
-
-  try {
-    const raw = fs.readFileSync(filePath, "utf-8");
-    return JSON.parse(raw);
-  } catch (_error) {
-    return fallback;
-  }
-}
-
 function createDatabase({
   dataDir,
   databaseFile,
-  legacyPaths = {},
   createDefaultSettings,
   createDefaultDepartmentAdmins
 }) {
@@ -67,6 +53,15 @@ function createDatabase({
     CREATE INDEX IF NOT EXISTS idx_applications_department ON applications(appliedDepartment);
     CREATE INDEX IF NOT EXISTS idx_applications_tracking ON applications(placementNumber);
     CREATE INDEX IF NOT EXISTS idx_applications_email ON applications(email);
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      sid TEXT PRIMARY KEY,
+      expiresAt INTEGER,
+      data TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expiresAt);
   `);
 
   const getSettingsRow = db.prepare("SELECT value FROM settings WHERE key = ?");
@@ -155,6 +150,20 @@ function createDatabase({
     });
   });
 
+  const getSessionRow = db.prepare("SELECT data, expiresAt FROM sessions WHERE sid = ?");
+  const upsertSessionRow = db.prepare(`
+    INSERT INTO sessions (sid, expiresAt, data, updatedAt)
+    VALUES (@sid, @expiresAt, @data, @updatedAt)
+    ON CONFLICT(sid) DO UPDATE SET
+      expiresAt = excluded.expiresAt,
+      data = excluded.data,
+      updatedAt = excluded.updatedAt
+  `);
+  const deleteSessionRow = db.prepare("DELETE FROM sessions WHERE sid = ?");
+  const deleteExpiredSessionsRow = db.prepare(
+    "DELETE FROM sessions WHERE expiresAt IS NOT NULL AND expiresAt > 0 AND expiresAt <= ?"
+  );
+
   function writeSettings(settings) {
     setSettingsRow.run("portal_settings", JSON.stringify(settings));
   }
@@ -201,31 +210,72 @@ function createDatabase({
       .filter(Boolean);
   }
 
-  function migrateLegacyData() {
-    const hasSettings = Boolean(getSettingsRow.get("portal_settings"));
-    if (!hasSettings) {
-      const legacySettings = safeReadJson(legacyPaths.settings, null);
-      writeSettings(legacySettings && typeof legacySettings === "object" ? legacySettings : createDefaultSettings());
-    }
-
-    if ((countDepartmentAdmins.get().total || 0) === 0) {
-      const legacyAdmins = safeReadJson(legacyPaths.departmentAdmins, null);
-      writeDepartmentAdmins(
-        Array.isArray(legacyAdmins) && legacyAdmins.length
-          ? legacyAdmins
-          : createDefaultDepartmentAdmins()
-      );
-    }
-
-    if ((countApplications.get().total || 0) === 0) {
-      const legacyApplications = safeReadJson(legacyPaths.applications, null);
-      if (Array.isArray(legacyApplications) && legacyApplications.length) {
-        writeApplications(legacyApplications);
+  function getSessionExpiry(sessionData) {
+    const expiresValue = sessionData?.cookie?.expires;
+    if (expiresValue) {
+      const dateValue = new Date(expiresValue);
+      if (!Number.isNaN(dateValue.getTime())) {
+        return dateValue.getTime();
       }
+    }
+
+    const maxAge = Number(sessionData?.cookie?.maxAge);
+    if (Number.isFinite(maxAge) && maxAge > 0) {
+      return Date.now() + maxAge;
+    }
+
+    return null;
+  }
+
+  function pruneExpiredSessions(now = Date.now()) {
+    deleteExpiredSessionsRow.run(now);
+  }
+
+  function readSession(sid) {
+    pruneExpiredSessions();
+    const row = getSessionRow.get(sid);
+    if (!row) {
+      return null;
+    }
+
+    if (row.expiresAt && row.expiresAt > 0 && row.expiresAt <= Date.now()) {
+      deleteSessionRow.run(sid);
+      return null;
+    }
+
+    try {
+      return JSON.parse(row.data);
+    } catch (_error) {
+      deleteSessionRow.run(sid);
+      return null;
     }
   }
 
-  migrateLegacyData();
+  function writeSession(sid, sessionData) {
+    pruneExpiredSessions();
+    upsertSessionRow.run({
+      sid,
+      expiresAt: getSessionExpiry(sessionData),
+      data: JSON.stringify(sessionData || {}),
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  function deleteSession(sid) {
+    deleteSessionRow.run(sid);
+  }
+
+  function initializeDefaults() {
+    if (!getSettingsRow.get("portal_settings")) {
+      writeSettings(createDefaultSettings());
+    }
+
+    if ((countDepartmentAdmins.get().total || 0) === 0) {
+      writeDepartmentAdmins(createDefaultDepartmentAdmins());
+    }
+  }
+
+  initializeDefaults();
 
   return {
     databaseFile,
@@ -234,7 +284,11 @@ function createDatabase({
     readDepartmentAdmins,
     writeDepartmentAdmins,
     readApplications,
-    writeApplications
+    writeApplications,
+    readSession,
+    writeSession,
+    deleteSession,
+    pruneExpiredSessions
   };
 }
 

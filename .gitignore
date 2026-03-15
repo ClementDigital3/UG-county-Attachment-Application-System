@@ -1,6 +1,5 @@
 node_modules/
 .env
-data/department-admins.json
 data/notifications.json
 data/*.db
 data/*.db-*

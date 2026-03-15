@@ -32,10 +32,6 @@ const EICAR_SIGNATURE =
 const STATUS_OPTIONS = ["Pending", "Needs Correction", "Verified", "Approved", "Rejected"];
 const HR_VISIBLE_STATUSES = new Set(["Verified", "Approved", "Rejected"]);
 const DEFAULT_INSTITUTION_MAX_SHARE_PERCENT = 40;
-
-const DATA_FILE = path.join(DATA_DIR, "applications.json");
-const SETTINGS_FILE = path.join(DATA_DIR, "portal-settings.json");
-const DEPARTMENT_ADMINS_FILE = path.join(DATA_DIR, "department-admins.json");
 const DATABASE_FILE = process.env.DATABASE_FILE
   ? path.resolve(process.env.DATABASE_FILE)
   : path.join(DATA_DIR, "attachment-application-system.db");
@@ -145,6 +141,7 @@ const HR_PASSWORD = process.env.HR_PASSWORD || "hr123";
 const PRESENTATION_LOGIN_USERNAME = process.env.PRESENTATION_LOGIN_USERNAME || "";
 const PRESENTATION_LOGIN_PASSWORD = process.env.PRESENTATION_LOGIN_PASSWORD || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-secret";
+const SESSION_COOKIE_MAX_AGE_HOURS = Number(process.env.SESSION_COOKIE_MAX_AGE_HOURS || 12);
 const ADMIN_PORTAL_PATH = process.env.ADMIN_PORTAL_PATH || "/staff-portal";
 const HR_PORTAL_PATH = process.env.HR_PORTAL_PATH || "/hr-portal";
 const DISPLAY_TIMEZONE = process.env.DISPLAY_TIMEZONE || "Africa/Nairobi";
@@ -197,14 +194,54 @@ function createDefaultDepartmentAdmins() {
 const database = createDatabase({
   dataDir: DATA_DIR,
   databaseFile: DATABASE_FILE,
-  legacyPaths: {
-    applications: DATA_FILE,
-    settings: SETTINGS_FILE,
-    departmentAdmins: DEPARTMENT_ADMINS_FILE
-  },
   createDefaultSettings,
   createDefaultDepartmentAdmins
 });
+
+class SqliteSessionStore extends session.Store {
+  constructor(db) {
+    super();
+    this.db = db;
+  }
+
+  get(sid, callback) {
+    try {
+      const sessionData = this.db.readSession(sid);
+      callback(null, sessionData);
+    } catch (error) {
+      callback(error);
+    }
+  }
+
+  set(sid, sessionData, callback) {
+    try {
+      this.db.writeSession(sid, sessionData);
+      callback?.(null);
+    } catch (error) {
+      callback?.(error);
+    }
+  }
+
+  destroy(sid, callback) {
+    try {
+      this.db.deleteSession(sid);
+      callback?.(null);
+    } catch (error) {
+      callback?.(error);
+    }
+  }
+
+  touch(sid, sessionData, callback) {
+    try {
+      this.db.writeSession(sid, sessionData);
+      callback?.(null);
+    } catch (error) {
+      callback?.(error);
+    }
+  }
+}
+
+const sessionStore = new SqliteSessionStore(database);
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -259,15 +296,23 @@ const joiningLetterUploadMiddleware = upload.single(JOINING_LETTER_FIELD);
 
 app.set("view engine", "ejs");
 app.set("views", VIEWS_DIR);
+app.set("trust proxy", 1);
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(PUBLIC_DIR));
 app.use(
   session({
+    store: sessionStore,
     secret: SESSION_SECRET,
     resave: false,
-    saveUninitialized: false
+    saveUninitialized: false,
+    cookie: {
+      maxAge: Math.max(1, SESSION_COOKIE_MAX_AGE_HOURS) * 60 * 60 * 1000,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production"
+    }
   })
 );
 
@@ -2816,4 +2861,11 @@ app.listen(PORT, () => {
   console.log(`HR portal entry: http://localhost:${PORT}${HR_PORTAL_PATH}`);
   console.log(`Storage root: ${STORAGE_ROOT}`);
   console.log(`Database file: ${DATABASE_FILE}`);
+  console.log("Session store: SQLite");
+
+  if (process.env.NODE_ENV === "production" && !process.env.STORAGE_ROOT) {
+    console.warn(
+      "Persistent storage warning: STORAGE_ROOT is not set. Uploaded files, database data, and sessions will reset on ephemeral hosting."
+    );
+  }
 });
