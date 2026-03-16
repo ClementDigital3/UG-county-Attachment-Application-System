@@ -81,8 +81,11 @@ This project currently covers:
 - Student tracking and document correction flow.
 - Department admin portal with department-scoped access.
 - HR portal for final approval and joining letter upload.
+- HR admin account management UI for department admins.
+- Reports and analytics pages for HR and department admins.
 - Period control, department slot control, and institution fairness control.
-- Local SQLite database storage for applications, settings, and department accounts.
+- SQLite database storage for applications, settings, department accounts, and login sessions.
+- File storage abstraction with local storage by default and optional Cloudinary cloud storage.
 
 ## End-To-End Workflow
 
@@ -335,6 +338,7 @@ Default first-run pattern:
 
 - username format: `<department>_admin`
 - password: value from `DEFAULT_DEPARTMENT_ADMIN_PASSWORD`
+- HR can now create, edit, activate, deactivate, delete, and reset department admin accounts from the portal.
 
 ### HR account
 
@@ -370,7 +374,7 @@ Do not store real production credentials in `README.md`.
 Main project data files:
 
 - `data/attachment-application-system.db` -> SQLite database for applications, settings, department admin accounts, and login sessions
-- `uploads/` -> uploaded documents and joining letters
+- `uploads/` -> uploaded documents and joining letters when local file storage is active
 
 ## Environment Configuration
 
@@ -383,6 +387,11 @@ Current important keys:
 - `SESSION_COOKIE_MAX_AGE_HOURS`
 - `STORAGE_ROOT`
 - `DATABASE_FILE`
+- `FILE_STORAGE_PROVIDER`
+- `CLOUDINARY_CLOUD_NAME`
+- `CLOUDINARY_API_KEY`
+- `CLOUDINARY_API_SECRET`
+- `CLOUDINARY_FOLDER`
 - `ADMIN_PORTAL_PATH`
 - `HR_PORTAL_PATH`
 - `HR_USERNAME`
@@ -403,6 +412,17 @@ Current important keys:
 - Leave `DATABASE_FILE` empty to use the default path:
   - `<storage_root>/data/attachment-application-system.db`
 - Set `DATABASE_FILE` only if you want the database file in a different location.
+
+### File storage
+
+- `FILE_STORAGE_PROVIDER=local` keeps uploaded files on the server filesystem.
+- `FILE_STORAGE_PROVIDER=cloudinary` moves combined documents and joining letters to Cloudinary.
+- When Cloudinary is selected, configure:
+  - `CLOUDINARY_CLOUD_NAME`
+  - `CLOUDINARY_API_KEY`
+  - `CLOUDINARY_API_SECRET`
+  - `CLOUDINARY_FOLDER`
+- If Cloudinary is requested but not fully configured, the app falls back to local storage and logs a warning.
 
 ### Session storage
 
@@ -468,10 +488,15 @@ This repository now includes `render.yaml` for Render deployment.
 - `ALLOW_ANY_TEST_UPLOADS`
 - `DATABASE_FILE` if you want a custom SQLite path
 - `SESSION_COOKIE_MAX_AGE_HOURS`
+- `FILE_STORAGE_PROVIDER`
+- `CLOUDINARY_CLOUD_NAME`
+- `CLOUDINARY_API_KEY`
+- `CLOUDINARY_API_SECRET`
+- `CLOUDINARY_FOLDER`
 
 ### Why the disk is required
 
-The application writes the SQLite database file and uploads to the filesystem. Without a persistent disk, redeploys or restarts can remove:
+The application writes the SQLite database file and, when local storage is active, uploaded files to the filesystem. Without a persistent disk, redeploys or restarts can remove:
 
 - applications
 - portal settings
@@ -479,6 +504,8 @@ The application writes the SQLite database file and uploads to the filesystem. W
 - login sessions
 - uploaded combined documents
 - uploaded joining letters
+
+If `FILE_STORAGE_PROVIDER=cloudinary` is configured correctly, uploaded documents and joining letters can persist in Cloudinary even when Render local storage is temporary. The SQLite database still needs a persistent disk or a managed database for full hosted persistence.
 
 ## What Has Been Removed
 
@@ -502,9 +529,7 @@ Removed or intentionally not active:
 ## Recommended Future Work
 
 - See the full build backlog in [ROADMAP.md](ROADMAP.md)
-- add admin account management UI instead of editing JSON manually
 - move from SQLite file storage to PostgreSQL or another managed database for multi-user production deployment
-- add reporting and export tools
 - add audit logs
 - improve institution balancing dashboards per department
 - add stronger production authentication and authorization

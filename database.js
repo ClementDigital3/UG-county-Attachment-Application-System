@@ -8,6 +8,14 @@ function ensureDirectoryExists(dirPath) {
   }
 }
 
+function ensureColumnExists(db, tableName, columnName, definitionSql) {
+  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+  const hasColumn = columns.some((column) => column.name === columnName);
+  if (!hasColumn) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${definitionSql}`);
+  }
+}
+
 function createDatabase({
   dataDir,
   databaseFile,
@@ -64,6 +72,10 @@ function createDatabase({
     CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expiresAt);
   `);
 
+  ensureColumnExists(db, "department_admins", "isActive", "isActive INTEGER NOT NULL DEFAULT 1");
+  ensureColumnExists(db, "department_admins", "createdAt", "createdAt TEXT");
+  ensureColumnExists(db, "department_admins", "updatedAt", "updatedAt TEXT");
+
   const getSettingsRow = db.prepare("SELECT value FROM settings WHERE key = ?");
   const setSettingsRow = db.prepare(`
     INSERT INTO settings (key, value)
@@ -72,14 +84,32 @@ function createDatabase({
   `);
   const countDepartmentAdmins = db.prepare("SELECT COUNT(*) AS total FROM department_admins");
   const selectDepartmentAdmins = db.prepare(`
-    SELECT username, password, role, department, displayName
+    SELECT username, password, role, department, displayName, isActive, createdAt, updatedAt
     FROM department_admins
     ORDER BY department, username
   `);
   const clearDepartmentAdmins = db.prepare("DELETE FROM department_admins");
   const insertDepartmentAdmin = db.prepare(`
-    INSERT INTO department_admins (username, password, role, department, displayName)
-    VALUES (@username, @password, @role, @department, @displayName)
+    INSERT INTO department_admins (
+      username,
+      password,
+      role,
+      department,
+      displayName,
+      isActive,
+      createdAt,
+      updatedAt
+    )
+    VALUES (
+      @username,
+      @password,
+      @role,
+      @department,
+      @displayName,
+      @isActive,
+      @createdAt,
+      @updatedAt
+    )
   `);
   const countApplications = db.prepare("SELECT COUNT(*) AS total FROM applications");
   const selectApplications = db.prepare(`
@@ -120,12 +150,16 @@ function createDatabase({
   const writeDepartmentAdminsTransaction = db.transaction((admins) => {
     clearDepartmentAdmins.run();
     admins.forEach((admin) => {
+      const timestamp = new Date().toISOString();
       insertDepartmentAdmin.run({
         username: (admin.username || "").toString().trim().toLowerCase(),
         password: (admin.password || "").toString(),
         role: (admin.role || "department_admin").toString(),
         department: (admin.department || "").toString(),
-        displayName: (admin.displayName || "").toString()
+        displayName: (admin.displayName || "").toString(),
+        isActive: admin.isActive === false ? 0 : 1,
+        createdAt: (admin.createdAt || timestamp).toString(),
+        updatedAt: (admin.updatedAt || timestamp).toString()
       });
     });
   });

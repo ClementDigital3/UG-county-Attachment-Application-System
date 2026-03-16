@@ -5,8 +5,11 @@
           <h1><%= isHrAdmin ? 'HR Period and Slot Control' : 'Department Slot Control' %></h1>
           <div class="actions tight">
             <% if (isHrAdmin) { %>
+              <a class="btn secondary" href="/hr/reports">Reports</a>
+              <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
               <a class="btn secondary" href="/hr/applications">HR Queue</a>
             <% } else { %>
+              <a class="btn secondary" href="/admin/reports">Reports</a>
               <a class="btn secondary" href="/admin/departments">Departments</a>
               <a class="btn secondary" href="/admin/applications">Applications</a>
             <% } %>
@@ -31,6 +34,13 @@
         <% if (adminScopeDepartmentLabel) { %>
           <p><strong>Department Access:</strong> <%= adminScopeDepartmentLabel %></p>
         <% } %>
+
+        <div class="summary">
+          <p><strong>Current document storage:</strong> <%= fileStorageProvider === 'cloudinary' ? 'Cloudinary cloud storage' : 'Local server storage' %></p>
+          <% if (fileStorageWarning) { %>
+            <p><strong>Storage warning:</strong> <%= fileStorageWarning %></p>
+          <% } %>
+        </div>
 
         <% if (saved) { %>
           <div class="notice">Period settings updated successfully.</div>

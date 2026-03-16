@@ -17,6 +17,8 @@ services:
         generateValue: true
       - key: SESSION_COOKIE_MAX_AGE_HOURS
         value: "12"
+      - key: FILE_STORAGE_PROVIDER
+        value: local
       - key: ADMIN_PORTAL_PATH
         value: /staff-portal
       - key: HR_PORTAL_PATH
@@ -31,5 +33,13 @@ services:
         sync: false
       - key: DEFAULT_DEPARTMENT_ADMIN_PASSWORD
         sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: CLOUDINARY_FOLDER
+        value: attachment-application-system
       - key: ALLOW_ANY_TEST_UPLOADS
         value: "false"

@@ -1,0 +1,211 @@
+<%- include("partials/layout-open", { pageTitle: pageTitle, activePortal: activePortal }) %>
+<main class="container wide">
+      <section class="card">
+        <div class="row-between">
+          <h1><%= pageTitle %></h1>
+          <div class="actions tight">
+            <% if (isHrAdmin) { %>
+              <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+              <a class="btn secondary" href="/hr/applications">HR Queue</a>
+            <% } else { %>
+              <a class="btn secondary" href="/admin/departments">Departments</a>
+              <a class="btn secondary" href="/admin/applications">Applications</a>
+            <% } %>
+            <a class="btn secondary" href="<%= exportPath %>?status=<%= encodeURIComponent(filters.status) %>&period=<%= encodeURIComponent(filters.period) %>&department=<%= encodeURIComponent(filters.department) %>">Export CSV</a>
+          </div>
+        </div>
+
+        <p>Use this dashboard to monitor application volume, approvals, institutional spread, and remaining capacity.</p>
+
+        <form method="get" action="<%= actionPath %>" class="filter-row">
+          <label>
+            Status
+            <select name="status">
+              <option value="All" <%= filters.status === 'All' ? 'selected' : '' %>>All</option>
+              <% statusOptions.forEach((status) => { %>
+                <option value="<%= status %>" <%= filters.status === status ? 'selected' : '' %>><%= status %></option>
+              <% }) %>
+            </select>
+          </label>
+
+          <label>
+            Period
+            <select name="period">
+              <option value="All" <%= filters.period === 'All' ? 'selected' : '' %>>All periods</option>
+              <% periodOptions.forEach((period) => { %>
+                <option value="<%= period.key %>" <%= filters.period === period.key ? 'selected' : '' %>><%= period.label %></option>
+              <% }) %>
+            </select>
+          </label>
+
+          <% if (isHrAdmin) { %>
+            <label>
+              Department
+              <select name="department">
+                <option value="All" <%= filters.department === 'All' ? 'selected' : '' %>>All departments</option>
+                <% departmentOptions.forEach((department) => { %>
+                  <option value="<%= department.key %>" <%= filters.department === department.key ? 'selected' : '' %>><%= department.label %></option>
+                <% }) %>
+              </select>
+            </label>
+          <% } %>
+
+          <button class="btn" type="submit">Apply Filters</button>
+        </form>
+
+        <div class="stats">
+          <div>
+            <strong><%= analytics.totals.total %></strong>
+            <span>Total applications</span>
+          </div>
+          <div>
+            <strong><%= analytics.totals.approved %></strong>
+            <span>Approved</span>
+          </div>
+          <div>
+            <strong><%= analytics.totals.verified %></strong>
+            <span>Verified</span>
+          </div>
+          <div>
+            <strong><%= analytics.totals.pending %></strong>
+            <span>Pending / Correction</span>
+          </div>
+          <div>
+            <strong><%= analytics.totals.approvalRate %>%</strong>
+            <span>Approval rate</span>
+          </div>
+          <div>
+            <strong><%= analytics.totals.averageProcessingHours %>h</strong>
+            <span>Avg. processing time</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Status Summary</h2>
+        <div class="stats compact">
+          <% analytics.statusSummary.forEach((row) => { %>
+            <div>
+              <strong><%= row.count %></strong>
+              <span><%= row.status %></span>
+            </div>
+          <% }) %>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Department Capacity Snapshot</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Department</th>
+                <th>Capacity</th>
+                <th>Applications</th>
+                <th>Verified</th>
+                <th>Approved</th>
+                <th>Pending</th>
+                <th>Remaining</th>
+                <th>Fill Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (!analytics.departmentSummary.length) { %>
+                <tr>
+                  <td colspan="8">No department data available for this filter.</td>
+                </tr>
+              <% } %>
+              <% analytics.departmentSummary.forEach((row) => { %>
+                <tr>
+                  <td><%= row.label %></td>
+                  <td><%= row.capacity %></td>
+                  <td><%= row.applications %></td>
+                  <td><%= row.verified %></td>
+                  <td><%= row.approved %></td>
+                  <td><%= row.pending %></td>
+                  <td><%= row.remaining %></td>
+                  <td><%= row.fillRate %>%</td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Period Summary</h2>
+        <div class="stats compact">
+          <% analytics.periodSummary.forEach((row) => { %>
+            <div>
+              <strong><%= row.count %></strong>
+              <span><%= row.label %></span>
+            </div>
+          <% }) %>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Top Institutions</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Institution</th>
+                <th>Total</th>
+                <th>Verified</th>
+                <th>Approved</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (!analytics.institutionSummary.length) { %>
+                <tr>
+                  <td colspan="4">No institution data available for this filter.</td>
+                </tr>
+              <% } %>
+              <% analytics.institutionSummary.forEach((row) => { %>
+                <tr>
+                  <td><%= row.institution %></td>
+                  <td><%= row.total %></td>
+                  <td><%= row.verified %></td>
+                  <td><%= row.approved %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Recent Activity</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tracking Number</th>
+                <th>Name</th>
+                <th>Department</th>
+                <th>Status</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (!analytics.recentApplications.length) { %>
+                <tr>
+                  <td colspan="5">No recent applications available.</td>
+                </tr>
+              <% } %>
+              <% analytics.recentApplications.forEach((application) => { %>
+                <tr>
+                  <td><%= application.placementNumber || application.id %></td>
+                  <td><%= application.fullName %></td>
+                  <td><%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></td>
+                  <td><span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></td>
+                  <td><%= formatDate(application.updatedAt || application.submittedAt) %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+<%- include("partials/layout-close") %>

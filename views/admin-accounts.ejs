@@ -1,0 +1,148 @@
+<%- include("partials/layout-open", { pageTitle: "Department Admin Accounts", activePortal: "hr" }) %>
+<main class="container wide">
+      <section class="card">
+        <div class="row-between">
+          <h1>Department Admin Accounts</h1>
+          <div class="actions tight">
+            <a class="btn secondary" href="/hr/reports">Reports</a>
+            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+            <a class="btn secondary" href="/hr/applications">HR Queue</a>
+            <form action="/hr/logout" method="post">
+              <button class="btn secondary" type="submit">Logout</button>
+            </form>
+          </div>
+        </div>
+
+        <p>Create and maintain department-specific admin accounts from the HR portal.</p>
+
+        <% if (notice) { %>
+          <div class="notice"><%= notice %></div>
+        <% } %>
+
+        <% if (error) { %>
+          <div class="alert"><%= error %></div>
+        <% } %>
+
+        <div class="summary">
+          <p><strong>Total department admin accounts:</strong> <%= adminAccounts.length %></p>
+          <p><strong>Active accounts:</strong> <%= adminAccounts.filter((item) => item.isActive).length %></p>
+          <p><strong>Inactive accounts:</strong> <%= adminAccounts.filter((item) => !item.isActive).length %></p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Create Department Admin</h2>
+        <form action="/hr/admin-accounts/create" method="post" class="form-grid">
+          <label>
+            Username
+            <input type="text" name="username" placeholder="ict_admin" required />
+          </label>
+
+          <label>
+            Display Name
+            <input type="text" name="displayName" placeholder="ICT Department Admin" required />
+          </label>
+
+          <label>
+            Department
+            <select name="department" required>
+              <option value="">Select department</option>
+              <% departmentOptions.forEach((department) => { %>
+                <option value="<%= department.key %>"><%= department.label %></option>
+              <% }) %>
+            </select>
+          </label>
+
+          <label>
+            Password
+            <input type="password" name="password" minlength="6" required />
+          </label>
+
+          <div class="actions full-width">
+            <button class="btn" type="submit">Create Admin Account</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Existing Department Admin Accounts</h2>
+
+        <% if (!adminAccounts.length) { %>
+          <p>No department admin accounts found.</p>
+        <% } %>
+
+        <div class="admin-account-grid">
+          <% adminAccounts.forEach((account) => { %>
+            <article class="summary admin-account-card">
+              <div class="row-between">
+                <div>
+                  <h3><%= account.displayName %></h3>
+                  <p class="muted-note">
+                    <strong><%= account.username %></strong> ·
+                    <%= getDepartmentLabel(account.department) %>
+                  </p>
+                </div>
+                <span class="badge <%= account.isActive ? 'approved' : 'rejected' %>">
+                  <%= account.isActive ? 'Active' : 'Inactive' %>
+                </span>
+              </div>
+
+              <form action="/hr/admin-accounts/<%= account.username %>/update" method="post" class="form-grid">
+                <label>
+                  Username
+                  <input type="text" name="username" value="<%= account.username %>" required />
+                </label>
+
+                <label>
+                  Display Name
+                  <input type="text" name="displayName" value="<%= account.displayName %>" required />
+                </label>
+
+                <label class="full-width">
+                  Department
+                  <select name="department" required>
+                    <% departmentOptions.forEach((department) => { %>
+                      <option value="<%= department.key %>" <%= account.department === department.key ? 'selected' : '' %>>
+                        <%= department.label %>
+                      </option>
+                    <% }) %>
+                  </select>
+                </label>
+
+                <div class="actions full-width">
+                  <button class="btn" type="submit">Save Account Details</button>
+                </div>
+              </form>
+
+              <form action="/hr/admin-accounts/<%= account.username %>/password" method="post" class="form-grid">
+                <label class="full-width">
+                  Reset Password
+                  <input type="password" name="password" minlength="6" placeholder="Enter new password" required />
+                </label>
+                <div class="actions full-width">
+                  <button class="btn secondary" type="submit">Update Password</button>
+                </div>
+              </form>
+
+              <div class="actions">
+                <form action="/hr/admin-accounts/<%= account.username %>/toggle" method="post">
+                  <input type="hidden" name="isActive" value="<%= account.isActive ? '0' : '1' %>" />
+                  <button class="btn secondary" type="submit">
+                    <%= account.isActive ? 'Deactivate Account' : 'Activate Account' %>
+                  </button>
+                </form>
+                <form action="/hr/admin-accounts/<%= account.username %>/delete" method="post" onsubmit="return confirm('Delete this department admin account?');">
+                  <button class="btn danger" type="submit">Delete Account</button>
+                </form>
+              </div>
+
+              <p class="muted-note">
+                Created: <%= account.createdAt ? formatDate(account.createdAt) : 'Not recorded' %><br />
+                Updated: <%= account.updatedAt ? formatDate(account.updatedAt) : 'Not recorded' %>
+              </p>
+            </article>
+          <% }) %>
+        </div>
+      </section>
+    </main>
+<%- include("partials/layout-close") %>

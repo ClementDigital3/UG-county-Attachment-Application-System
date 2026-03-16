@@ -7,6 +7,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { createDatabase } = require("./database");
+const { createFileStorage } = require("./file-storage");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -148,6 +149,11 @@ const DISPLAY_TIMEZONE = process.env.DISPLAY_TIMEZONE || "Africa/Nairobi";
 const ALLOW_ANY_TEST_UPLOADS = process.env.ALLOW_ANY_TEST_UPLOADS === "true";
 const DEFAULT_DEPARTMENT_ADMIN_PASSWORD =
   process.env.DEFAULT_DEPARTMENT_ADMIN_PASSWORD || "change_me";
+const FILE_STORAGE_PROVIDER = process.env.FILE_STORAGE_PROVIDER || "local";
+const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "";
+const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || "";
+const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || "";
+const CLOUDINARY_FOLDER = process.env.CLOUDINARY_FOLDER || "attachment-application-system";
 
 function ensureDirectoryExists(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -196,6 +202,15 @@ const database = createDatabase({
   databaseFile: DATABASE_FILE,
   createDefaultSettings,
   createDefaultDepartmentAdmins
+});
+
+const fileStorage = createFileStorage({
+  uploadDir: UPLOAD_DIR,
+  provider: FILE_STORAGE_PROVIDER,
+  cloudinaryCloudName: CLOUDINARY_CLOUD_NAME,
+  cloudinaryApiKey: CLOUDINARY_API_KEY,
+  cloudinaryApiSecret: CLOUDINARY_API_SECRET,
+  cloudinaryFolder: CLOUDINARY_FOLDER
 });
 
 class SqliteSessionStore extends session.Store {
@@ -377,6 +392,54 @@ function getDocumentLabel(fieldName) {
   return getDocumentDefinition(fieldName)?.label || fieldName;
 }
 
+function normalizeStoredFileEntry(entry) {
+  if (!entry) {
+    return null;
+  }
+
+  if (typeof entry === "string") {
+    const safeFilename = path.basename(entry);
+    return safeFilename
+      ? {
+        storage: "local",
+        filename: safeFilename,
+        originalName: safeFilename,
+        mimeType: "",
+        size: 0,
+        extension: path.extname(safeFilename).toLowerCase(),
+        cloudUrl: null,
+        publicId: null,
+        resourceType: null
+      }
+      : null;
+  }
+
+  const safeFilename = path.basename((entry.filename || "").toString());
+  return {
+    storage: entry.storage === "cloudinary" ? "cloudinary" : "local",
+    filename: safeFilename,
+    originalName: (entry.originalName || safeFilename).toString(),
+    mimeType: (entry.mimeType || "").toString(),
+    size: Number(entry.size || 0),
+    extension: (entry.extension || path.extname(entry.originalName || safeFilename)).toString(),
+    cloudUrl: (entry.cloudUrl || "").toString() || null,
+    publicId: (entry.publicId || "").toString() || null,
+    resourceType: (entry.resourceType || "").toString() || null,
+    uploadedAt: entry.uploadedAt || null,
+    security: entry.security || null
+  };
+}
+
+function normalizeStoredDocuments(documents) {
+  const normalized = {};
+
+  REQUIRED_DOCUMENT_FIELDS.forEach((fieldName) => {
+    normalized[fieldName] = normalizeStoredFileEntry(documents?.[fieldName]);
+  });
+
+  return normalized;
+}
+
 function ensureApplicationDefaults(application) {
   const appliedDepartment = application.appliedDepartment || application.department || "";
 
@@ -385,12 +448,12 @@ function ensureApplicationDefaults(application) {
     placementNumber: application.placementNumber || application.id || "",
     appliedDepartment,
     assignedDepartment: application.assignedDepartment || "",
-    documents: application.documents || {},
+    documents: normalizeStoredDocuments(application.documents || {}),
     documentSecurity: application.documentSecurity || {},
     documentsReview: normalizeDocumentsReview(application.documentsReview),
-    combinedDocument: application.combinedDocument || null,
+    combinedDocument: normalizeStoredFileEntry(application.combinedDocument),
     combinedDocumentReview: normalizeCombinedDocumentReview(application.combinedDocumentReview),
-    joiningLetter: application.joiningLetter || null
+    joiningLetter: normalizeStoredFileEntry(application.joiningLetter)
   };
 }
 
@@ -493,6 +556,9 @@ function normalizeDepartmentAdminUser(user) {
   const role = (user?.role || "department_admin").toString().trim();
   const department = (user?.department || "").toString().trim();
   const displayName = (user?.displayName || "").toString().trim();
+  const createdAt = (user?.createdAt || "").toString().trim();
+  const updatedAt = (user?.updatedAt || "").toString().trim();
+  const isActive = user?.isActive === false || Number(user?.isActive) === 0 ? false : true;
 
   if (!username || !password) {
     return null;
@@ -511,7 +577,10 @@ function normalizeDepartmentAdminUser(user) {
     password,
     role: "department_admin",
     department,
-    displayName: displayName || `${getDepartmentLabel(department)} Admin`
+    displayName: displayName || `${getDepartmentLabel(department)} Admin`,
+    isActive,
+    createdAt: createdAt || null,
+    updatedAt: updatedAt || null
   };
 }
 
@@ -548,10 +617,189 @@ function findAdminUserByCredentials(usernameInput, passwordInput) {
   }
 
   const departmentAdmin = readDepartmentAdmins().find(
-    (item) => item.username === username && item.password === password
+    (item) => item.username === username && item.password === password && item.isActive
   );
 
   return departmentAdmin || null;
+}
+
+function validateDepartmentAdminInput({
+  username,
+  password,
+  department,
+  displayName,
+  existingUsername = null
+}) {
+  const normalizedUsername = normalizeAdminUsername(username);
+  const normalizedDepartment = (department || "").toString().trim();
+  const normalizedDisplayName = (displayName || "").toString().trim();
+  const rawPassword = (password || "").toString();
+
+  if (!normalizedUsername) {
+    return { error: "Username is required." };
+  }
+
+  if (!/^[a-z0-9_]{3,40}$/.test(normalizedUsername)) {
+    return {
+      error: "Username must be 3 to 40 characters and use only lowercase letters, numbers, or underscores."
+    };
+  }
+
+  if (!isValidDepartment(normalizedDepartment)) {
+    return { error: "Please choose a valid department." };
+  }
+
+  if (!normalizedDisplayName) {
+    return { error: "Display name is required." };
+  }
+
+  if (rawPassword && rawPassword.length < 6) {
+    return { error: "Password must be at least 6 characters long." };
+  }
+
+  if (
+    normalizedUsername === normalizeAdminUsername(HR_USERNAME) ||
+    normalizedUsername === normalizeAdminUsername(PRESENTATION_LOGIN_USERNAME)
+  ) {
+    return { error: "This username is reserved and cannot be used for a department admin." };
+  }
+
+  const existingAdmins = readDepartmentAdmins();
+  const usernameTaken = existingAdmins.some(
+    (admin) => admin.username === normalizedUsername && admin.username !== existingUsername
+  );
+  if (usernameTaken) {
+    return { error: "That username is already in use." };
+  }
+
+  return {
+    value: {
+      username: normalizedUsername,
+      password: rawPassword,
+      department: normalizedDepartment,
+      displayName: normalizedDisplayName
+    }
+  };
+}
+
+function saveDepartmentAdmins(admins) {
+  const normalized = (admins || [])
+    .map((admin) => normalizeDepartmentAdminUser(admin))
+    .filter(Boolean);
+  database.writeDepartmentAdmins(normalized);
+}
+
+function createDepartmentAdminAccount({ username, password, department, displayName }) {
+  const validation = validateDepartmentAdminInput({
+    username,
+    password,
+    department,
+    displayName
+  });
+
+  if (validation.error) {
+    return { error: validation.error };
+  }
+
+  if (!validation.value.password) {
+    return { error: "Password is required for a new admin account." };
+  }
+
+  const timestamp = new Date().toISOString();
+  const admins = readDepartmentAdmins();
+  admins.push({
+    ...validation.value,
+    role: "department_admin",
+    isActive: true,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  });
+  saveDepartmentAdmins(admins);
+  return { success: true };
+}
+
+function updateDepartmentAdminAccount(existingUsername, { department, displayName, username }) {
+  const admins = readDepartmentAdmins();
+  const index = admins.findIndex((admin) => admin.username === normalizeAdminUsername(existingUsername));
+
+  if (index === -1) {
+    return { error: "Department admin account not found." };
+  }
+
+  const existing = admins[index];
+  const validation = validateDepartmentAdminInput({
+    username: username || existing.username,
+    password: existing.password,
+    department,
+    displayName,
+    existingUsername: existing.username
+  });
+
+  if (validation.error) {
+    return { error: validation.error };
+  }
+
+  admins[index] = {
+    ...existing,
+    username: validation.value.username,
+    department: validation.value.department,
+    displayName: validation.value.displayName,
+    updatedAt: new Date().toISOString()
+  };
+  saveDepartmentAdmins(admins);
+  return { success: true };
+}
+
+function setDepartmentAdminPassword(existingUsername, password) {
+  const admins = readDepartmentAdmins();
+  const index = admins.findIndex((admin) => admin.username === normalizeAdminUsername(existingUsername));
+
+  if (index === -1) {
+    return { error: "Department admin account not found." };
+  }
+
+  if (!password || password.length < 6) {
+    return { error: "Password must be at least 6 characters long." };
+  }
+
+  admins[index] = {
+    ...admins[index],
+    password: password.toString(),
+    updatedAt: new Date().toISOString()
+  };
+  saveDepartmentAdmins(admins);
+  return { success: true };
+}
+
+function setDepartmentAdminActiveState(existingUsername, isActive) {
+  const admins = readDepartmentAdmins();
+  const index = admins.findIndex((admin) => admin.username === normalizeAdminUsername(existingUsername));
+
+  if (index === -1) {
+    return { error: "Department admin account not found." };
+  }
+
+  admins[index] = {
+    ...admins[index],
+    isActive: Boolean(isActive),
+    updatedAt: new Date().toISOString()
+  };
+  saveDepartmentAdmins(admins);
+  return { success: true };
+}
+
+function deleteDepartmentAdminAccount(existingUsername) {
+  const admins = readDepartmentAdmins();
+  const nextAdmins = admins.filter(
+    (admin) => admin.username !== normalizeAdminUsername(existingUsername)
+  );
+
+  if (nextAdmins.length === admins.length) {
+    return { error: "Department admin account not found." };
+  }
+
+  saveDepartmentAdmins(nextAdmins);
+  return { success: true };
 }
 
 function isSuperAdminSession(req) {
@@ -599,15 +847,31 @@ function doesApplicationReferenceFile(application, filename) {
     return false;
   }
 
-  const documentFiles = Object.values(application.documents || {}).map((value) =>
-    path.basename(value || "")
-  );
+  const documentFiles = Object.values(application.documents || {})
+    .map((value) => normalizeStoredFileEntry(value)?.filename || "")
+    .filter(Boolean);
 
   return (
     documentFiles.includes(safeFilename) ||
-    path.basename(application.combinedDocument?.filename || "") === safeFilename ||
-    path.basename(application.joiningLetter?.filename || "") === safeFilename
+    normalizeStoredFileEntry(application.combinedDocument)?.filename === safeFilename ||
+    normalizeStoredFileEntry(application.joiningLetter)?.filename === safeFilename
   );
+}
+
+function getApplicationStoredFileByFilename(application, filename) {
+  const safeFilename = path.basename(filename || "");
+  if (!safeFilename) {
+    return null;
+  }
+
+  const normalizedApplication = ensureApplicationDefaults(application);
+  const entries = [
+    normalizedApplication.combinedDocument,
+    normalizedApplication.joiningLetter,
+    ...Object.values(normalizedApplication.documents || {})
+  ].filter(Boolean);
+
+  return entries.find((entry) => entry.filename === safeFilename) || null;
 }
 
 function getPeriodOptions(settings) {
@@ -750,6 +1014,213 @@ function getInstitutionSuggestions(applications, settings, departmentKey, query,
   };
 }
 
+function buildStatusSummary(applications) {
+  return STATUS_OPTIONS.map((status) => ({
+    status,
+    count: applications.filter((application) => application.status === status).length
+  }));
+}
+
+function buildPeriodSummary(applications) {
+  return PERIODS.map((period) => {
+    const count = applications.filter((application) => application.period === period.key).length;
+    return {
+      key: period.key,
+      label: period.label,
+      count
+    };
+  });
+}
+
+function buildDepartmentReportRows(applications, settings, scopedDepartment = null) {
+  const departments = scopedDepartment
+    ? DEPARTMENTS.filter((department) => department.key === scopedDepartment)
+    : DEPARTMENTS;
+
+  return departments.map((department) => {
+    const departmentApplications = applications.filter(
+      (application) => application.appliedDepartment === department.key
+    );
+    const capacity = Number(settings.departmentCapacities?.[department.key] || 0);
+    const approved = departmentApplications.filter((application) => application.status === "Approved").length;
+    const verified = departmentApplications.filter((application) => application.status === "Verified").length;
+    const pending = departmentApplications.filter(
+      (application) => application.status === "Pending" || application.status === "Needs Correction"
+    ).length;
+    const remaining = Math.max(0, capacity - departmentApplications.length);
+
+    return {
+      ...department,
+      capacity,
+      applications: departmentApplications.length,
+      approved,
+      verified,
+      pending,
+      remaining,
+      fillRate: capacity > 0 ? Math.round((departmentApplications.length / capacity) * 100) : 0
+    };
+  });
+}
+
+function buildInstitutionReportRows(applications, scopedDepartment = null, limit = 10) {
+  const filtered = scopedDepartment
+    ? applications.filter((application) => application.appliedDepartment === scopedDepartment)
+    : applications;
+  const buckets = new Map();
+
+  filtered.forEach((application) => {
+    const key = normalizeInstitutionName(application.institution);
+    if (!key) {
+      return;
+    }
+
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        institution: application.institution,
+        total: 0,
+        approved: 0,
+        verified: 0
+      });
+    }
+
+    const current = buckets.get(key);
+    current.total += 1;
+    if (application.status === "Approved") {
+      current.approved += 1;
+    }
+    if (application.status === "Verified") {
+      current.verified += 1;
+    }
+  });
+
+  return Array.from(buckets.values())
+    .sort((a, b) => b.total - a.total || a.institution.localeCompare(b.institution))
+    .slice(0, Math.max(1, limit));
+}
+
+function buildAnalyticsSummary(applications, settings, scopedDepartment = null) {
+  const filtered = scopedDepartment
+    ? applications.filter((application) => application.appliedDepartment === scopedDepartment)
+    : applications.slice();
+  const approvedCount = filtered.filter((application) => application.status === "Approved").length;
+  const verifiedCount = filtered.filter((application) => application.status === "Verified").length;
+  const pendingCount = filtered.filter(
+    (application) => application.status === "Pending" || application.status === "Needs Correction"
+  ).length;
+  const averageProcessingHours = filtered.length
+    ? Math.round(
+      filtered.reduce((sum, application) => {
+        const submittedAt = new Date(application.submittedAt || 0).getTime();
+        const updatedAt = new Date(application.updatedAt || application.submittedAt || 0).getTime();
+        if (!submittedAt || !updatedAt || updatedAt < submittedAt) {
+          return sum;
+        }
+        return sum + (updatedAt - submittedAt) / (1000 * 60 * 60);
+      }, 0) / filtered.length
+    )
+    : 0;
+
+  return {
+    applications: filtered,
+    totals: {
+      total: filtered.length,
+      approved: approvedCount,
+      verified: verifiedCount,
+      pending: pendingCount,
+      rejected: filtered.filter((application) => application.status === "Rejected").length,
+      approvalRate: filtered.length ? Math.round((approvedCount / filtered.length) * 100) : 0,
+      averageProcessingHours
+    },
+    statusSummary: buildStatusSummary(filtered),
+    periodSummary: buildPeriodSummary(filtered),
+    departmentSummary: buildDepartmentReportRows(filtered, settings, scopedDepartment),
+    institutionSummary: buildInstitutionReportRows(filtered, scopedDepartment, 12),
+    recentApplications: filtered
+      .slice()
+      .sort((a, b) => new Date(b.updatedAt || b.submittedAt) - new Date(a.updatedAt || a.submittedAt))
+      .slice(0, 8)
+  };
+}
+
+function convertApplicationsToCsv(applications) {
+  const headers = [
+    "Application ID",
+    "Tracking Number",
+    "Full Name",
+    "Email",
+    "Phone",
+    "Institution",
+    "Course",
+    "Applied Department",
+    "Assigned Department",
+    "Period",
+    "Status",
+    "Submitted At",
+    "Updated At"
+  ];
+
+  const rows = applications.map((application) => [
+    application.id || "",
+    application.placementNumber || application.id || "",
+    application.fullName || "",
+    application.email || "",
+    application.phone || "",
+    application.institution || "",
+    application.course || "",
+    getDepartmentLabel(application.appliedDepartment || ""),
+    getDepartmentLabel(application.assignedDepartment || ""),
+    getPeriodLabel(application.period || ""),
+    application.status || "",
+    application.submittedAt || "",
+    application.updatedAt || ""
+  ]);
+
+  return [headers, ...rows]
+    .map((row) =>
+      row
+        .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+        .join(",")
+    )
+    .join("\n");
+}
+
+function getReportFilterState({ query = {}, allowDepartmentFilter = false, forcedDepartment = null } = {}) {
+  const requestedStatus = (query.status || "All").toString().trim();
+  const requestedPeriod = (query.period || "All").toString().trim();
+  const requestedDepartment = (query.department || "All").toString().trim();
+  const validStatuses = new Set(["All", ...STATUS_OPTIONS]);
+  const validPeriods = new Set(["All", ...PERIODS.map((period) => period.key)]);
+
+  return {
+    status: validStatuses.has(requestedStatus) ? requestedStatus : "All",
+    period: validPeriods.has(requestedPeriod) ? requestedPeriod : "All",
+    department:
+      forcedDepartment ||
+      (allowDepartmentFilter &&
+      (requestedDepartment === "All" || isValidDepartment(requestedDepartment))
+        ? requestedDepartment
+        : "All")
+  };
+}
+
+function filterApplicationsForReports(applications, filters) {
+  return applications.filter((application) => {
+    if (filters.status !== "All" && application.status !== filters.status) {
+      return false;
+    }
+
+    if (filters.period !== "All" && application.period !== filters.period) {
+      return false;
+    }
+
+    if (filters.department !== "All" && application.appliedDepartment !== filters.department) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
 function getInstitutionFullNameError(institutionName) {
   const raw = (institutionName || "").toString().trim();
   if (!raw) {
@@ -848,35 +1319,28 @@ function removeStoredFile(filename) {
     return;
   }
 
-  const safeFilename = path.basename(filename);
-  const target = path.join(UPLOAD_DIR, safeFilename);
-
-  if (!fs.existsSync(target)) {
-    return;
-  }
-
-  try {
-    fs.unlinkSync(target);
-  } catch (_error) {
-    // Ignore cleanup failures so core flow can proceed.
-  }
+  fileStorage.removeTemporaryFile({ filename });
 }
 
 function cleanupUploadedFiles(files) {
   Object.values(files || {}).forEach((fileList) => {
     (fileList || []).forEach((file) => {
-      removeStoredFile(file.filename);
+      fileStorage.removeTemporaryFile(file);
     });
   });
 }
 
 function cleanupApplicationDocuments(application) {
-  Object.values(application?.documents || {}).forEach((filename) => {
-    removeStoredFile(filename);
+  Object.values(application?.documents || {}).forEach((fileEntry) => {
+    Promise.resolve(fileStorage.removeStoredFile(normalizeStoredFileEntry(fileEntry))).catch(() => {});
   });
 
-  removeStoredFile(application?.combinedDocument?.filename);
-  removeStoredFile(application?.joiningLetter?.filename);
+  Promise.resolve(fileStorage.removeStoredFile(normalizeStoredFileEntry(application?.combinedDocument))).catch(
+    () => {}
+  );
+  Promise.resolve(fileStorage.removeStoredFile(normalizeStoredFileEntry(application?.joiningLetter))).catch(
+    () => {}
+  );
 }
 
 function detectFileTypeFromHeader(headerBuffer) {
@@ -1113,6 +1577,19 @@ function getUploadErrorMessage(uploadError) {
   return "Upload failed. Please check your files and try again.";
 }
 
+async function persistUploadedApplicationFile(file, { folder, uploadedAt, security } = {}) {
+  const stored = await fileStorage.persistUploadedFile(file, { folder });
+  if (!stored) {
+    return null;
+  }
+
+  return {
+    ...stored,
+    uploadedAt: uploadedAt || new Date().toISOString(),
+    security: security || null
+  };
+}
+
 function getRejectedDocuments(application) {
   const normalized = ensureApplicationDefaults(application);
   const acceptAll = ALLOW_ANY_TEST_UPLOADS ? "*/*" : undefined;
@@ -1289,6 +1766,7 @@ app.locals.hrPortalPath = HR_PORTAL_PATH;
 app.locals.documentDefinitions = getViewDocumentDefinitions();
 app.locals.getStatusClass = getStatusClass;
 app.locals.getDepartmentLabel = getDepartmentLabel;
+app.locals.fileStorageProvider = fileStorage.provider;
 
 app.use((req, res, next) => {
   const adminScopeDepartment = getAdminScopeDepartment(req);
@@ -1304,6 +1782,8 @@ app.use((req, res, next) => {
     ? getDepartmentLabel(adminScopeDepartment)
     : null;
   res.locals.currentAdminUsername = req.session?.adminUsername || "";
+  res.locals.fileStorageProvider = fileStorage.provider;
+  res.locals.fileStorageWarning = fileStorage.getProviderWarning();
   next();
 });
 
@@ -1530,49 +2010,58 @@ app.post("/apply", (req, res) => {
       });
     }
 
-    const applicationId = generateApplicationId(applications);
-    const placementNumber = generatePlacementNumber(applications);
-    const combinedUpload = files[COMBINED_DOCUMENT_FIELD]?.[0] || null;
-    const newApplication = ensureApplicationDefaults({
-      id: applicationId,
-      placementNumber,
-      fullName: finalFullName,
-      email: finalEmail,
-      phone: finalPhone,
-      institution: finalInstitution,
-      course: finalCourse,
-      appliedDepartment: finalAppliedDepartment,
-      assignedDepartment: "",
-      period: finalPeriod,
-      startDate: finalStartDate,
-      endDate: finalEndDate,
-      coverNote: (coverNote || "").trim(),
-      documents: REQUIRED_DOCUMENT_FIELDS.reduce((acc, fieldName) => {
-        acc[fieldName] = null;
-        return acc;
-      }, {}),
-      documentSecurity,
-      documentsReview: createDefaultDocumentsReview(),
-      combinedDocument: combinedUpload
-        ? {
-          filename: combinedUpload.filename,
-          originalName: combinedUpload.originalname,
-          uploadedAt: new Date().toISOString(),
-          security: documentSecurity[COMBINED_DOCUMENT_FIELD] || null
-        }
-        : null,
-      combinedDocumentReview: createDefaultCombinedDocumentReview(),
-      joiningLetter: null,
-      status: "Pending",
-      reviewerComment: "",
-      submittedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+    return (async () => {
+      const applicationId = generateApplicationId(applications);
+      const placementNumber = generatePlacementNumber(applications);
+      const combinedUpload = files[COMBINED_DOCUMENT_FIELD]?.[0] || null;
+      const storedAt = new Date().toISOString();
+      const combinedDocument = await persistUploadedApplicationFile(combinedUpload, {
+        folder: "applications/combined-documents",
+        uploadedAt: storedAt,
+        security: documentSecurity[COMBINED_DOCUMENT_FIELD] || null
+      });
+
+      const newApplication = ensureApplicationDefaults({
+        id: applicationId,
+        placementNumber,
+        fullName: finalFullName,
+        email: finalEmail,
+        phone: finalPhone,
+        institution: finalInstitution,
+        course: finalCourse,
+        appliedDepartment: finalAppliedDepartment,
+        assignedDepartment: "",
+        period: finalPeriod,
+        startDate: finalStartDate,
+        endDate: finalEndDate,
+        coverNote: (coverNote || "").trim(),
+        documents: REQUIRED_DOCUMENT_FIELDS.reduce((acc, fieldName) => {
+          acc[fieldName] = null;
+          return acc;
+        }, {}),
+        documentSecurity,
+        documentsReview: createDefaultDocumentsReview(),
+        combinedDocument,
+        combinedDocumentReview: createDefaultCombinedDocumentReview(),
+        joiningLetter: null,
+        status: "Pending",
+        reviewerComment: "",
+        submittedAt: storedAt,
+        updatedAt: storedAt
+      });
+
+      applications.push(newApplication);
+      writeApplications(applications);
+
+      return res.redirect(`/application/${newApplication.id}`);
+    })().catch((storageError) => {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 500,
+        error: storageError.message || "Failed to store uploaded document.",
+        formData
+      });
     });
-
-    applications.push(newApplication);
-    writeApplications(applications);
-
-    return res.redirect(`/application/${newApplication.id}`);
   });
 });
 
@@ -1697,61 +2186,82 @@ app.post("/track/resubmit", (req, res) => {
       });
     }
 
-    const reuploadedAt = new Date().toISOString();
-    rejectedFieldNames.forEach((fieldName) => {
-      if (fieldName === COMBINED_DOCUMENT_FIELD) {
-        const uploadedCombined = files[fieldName][0];
-        removeStoredFile(currentApplication.combinedDocument?.filename);
+    return (async () => {
+      const reuploadedAt = new Date().toISOString();
 
-        REQUIRED_DOCUMENT_FIELDS.forEach((docFieldName) => {
-          removeStoredFile(currentApplication.documents?.[docFieldName]);
-        });
+      for (const fieldName of rejectedFieldNames) {
+        if (fieldName === COMBINED_DOCUMENT_FIELD) {
+          const uploadedCombined = files[fieldName][0];
+          const previousCombinedDocument = currentApplication.combinedDocument;
+          const previousDocuments = Object.values(currentApplication.documents || {});
 
-        currentApplication.documents = REQUIRED_DOCUMENT_FIELDS.reduce((acc, docFieldName) => {
-          acc[docFieldName] = null;
-          return acc;
-        }, {});
-        currentApplication.documentsReview = createDefaultDocumentsReview();
-        currentApplication.combinedDocument = {
-          filename: uploadedCombined.filename,
-          originalName: uploadedCombined.originalname,
-          uploadedAt: reuploadedAt,
-          security: scannedSecurity[fieldName] || null
-        };
-        currentApplication.combinedDocumentReview = {
+          const storedCombinedDocument = await persistUploadedApplicationFile(uploadedCombined, {
+            folder: "applications/combined-documents",
+            uploadedAt: reuploadedAt,
+            security: scannedSecurity[fieldName] || null
+          });
+
+          Promise.resolve(fileStorage.removeStoredFile(previousCombinedDocument)).catch(() => {});
+          previousDocuments.forEach((entry) => {
+            Promise.resolve(fileStorage.removeStoredFile(entry)).catch(() => {});
+          });
+
+          currentApplication.documents = REQUIRED_DOCUMENT_FIELDS.reduce((acc, docFieldName) => {
+            acc[docFieldName] = null;
+            return acc;
+          }, {});
+          currentApplication.documentsReview = createDefaultDocumentsReview();
+          currentApplication.combinedDocument = storedCombinedDocument;
+          currentApplication.combinedDocumentReview = {
+            status: "Pending",
+            comment: "Re-uploaded by student. Awaiting admin review."
+          };
+          currentApplication.documentSecurity[fieldName] = scannedSecurity[fieldName];
+          continue;
+        }
+
+        const previousDocument = currentApplication.documents[fieldName];
+        currentApplication.documents[fieldName] = await persistUploadedApplicationFile(
+          files[fieldName][0],
+          {
+            folder: "applications/correction-documents",
+            uploadedAt: reuploadedAt,
+            security: scannedSecurity[fieldName] || null
+          }
+        );
+        Promise.resolve(fileStorage.removeStoredFile(previousDocument)).catch(() => {});
+        currentApplication.documentSecurity[fieldName] = scannedSecurity[fieldName];
+        currentApplication.documentsReview[fieldName] = {
           status: "Pending",
           comment: "Re-uploaded by student. Awaiting admin review."
         };
-        currentApplication.documentSecurity[fieldName] = scannedSecurity[fieldName];
-        return;
       }
 
-      removeStoredFile(currentApplication.documents[fieldName]);
-      currentApplication.documents[fieldName] = files[fieldName][0].filename;
-      currentApplication.documentSecurity[fieldName] = scannedSecurity[fieldName];
-      currentApplication.documentsReview[fieldName] = {
-        status: "Pending",
-        comment: "Re-uploaded by student. Awaiting admin review."
-      };
-    });
+      const hasRejectedAfterResubmit = currentApplication.combinedDocument?.filename
+        ? currentApplication.combinedDocumentReview.status === "Rejected"
+        : REQUIRED_DOCUMENT_FIELDS.some(
+          (fieldName) => currentApplication.documentsReview[fieldName].status === "Rejected"
+        );
 
-    const hasRejectedAfterResubmit = currentApplication.combinedDocument?.filename
-      ? currentApplication.combinedDocumentReview.status === "Rejected"
-      : REQUIRED_DOCUMENT_FIELDS.some(
-        (fieldName) => currentApplication.documentsReview[fieldName].status === "Rejected"
-      );
+      if (!hasRejectedAfterResubmit && currentApplication.status === "Needs Correction") {
+        currentApplication.status = "Pending";
+      }
 
-    if (!hasRejectedAfterResubmit && currentApplication.status === "Needs Correction") {
-      currentApplication.status = "Pending";
-    }
+      currentApplication.updatedAt = new Date().toISOString();
+      applications[index] = currentApplication;
+      writeApplications(applications);
 
-    currentApplication.updatedAt = new Date().toISOString();
-    applications[index] = currentApplication;
-    writeApplications(applications);
-
-    return renderTrackPage(res, {
-      message: "Documents re-uploaded successfully. Please wait for admin verification.",
-      result: currentApplication
+      return renderTrackPage(res, {
+        message: "Documents re-uploaded successfully. Please wait for admin verification.",
+        result: currentApplication
+      });
+    })().catch((storageError) => {
+      cleanupUploadedFiles(files);
+      return renderTrackPage(res, {
+        statusCode: 500,
+        error: storageError.message || "Failed to store re-uploaded documents.",
+        result: currentApplication
+      });
     });
   });
 });
@@ -1794,19 +2304,12 @@ app.get("/application/:id/joining-letter", (req, res) => {
     return res.status(404).send("Joining letter is not available yet.");
   }
 
-  const safeFilename = path.basename(joiningLetter.filename);
-  const filePath = path.join(UPLOAD_DIR, safeFilename);
-
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).send("Joining letter file is missing.");
-  }
-
-  const extension = path.extname(joiningLetter.originalName || safeFilename) || ".pdf";
+  const extension = path.extname(joiningLetter.originalName || joiningLetter.filename) || ".pdf";
   const downloadName = `Joining-Letter-${application.id}${extension}`;
 
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("Cache-Control", "no-store");
-  return res.download(filePath, downloadName);
+  return fileStorage.sendStoredFile(res, joiningLetter, {
+    downloadName
+  });
 });
 
 app.get("/admin/login", (_req, res) => {
@@ -2051,6 +2554,181 @@ app.post("/hr/periods", ensureHrAdmin, (req, res) => {
   return res.redirect("/hr/periods?saved=1");
 });
 
+function renderAdminAccountsPage(res, {
+  statusCode = 200,
+  error = null,
+  notice = null
+} = {}) {
+  const adminAccounts = readDepartmentAdmins().sort(
+    (a, b) =>
+      Number(b.isActive) - Number(a.isActive) ||
+      getDepartmentLabel(a.department).localeCompare(getDepartmentLabel(b.department)) ||
+      a.username.localeCompare(b.username)
+  );
+
+  return res.status(statusCode).render("admin-accounts", {
+    adminAccounts,
+    departmentOptions: DEPARTMENTS,
+    error,
+    notice,
+    formatDate
+  });
+}
+
+app.get("/hr/admin-accounts", ensureHrAdmin, (req, res) => {
+  let notice = null;
+  if (req.query.created === "1") {
+    notice = "Department admin account created.";
+  } else if (req.query.updated === "1") {
+    notice = "Department admin account updated.";
+  } else if (req.query.passwordReset === "1") {
+    notice = "Department admin password updated.";
+  } else if (req.query.toggled === "1") {
+    notice = "Department admin status updated.";
+  } else if (req.query.deleted === "1") {
+    notice = "Department admin account deleted.";
+  }
+
+  return renderAdminAccountsPage(res, { notice });
+});
+
+app.post("/hr/admin-accounts/create", ensureHrAdmin, (req, res) => {
+  const result = createDepartmentAdminAccount({
+    username: req.body.username,
+    password: req.body.password,
+    department: req.body.department,
+    displayName: req.body.displayName
+  });
+
+  if (result.error) {
+    return renderAdminAccountsPage(res, {
+      statusCode: 400,
+      error: result.error
+    });
+  }
+
+  return res.redirect("/hr/admin-accounts?created=1");
+});
+
+app.post("/hr/admin-accounts/:username/update", ensureHrAdmin, (req, res) => {
+  const result = updateDepartmentAdminAccount(req.params.username, {
+    username: req.body.username,
+    department: req.body.department,
+    displayName: req.body.displayName
+  });
+
+  if (result.error) {
+    return renderAdminAccountsPage(res, {
+      statusCode: 400,
+      error: result.error
+    });
+  }
+
+  return res.redirect("/hr/admin-accounts?updated=1");
+});
+
+app.post("/hr/admin-accounts/:username/password", ensureHrAdmin, (req, res) => {
+  const result = setDepartmentAdminPassword(req.params.username, req.body.password);
+
+  if (result.error) {
+    return renderAdminAccountsPage(res, {
+      statusCode: 400,
+      error: result.error
+    });
+  }
+
+  return res.redirect("/hr/admin-accounts?passwordReset=1");
+});
+
+app.post("/hr/admin-accounts/:username/toggle", ensureHrAdmin, (req, res) => {
+  const nextState = (req.body.isActive || "").toString() === "1";
+  const result = setDepartmentAdminActiveState(req.params.username, nextState);
+
+  if (result.error) {
+    return renderAdminAccountsPage(res, {
+      statusCode: 400,
+      error: result.error
+    });
+  }
+
+  return res.redirect("/hr/admin-accounts?toggled=1");
+});
+
+app.post("/hr/admin-accounts/:username/delete", ensureHrAdmin, (req, res) => {
+  const result = deleteDepartmentAdminAccount(req.params.username);
+
+  if (result.error) {
+    return renderAdminAccountsPage(res, {
+      statusCode: 400,
+      error: result.error
+    });
+  }
+
+  return res.redirect("/hr/admin-accounts?deleted=1");
+});
+
+function renderReportsPage(res, {
+  statusCode = 200,
+  title,
+  actionPath,
+  exportPath,
+  applications,
+  filters,
+  departmentOptions,
+  settings
+}) {
+  const scopedDepartment = filters.department !== "All" ? filters.department : null;
+  const analytics = buildAnalyticsSummary(applications, settings, scopedDepartment);
+
+  return res.status(statusCode).render("reports", {
+    pageTitle: title,
+    activePortal: res.locals.isHrAdmin ? "hr" : "admin",
+    filters,
+    departmentOptions,
+    periodOptions: PERIODS,
+    statusOptions: STATUS_OPTIONS,
+    analytics,
+    actionPath,
+    exportPath,
+    formatDate,
+    getPeriodLabel,
+    getDepartmentLabel,
+    getStatusClass
+  });
+}
+
+app.get("/hr/reports", ensureHrAdmin, (req, res) => {
+  const settings = readSettings();
+  const filters = getReportFilterState({
+    query: req.query,
+    allowDepartmentFilter: true
+  });
+  const applications = filterApplicationsForReports(readApplications(), filters);
+
+  return renderReportsPage(res, {
+    title: "HR Reports and Analytics",
+    actionPath: "/hr/reports",
+    exportPath: "/hr/reports/export.csv",
+    applications,
+    filters,
+    departmentOptions: DEPARTMENTS,
+    settings
+  });
+});
+
+app.get("/hr/reports/export.csv", ensureHrAdmin, (req, res) => {
+  const filters = getReportFilterState({
+    query: req.query,
+    allowDepartmentFilter: true
+  });
+  const applications = filterApplicationsForReports(readApplications(), filters);
+  const csv = convertApplicationsToCsv(applications);
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="hr-report.csv"');
+  return res.send(csv);
+});
+
 app.get("/admin/periods", ensureDepartmentAdmin, (req, res) => {
   const settings = readSettings();
   const adminScopeDepartment = getAdminScopeDepartment(req);
@@ -2141,6 +2819,44 @@ app.post("/admin/periods", ensureDepartmentAdmin, (req, res) => {
 
   writeSettings(updated);
   return res.redirect("/admin/periods?saved=1");
+});
+
+app.get("/admin/reports", ensureDepartmentAdmin, (req, res) => {
+  const scopedDepartment = getAdminScopeDepartment(req);
+  const filters = getReportFilterState({
+    query: req.query,
+    allowDepartmentFilter: false,
+    forcedDepartment: scopedDepartment || "All"
+  });
+  const applications = filterApplicationsForReports(filterApplicationsForAdmin(req, readApplications()), filters);
+  const settings = readSettings();
+
+  return renderReportsPage(res, {
+    title: "Department Reports and Analytics",
+    actionPath: "/admin/reports",
+    exportPath: "/admin/reports/export.csv",
+    applications,
+    filters,
+    departmentOptions: scopedDepartment
+      ? DEPARTMENTS.filter((department) => department.key === scopedDepartment)
+      : DEPARTMENTS,
+    settings
+  });
+});
+
+app.get("/admin/reports/export.csv", ensureDepartmentAdmin, (req, res) => {
+  const scopedDepartment = getAdminScopeDepartment(req);
+  const filters = getReportFilterState({
+    query: req.query,
+    allowDepartmentFilter: false,
+    forcedDepartment: scopedDepartment || "All"
+  });
+  const applications = filterApplicationsForReports(filterApplicationsForAdmin(req, readApplications()), filters);
+  const csv = convertApplicationsToCsv(applications);
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="department-report.csv"');
+  return res.send(csv);
 });
 
 app.get("/admin/applications", ensureDepartmentAdmin, (req, res) => {
@@ -2387,23 +3103,18 @@ app.post("/admin/applications/:id/joining-letter", ensureDepartmentAdmin, (req, 
 app.get("/admin/files/:filename", ensureDepartmentAdmin, (req, res) => {
   const safeFilename = path.basename(req.params.filename);
   const visibleApplications = filterApplicationsForAdmin(req, readApplications());
-  const isFileAccessible = visibleApplications.some((application) =>
+  const matchedApplication = visibleApplications.find((application) =>
     doesApplicationReferenceFile(application, safeFilename)
   );
 
-  if (!isFileAccessible) {
+  if (!matchedApplication) {
     return res.status(403).send("Access denied for this file.");
   }
 
-  const filePath = path.join(UPLOAD_DIR, safeFilename);
-
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).send("File not found");
-  }
-
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("Cache-Control", "no-store");
-  return res.download(filePath, safeFilename);
+  const storedFile = getApplicationStoredFileByFilename(matchedApplication, safeFilename);
+  return fileStorage.sendStoredFile(res, storedFile, {
+    downloadName: storedFile?.originalName || safeFilename
+  });
 });
 
 app.post("/admin/applications/:id/status", ensureDepartmentAdmin, (req, res) => {
@@ -2816,34 +3527,48 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, (req, res) => {
       });
     }
 
-    const oldJoiningLetterFilename = application.joiningLetter?.filename;
-    application.joiningLetter = {
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      uploadedAt: new Date().toISOString(),
-      security: joiningLetterSecurity
-    };
-    application.updatedAt = new Date().toISOString();
+    return (async () => {
+      const oldJoiningLetter = application.joiningLetter;
+      application.joiningLetter = await persistUploadedApplicationFile(req.file, {
+        folder: "joining-letters",
+        uploadedAt: new Date().toISOString(),
+        security: joiningLetterSecurity
+      });
+      application.updatedAt = new Date().toISOString();
 
-    applications[index] = application;
-    writeApplications(applications);
-    removeStoredFile(oldJoiningLetterFilename);
+      applications[index] = application;
+      writeApplications(applications);
+      Promise.resolve(fileStorage.removeStoredFile(oldJoiningLetter)).catch(() => {});
 
-    return res.redirect(`/hr/applications/${req.params.id}?joiningSaved=1`);
+      return res.redirect(`/hr/applications/${req.params.id}?joiningSaved=1`);
+    })().catch((storageError) => {
+      cleanupUploadedFiles({ [JOINING_LETTER_FIELD]: [req.file] });
+      return res.status(500).render("hr-detail", {
+        application,
+        notice: null,
+        error: storageError.message || "Failed to store the joining letter.",
+        formatDate,
+        getPeriodLabel,
+        getDepartmentLabel,
+        getStatusClass,
+        hrStatusOptions: ["Verified", "Approved", "Rejected"],
+        combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION
+      });
+    });
   });
 });
 
 app.get("/hr/files/:filename", ensureHrAdmin, (req, res) => {
   const safeFilename = path.basename(req.params.filename);
-  const filePath = path.join(UPLOAD_DIR, safeFilename);
-
-  if (!fs.existsSync(filePath)) {
+  const application = readApplications().find((item) => doesApplicationReferenceFile(item, safeFilename));
+  if (!application) {
     return res.status(404).send("File not found");
   }
 
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  res.setHeader("Cache-Control", "no-store");
-  return res.download(filePath, safeFilename);
+  const storedFile = getApplicationStoredFileByFilename(application, safeFilename);
+  return fileStorage.sendStoredFile(res, storedFile, {
+    downloadName: storedFile?.originalName || safeFilename
+  });
 });
 
 app.use((error, _req, res, _next) => {
@@ -2862,6 +3587,12 @@ app.listen(PORT, () => {
   console.log(`Storage root: ${STORAGE_ROOT}`);
   console.log(`Database file: ${DATABASE_FILE}`);
   console.log("Session store: SQLite");
+  console.log(`File storage provider: ${fileStorage.provider}`);
+
+  const storageWarning = fileStorage.getProviderWarning();
+  if (storageWarning) {
+    console.warn(storageWarning);
+  }
 
   if (process.env.NODE_ENV === "production" && !process.env.STORAGE_ROOT) {
     console.warn(

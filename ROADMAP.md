@@ -14,19 +14,19 @@ This backlog tracks the next build steps for the County Attachment Application S
 
 ## Current Priority
 
-1. Cloud file storage
-2. Admin account management UI
-3. Analytics and reporting dashboard
-4. PostgreSQL migration
-5. Notifications
-6. Audit trail
+1. PostgreSQL migration
+2. Notifications
+3. Audit trail
+4. Search and advanced filtering
+5. Student self-service dashboard
+6. Security hardening
 
 ## Phase 1: Immediate Practical Improvements
 
 ### 1. Cloud file storage
 
 Status:
-- [ ] Planned
+- [x] Implemented
 
 Goal:
 - move uploaded documents and joining letters away from local disk
@@ -43,7 +43,7 @@ Possible options:
 ### 2. Admin account management UI
 
 Status:
-- [ ] Planned
+- [x] Implemented
 
 Goal:
 - let HR create, edit, reset, activate, and deactivate department admin accounts from the portal
@@ -55,7 +55,7 @@ Why it matters:
 ### 3. Analytics and reporting dashboard
 
 Status:
-- [ ] Planned
+- [x] Implemented
 
 Goal:
 - show operational summaries for HR and department admins
