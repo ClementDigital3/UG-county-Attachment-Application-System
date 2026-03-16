@@ -78,7 +78,7 @@ This project currently covers:
 
 - Public landing page with county branding, shared navigation, and footer.
 - Student application portal.
-- Student tracking and document correction flow.
+- Student self-service dashboard for tracking, correction follow-up, NITA workflow follow-up, and joining letter download.
 - Department admin portal with department-scoped access.
 - HR portal for final approval and joining letter upload.
 - HR admin account management UI for department admins.
@@ -90,7 +90,7 @@ This project currently covers:
 ## End-To-End Workflow
 
 1. Student opens `/apply`.
-2. Student fills personal details, institution, course, department, period, dates, and uploads one combined scanned document.
+2. Student fills personal details, institution, course, department, period, dates, uploads one combined scanned document for the main documents, and uploads the NITA document separately.
 3. System generates:
    - `id`
    - `placementNumber`
@@ -107,12 +107,16 @@ This project currently covers:
    - `Verified`
    - `Approved`
    - `Rejected`
-9. HR approves or rejects the application.
-10. HR uploads a joining letter for approved students.
-11. Student uses `/track` to:
+9. HR uploads the county-signed NITA document for the student.
+10. Student downloads the county-signed NITA document, takes it for stamping, and re-submits the stamped copy through `/track`.
+11. HR confirms the stamped NITA document, then approves or rejects the application.
+12. HR uploads a joining letter for approved students.
+13. Student uses `/track` to:
    - check status
    - see comments
    - re-upload rejected documents
+   - download the county-signed NITA document
+   - re-submit the stamped NITA document
    - download the joining letter after HR approval
 
 ## Portals And Navigation
@@ -146,19 +150,25 @@ The student form collects:
 - Attachment period
 - Start date
 - End date
-- Optional cover note
-- One combined scanned file containing all required documents
+- Required cover note / self introduction
+- One combined scanned file containing the main required documents except NITA
+- One separate NITA document upload with school stamp
 
 ### Required document bundle
 
-The single combined scanned upload is meant to contain:
+The combined scanned upload is meant to contain:
 
 - Passport photo
-- Application letter
 - School cover letter
 - Insurance copy
 - National ID or school ID copy
-- NITA copy with school stamp
+- A required cover note is typed directly in the form, so a separate application letter is not required
+
+The separate NITA upload is meant to contain:
+
+- NITA document with school stamp
+- later, HR returns a county-signed version for the student to download
+- the student then takes that document to the NITA office for stamping and re-submits it to HR through the dashboard
 
 ### Student tracking
 
@@ -167,11 +177,14 @@ Students track an application using:
 - Tracking number or placement number
 - Email used during application
 
-From the tracking page, a student can:
+From the student dashboard, a student can:
 
 - see whether the application is `Pending`, `Needs Correction`, `Verified`, `Approved`, or `Rejected`
-- see reviewer comments
+- see a progress timeline from submission to final decision
+- see reviewer comments and the submitted cover note
 - re-upload rejected documents
+- download the county-signed NITA document when HR uploads it
+- re-submit the stamped NITA document to HR
 - download the joining letter when available
 
 ## Department Admin Portal
@@ -416,7 +429,7 @@ Current important keys:
 ### File storage
 
 - `FILE_STORAGE_PROVIDER=local` keeps uploaded files on the server filesystem.
-- `FILE_STORAGE_PROVIDER=cloudinary` moves combined documents and joining letters to Cloudinary.
+- `FILE_STORAGE_PROVIDER=cloudinary` moves combined documents, NITA workflow documents, and joining letters to Cloudinary.
 - When Cloudinary is selected, configure:
   - `CLOUDINARY_CLOUD_NAME`
   - `CLOUDINARY_API_KEY`

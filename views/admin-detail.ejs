@@ -54,7 +54,6 @@
 
           <label>
             Phone Number *
-            <span class="field-hint field-hint-spacer">Alignment spacer</span>
             <input type="text" name="phone" value="<%= application.phone %>" required />
           </label>
 
@@ -104,8 +103,11 @@
           </label>
 
           <label class="full-width">
-            Cover Note
-            <textarea name="coverNote" rows="4"><%= application.coverNote %></textarea>
+            Cover Note / Self Introduction *
+            <span class="field-hint">
+              Student must briefly explain themselves and their attachment request here. This replaces a separate application letter.
+            </span>
+            <textarea name="coverNote" rows="5" required><%= application.coverNote %></textarea>
           </label>
 
           <div class="actions full-width">
@@ -145,6 +147,20 @@
                 </small>
               <% } %>
             </li>
+            <li>
+              <% if (application.nitaDocument && application.nitaDocument.filename) { %>
+                <a href="/admin/files/<%= application.nitaDocument.filename %>" target="_blank"><%= nitaDocumentDefinition.label %></a>
+                <% const nitaSecurity = application.nitaDocument.security || (application.documentSecurity && application.documentSecurity[nitaDocumentDefinition.key]); %>
+                <% if (nitaSecurity) { %>
+                  <small>
+                    (Scan: passed, type: <%= nitaSecurity.detectedType %>,
+                    size: <%= nitaSecurity.size %> bytes)
+                  </small>
+                <% } %>
+              <% } else { %>
+                <span><%= nitaDocumentDefinition.label %> - Not uploaded</span>
+              <% } %>
+            </li>
           </ul>
         <% } else { %>
           <ul>
@@ -179,6 +195,15 @@
                 <option value="Rejected" <%= application.combinedDocumentReview.status === 'Rejected' ? 'selected' : '' %>>Rejected</option>
               </select>
               <input type="text" name="docComment_<%= combinedDocumentDefinition.key %>" value="<%= application.combinedDocumentReview.comment %>" placeholder="Comment for student (optional)" />
+            </label>
+            <label class="full-width">
+              <%= nitaDocumentDefinition.label %>
+              <select name="docStatus_<%= nitaDocumentDefinition.key %>" required>
+                <option value="Pending" <%= application.nitaDocumentReview.status === 'Pending' ? 'selected' : '' %>>Pending</option>
+                <option value="Accepted" <%= application.nitaDocumentReview.status === 'Accepted' ? 'selected' : '' %>>Accepted</option>
+                <option value="Rejected" <%= application.nitaDocumentReview.status === 'Rejected' ? 'selected' : '' %>>Rejected</option>
+              </select>
+              <input type="text" name="docComment_<%= nitaDocumentDefinition.key %>" value="<%= application.nitaDocumentReview.comment %>" placeholder="Comment for student (optional)" />
             </label>
           <% } else { %>
             <% documentDefinitions.forEach((document) => { %>

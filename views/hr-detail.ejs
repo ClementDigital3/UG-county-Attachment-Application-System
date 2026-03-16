@@ -37,6 +37,7 @@
           <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
           <p><strong>Submitted:</strong> <%= formatDate(application.submittedAt) %></p>
           <p><strong>Last Updated:</strong> <%= formatDate(application.updatedAt) %></p>
+          <p><strong>NITA Workflow:</strong> <%= application.nitaWorkflow.status %></p>
           <p><strong>Department/HR Comment:</strong> <%= application.reviewerComment || 'No comment yet.' %></p>
         </div>
 
@@ -53,21 +54,91 @@
                 </small>
               <% } %>
             </li>
+            <li>
+              <% if (application.nitaDocument && application.nitaDocument.filename) { %>
+                <a href="/hr/files/<%= application.nitaDocument.filename %>" target="_blank"><%= nitaDocumentDefinition.label %></a>
+                <% const nitaSecurity = application.nitaDocument.security || (application.documentSecurity && application.documentSecurity[nitaDocumentDefinition.key]); %>
+                <% if (nitaSecurity) { %>
+                  <small>
+                    (Scan: passed, type: <%= nitaSecurity.detectedType %>,
+                    size: <%= nitaSecurity.size %> bytes)
+                  </small>
+                <% } %>
+              <% } else { %>
+                <span><%= nitaDocumentDefinition.label %> - Not uploaded</span>
+              <% } %>
+            </li>
           </ul>
         <% } else { %>
           <p>No combined document uploaded.</p>
         <% } %>
 
+        <h2>NITA Workflow</h2>
+        <p>HR should upload the county-signed NITA document, wait for the student to return the stamped version, then confirm the NITA stage before final approval.</p>
+
+        <div class="summary">
+          <p><strong>Initial NITA document:</strong>
+            <%= application.nitaDocument && application.nitaDocument.filename ? 'Submitted' : 'Not uploaded' %>
+          </p>
+          <p><strong>County-signed NITA document:</strong>
+            <%= application.countySignedNitaDocument && application.countySignedNitaDocument.filename ? 'Uploaded' : 'Not uploaded yet' %>
+          </p>
+          <p><strong>Stamped NITA re-submission:</strong>
+            <%= application.nitaResubmittedDocument && application.nitaResubmittedDocument.filename ? 'Received from student' : 'Not received yet' %>
+          </p>
+          <p><strong>Workflow note:</strong> <%= application.nitaWorkflow.comment || 'No NITA workflow note yet.' %></p>
+        </div>
+
+        <form action="/hr/applications/<%= application.id %>/nita-county-signed" method="post" enctype="multipart/form-data" class="form-grid">
+          <label class="full-width">
+            <%= countySignedNitaDefinition.label %> *
+            <span class="field-hint">
+              Upload the county-signed NITA document that the student will download, take for NITA stamping, and return to HR.
+            </span>
+            <input type="file" name="<%= countySignedNitaDefinition.key %>" accept="<%= countySignedNitaDefinition.accept %>" required />
+          </label>
+          <div class="actions full-width">
+            <button class="btn" type="submit">Upload County-Signed NITA</button>
+          </div>
+        </form>
+
+        <% if (application.countySignedNitaDocument && application.countySignedNitaDocument.filename) { %>
+          <div class="actions tight">
+            <a class="btn secondary" href="/hr/files/<%= application.countySignedNitaDocument.filename %>" target="_blank">Download County-Signed NITA</a>
+          </div>
+        <% } %>
+
+        <% if (application.nitaResubmittedDocument && application.nitaResubmittedDocument.filename) { %>
+          <div class="summary">
+            <p><strong>Student returned stamped NITA document:</strong></p>
+            <div class="actions tight">
+              <a class="btn secondary" href="/hr/files/<%= application.nitaResubmittedDocument.filename %>" target="_blank">Download Stamped NITA Re-Submission</a>
+            </div>
+          </div>
+        <% } %>
+
+        <% if (application.nitaWorkflow.status !== 'Completed' && application.nitaResubmittedDocument && application.nitaResubmittedDocument.filename) { %>
+          <form action="/hr/applications/<%= application.id %>/nita-complete" method="post" class="form-grid">
+            <div class="actions full-width">
+              <button class="btn" type="submit">Confirm NITA Workflow Complete</button>
+            </div>
+          </form>
+        <% } %>
+
         <h2>HR Final Decision</h2>
-        <p>Department admins verify first. HR then approves/rejects and uploads joining letter for approved students.</p>
+        <p>Department admins verify first. HR can only give final approval after the NITA workflow is completed.</p>
         <form action="/hr/applications/<%= application.id %>/status" method="post" class="form-grid">
           <label>
             HR Status
             <select name="status" required>
               <% hrStatusOptions.forEach((status) => { %>
-                <option value="<%= status %>" <%= application.status === status ? 'selected' : '' %>><%= status %></option>
+                <% const approvalLocked = status === 'Approved' && application.nitaWorkflow.status !== 'Completed' && application.status !== 'Approved'; %>
+                <option value="<%= status %>" <%= application.status === status ? 'selected' : '' %> <%= approvalLocked ? 'disabled' : '' %>><%= status %></option>
               <% }) %>
             </select>
+            <% if (application.nitaWorkflow.status !== 'Completed') { %>
+              <span class="field-hint">Final approval stays locked until HR confirms the stamped NITA document.</span>
+            <% } %>
           </label>
 
           <label class="full-width">
@@ -81,7 +152,7 @@
         </form>
 
         <h2>Joining Letter Upload (HR Only)</h2>
-        <p>Set status to <strong>Approved</strong> first, then upload the joining letter.</p>
+        <p>Complete the NITA workflow and set status to <strong>Approved</strong> first, then upload the joining letter.</p>
         <form action="/hr/applications/<%= application.id %>/joining-letter" method="post" enctype="multipart/form-data" class="form-grid">
           <label class="full-width">
             Joining Letter (PDF only)

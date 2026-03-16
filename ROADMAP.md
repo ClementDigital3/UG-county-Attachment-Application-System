@@ -18,8 +18,8 @@ This backlog tracks the next build steps for the County Attachment Application S
 2. Notifications
 3. Audit trail
 4. Search and advanced filtering
-5. Student self-service dashboard
-6. Security hardening
+5. Security hardening
+6. Document review workflow improvement
 
 ## Phase 1: Immediate Practical Improvements
 
@@ -134,7 +134,7 @@ Suggested filters:
 ### 8. Student self-service dashboard
 
 Status:
-- [ ] Planned
+- [x] Implemented
 
 Goal:
 - give students a clearer post-application experience

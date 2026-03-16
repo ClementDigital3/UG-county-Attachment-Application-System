@@ -2,7 +2,7 @@
 <main class="container">
       <section class="card">
         <h1>Attachment Application Form</h1>
-        <p>Fill in your details and upload one combined scanned file for quick admin review.</p>
+        <p>Fill in your details, upload one combined scanned file for the main documents, and upload the NITA document separately.</p>
 
         <% if (error) { %>
           <div class="alert"><%= error %></div>
@@ -38,8 +38,7 @@
             verified, approved, rejected, or needs correction.
           </p>
           <p>
-            Once HR uploads your joining letter, you will download it from the same tracking page
-            using your tracking number and email address.
+            HR will return the county-signed NITA document through the same tracking page. After you take it for NITA stamping and re-submit it, HR can complete final approval and upload your joining letter there.
           </p>
           <div class="actions tight">
             <a class="btn secondary" href="/track">Track Application</a>
@@ -131,19 +130,42 @@
           </label>
 
           <label class="full-width">
-            Cover Note
-            <textarea name="coverNote" rows="4" placeholder="Optional message to the county HR office"><%= formData.coverNote || '' %></textarea>
+            Cover Note / Self Introduction *
+            <span class="field-hint">
+              Briefly explain who you are, your institution, course/program, attachment goals, and why you are applying.
+              This required cover note replaces a separate application letter.
+            </span>
+            <textarea
+              name="coverNote"
+              rows="5"
+              placeholder="Example: I am a third-year Information Technology student at University of Eldoret seeking attachment to build practical skills in county systems and public service delivery."
+              required
+            ><%= formData.coverNote || '' %></textarea>
           </label>
 
           <label class="full-width">
             <%= combinedDocumentDefinition.label %> *
             <span class="field-hint">
-              Upload one scanned file that includes passport photo, application letter, school cover letter, insurance copy, ID copy and NITA copy.
+              Upload one scanned file that includes passport photo, school cover letter, insurance copy, and both sides of your national ID or school ID.
+              A separate application letter is not required because you have already written the cover note above.
             </span>
             <input
               type="file"
               name="<%= combinedDocumentDefinition.key %>"
               accept="<%= combinedDocumentDefinition.accept %>"
+              required
+            />
+          </label>
+
+          <label class="full-width">
+            <%= nitaDocumentDefinition.label %> *
+            <span class="field-hint">
+              Upload the NITA document separately with your school stamp. HR will later return a county-signed copy here for you to download, take to the NITA office for stamping, and re-submit from the student dashboard.
+            </span>
+            <input
+              type="file"
+              name="<%= nitaDocumentDefinition.key %>"
+              accept="<%= nitaDocumentDefinition.accept %>"
               required
             />
           </label>

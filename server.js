@@ -96,21 +96,43 @@ const DOCUMENT_DEFINITIONS = [
     allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
     allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
     allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
-  },
-  {
-    key: "nitaCopy",
-    label: "NITA Copy with School Stamp",
-    accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
-    allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
-    allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
-    allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
   }
 ];
 
 const COMBINED_DOCUMENT_FIELD = "combinedDocuments";
 const COMBINED_DOCUMENT_DEFINITION = {
   key: COMBINED_DOCUMENT_FIELD,
-  label: "Combined Scanned Document (All Required Documents)",
+  label: "Combined Scanned Document (All Required Documents Except NITA)",
+  accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
+  allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
+  allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
+  allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
+};
+
+const NITA_DOCUMENT_FIELD = "nitaDocument";
+const NITA_DOCUMENT_DEFINITION = {
+  key: NITA_DOCUMENT_FIELD,
+  label: "NITA Document With School Stamp",
+  accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
+  allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
+  allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
+  allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
+};
+
+const COUNTY_SIGNED_NITA_FIELD = "countySignedNitaDocument";
+const COUNTY_SIGNED_NITA_DEFINITION = {
+  key: COUNTY_SIGNED_NITA_FIELD,
+  label: "County-Signed NITA Document",
+  accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
+  allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
+  allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
+  allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
+};
+
+const NITA_RESUBMISSION_FIELD = "nitaResubmittedDocument";
+const NITA_RESUBMISSION_DEFINITION = {
+  key: NITA_RESUBMISSION_FIELD,
+  label: "NITA Document Re-Submitted After NITA Office Stamping",
   accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
   allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
   allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
@@ -134,6 +156,9 @@ const DOCUMENT_SECURITY_POLICY = Object.fromEntries(
 const UPLOAD_SECURITY_POLICY = {
   ...DOCUMENT_SECURITY_POLICY,
   [COMBINED_DOCUMENT_FIELD]: COMBINED_DOCUMENT_DEFINITION,
+  [NITA_DOCUMENT_FIELD]: NITA_DOCUMENT_DEFINITION,
+  [COUNTY_SIGNED_NITA_FIELD]: COUNTY_SIGNED_NITA_DEFINITION,
+  [NITA_RESUBMISSION_FIELD]: NITA_RESUBMISSION_DEFINITION,
   [JOINING_LETTER_FIELD]: JOINING_LETTER_POLICY
 };
 
@@ -283,7 +308,15 @@ const upload = multer({
 
     if (
       ALLOW_ANY_TEST_UPLOADS &&
-      (REQUIRED_DOCUMENT_FIELDS.includes(file.fieldname) || file.fieldname === COMBINED_DOCUMENT_FIELD)
+      (
+        REQUIRED_DOCUMENT_FIELDS.includes(file.fieldname) ||
+        [
+          COMBINED_DOCUMENT_FIELD,
+          NITA_DOCUMENT_FIELD,
+          COUNTY_SIGNED_NITA_FIELD,
+          NITA_RESUBMISSION_FIELD
+        ].includes(file.fieldname)
+      )
     ) {
       return cb(null, true);
     }
@@ -301,13 +334,15 @@ const upload = multer({
 });
 
 const studentDocumentsUploadMiddleware = upload.fields(
-  [...REQUIRED_DOCUMENT_FIELDS, COMBINED_DOCUMENT_FIELD].map((fieldName) => ({
+  [...REQUIRED_DOCUMENT_FIELDS, COMBINED_DOCUMENT_FIELD, NITA_DOCUMENT_FIELD].map((fieldName) => ({
     name: fieldName,
     maxCount: 1
   }))
 );
 
 const joiningLetterUploadMiddleware = upload.single(JOINING_LETTER_FIELD);
+const countySignedNitaUploadMiddleware = upload.single(COUNTY_SIGNED_NITA_FIELD);
+const nitaResubmissionUploadMiddleware = upload.single(NITA_RESUBMISSION_FIELD);
 
 app.set("view engine", "ejs");
 app.set("views", VIEWS_DIR);
@@ -348,6 +383,21 @@ function createDefaultCombinedDocumentReview() {
   };
 }
 
+function createDefaultNitaReview() {
+  return {
+    status: "Pending",
+    comment: ""
+  };
+}
+
+function createDefaultNitaWorkflow() {
+  return {
+    status: "Pending County Signature",
+    comment: "",
+    updatedAt: null
+  };
+}
+
 function normalizeDocumentsReview(documentsReview) {
   const defaults = createDefaultDocumentsReview();
   const source = documentsReview || {};
@@ -380,6 +430,38 @@ function normalizeCombinedDocumentReview(review) {
   };
 }
 
+function normalizeNitaReview(review) {
+  const defaults = createDefaultNitaReview();
+  const rawStatus = review?.status;
+  const safeStatus = ["Pending", "Accepted", "Rejected"].includes(rawStatus)
+    ? rawStatus
+    : defaults.status;
+
+  return {
+    status: safeStatus,
+    comment: (review?.comment || "").toString().trim()
+  };
+}
+
+function normalizeNitaWorkflow(workflow) {
+  const defaults = createDefaultNitaWorkflow();
+  const allowedStatuses = new Set([
+    "Pending County Signature",
+    "Awaiting Student NITA Resubmission",
+    "Under HR NITA Review",
+    "Completed"
+  ]);
+  const status = allowedStatuses.has((workflow?.status || "").toString())
+    ? workflow.status
+    : defaults.status;
+
+  return {
+    status,
+    comment: (workflow?.comment || "").toString().trim(),
+    updatedAt: workflow?.updatedAt || null
+  };
+}
+
 function getDocumentDefinition(fieldName) {
   return DOCUMENT_DEFINITIONS.find((document) => document.key === fieldName) || null;
 }
@@ -387,6 +469,18 @@ function getDocumentDefinition(fieldName) {
 function getDocumentLabel(fieldName) {
   if (fieldName === COMBINED_DOCUMENT_FIELD) {
     return COMBINED_DOCUMENT_DEFINITION.label;
+  }
+
+  if (fieldName === NITA_DOCUMENT_FIELD) {
+    return NITA_DOCUMENT_DEFINITION.label;
+  }
+
+  if (fieldName === COUNTY_SIGNED_NITA_FIELD) {
+    return COUNTY_SIGNED_NITA_DEFINITION.label;
+  }
+
+  if (fieldName === NITA_RESUBMISSION_FIELD) {
+    return NITA_RESUBMISSION_DEFINITION.label;
   }
 
   return getDocumentDefinition(fieldName)?.label || fieldName;
@@ -453,6 +547,11 @@ function ensureApplicationDefaults(application) {
     documentsReview: normalizeDocumentsReview(application.documentsReview),
     combinedDocument: normalizeStoredFileEntry(application.combinedDocument),
     combinedDocumentReview: normalizeCombinedDocumentReview(application.combinedDocumentReview),
+    nitaDocument: normalizeStoredFileEntry(application.nitaDocument),
+    nitaDocumentReview: normalizeNitaReview(application.nitaDocumentReview),
+    countySignedNitaDocument: normalizeStoredFileEntry(application.countySignedNitaDocument),
+    nitaResubmittedDocument: normalizeStoredFileEntry(application.nitaResubmittedDocument),
+    nitaWorkflow: normalizeNitaWorkflow(application.nitaWorkflow),
     joiningLetter: normalizeStoredFileEntry(application.joiningLetter)
   };
 }
@@ -854,6 +953,9 @@ function doesApplicationReferenceFile(application, filename) {
   return (
     documentFiles.includes(safeFilename) ||
     normalizeStoredFileEntry(application.combinedDocument)?.filename === safeFilename ||
+    normalizeStoredFileEntry(application.nitaDocument)?.filename === safeFilename ||
+    normalizeStoredFileEntry(application.countySignedNitaDocument)?.filename === safeFilename ||
+    normalizeStoredFileEntry(application.nitaResubmittedDocument)?.filename === safeFilename ||
     normalizeStoredFileEntry(application.joiningLetter)?.filename === safeFilename
   );
 }
@@ -867,6 +969,9 @@ function getApplicationStoredFileByFilename(application, filename) {
   const normalizedApplication = ensureApplicationDefaults(application);
   const entries = [
     normalizedApplication.combinedDocument,
+    normalizedApplication.nitaDocument,
+    normalizedApplication.countySignedNitaDocument,
+    normalizedApplication.nitaResubmittedDocument,
     normalizedApplication.joiningLetter,
     ...Object.values(normalizedApplication.documents || {})
   ].filter(Boolean);
@@ -1256,8 +1361,224 @@ function getInstitutionFullNameError(institutionName) {
   return null;
 }
 
+function getCoverNoteError(coverNote) {
+  const value = (coverNote || "").toString().trim();
+  if (!value) {
+    return "Please write a brief cover note introducing yourself and explaining your attachment request.";
+  }
+
+  const words = value.split(/\s+/).filter(Boolean);
+  if (value.length < 30 || words.length < 6) {
+    return "Cover note must briefly explain who you are, what you are studying, and why you are applying for attachment.";
+  }
+
+  return null;
+}
+
 function getStatusClass(status) {
   return (status || "").toLowerCase().replace(/\s+/g, "-");
+}
+
+function getStudentDashboardStatus(application, rejectedDocuments) {
+  const status = (application?.status || "").toString();
+  const nitaWorkflow = normalizeNitaWorkflow(application?.nitaWorkflow);
+
+  switch (status) {
+    case "Needs Correction":
+      return {
+        tone: "warning",
+        heading: "Correction Required",
+        summary:
+          "Department review found issues in your submitted documents. Re-upload the requested items below so the application can continue.",
+        nextActionTitle: "Student action required",
+        nextActionText:
+          rejectedDocuments.length > 0
+            ? "Re-upload every document listed in the correction section below."
+            : "Review the admin comment and wait for further instruction."
+      };
+    case "Verified":
+      if (nitaWorkflow.status === "Pending County Signature") {
+        return {
+          tone: "muted",
+          heading: "Waiting For County-Signed NITA Form",
+          summary:
+            "Department verification is complete. HR will upload the county-signed NITA document for you to download next.",
+          nextActionTitle: "Next step",
+          nextActionText:
+            "No action is needed now. Check this dashboard for the county-signed NITA form."
+        };
+      }
+
+      if (nitaWorkflow.status === "Awaiting Student NITA Resubmission") {
+        return {
+          tone: "warning",
+          heading: "Download And Return The NITA Form",
+          summary:
+            "HR uploaded the county-signed NITA document. Download it, take it to the NITA office for stamping, then re-submit the stamped copy here.",
+          nextActionTitle: "Student action required",
+          nextActionText:
+            "Download the county-signed NITA document and upload the stamped version from the NITA workflow section below."
+        };
+      }
+
+      if (nitaWorkflow.status === "Under HR NITA Review") {
+        return {
+          tone: "muted",
+          heading: "Stamped NITA Submitted",
+          summary:
+            "Your stamped NITA document has been sent back to HR and is now under review.",
+          nextActionTitle: "Next step",
+          nextActionText:
+            "Wait for HR to confirm the NITA stage, then the application can move to final approval."
+        };
+      }
+
+      if (nitaWorkflow.status === "Completed") {
+        return {
+          tone: "success",
+          heading: "NITA Stage Completed",
+          summary:
+            "Your NITA document workflow is complete and the application is now waiting for HR final approval.",
+          nextActionTitle: "Next step",
+          nextActionText: "No action is needed now unless HR adds a further comment."
+        };
+      }
+
+      return {
+        tone: "success",
+        heading: "Verified By Department",
+        summary:
+          "Your application passed department verification and is now waiting for HR final review.",
+        nextActionTitle: "Next step",
+        nextActionText: "No action is needed now. Wait for HR approval or rejection."
+      };
+    case "Approved":
+      return {
+        tone: "success",
+        heading: "Approved",
+        summary: application?.joiningLetter?.filename
+          ? "HR approved your application and your joining letter is ready."
+          : "HR approved your application. Your joining letter will appear here once uploaded.",
+        nextActionTitle: application?.joiningLetter?.filename ? "Next step" : "Current status",
+        nextActionText: application?.joiningLetter?.filename
+          ? "Download your joining letter and keep the tracking number for reference."
+          : "Wait for HR to upload the joining letter, then download it from this dashboard."
+      };
+    case "Rejected":
+      return {
+        tone: "danger",
+        heading: "Application Rejected",
+        summary:
+          "Your application has been rejected. Review the final comment below for the reason.",
+        nextActionTitle: "Next step",
+        nextActionText: "Use the reviewer comment below to understand the final decision."
+      };
+    case "Pending":
+    default:
+      return {
+        tone: "muted",
+        heading: "Application Received",
+        summary:
+          "Your application is in the queue and is waiting for department review.",
+        nextActionTitle: "Next step",
+        nextActionText: "No action is needed now unless the department requests corrections."
+      };
+  }
+}
+
+function buildStudentTimeline(application) {
+  const status = (application?.status || "").toString();
+  const updatedAt = application?.updatedAt || application?.submittedAt || null;
+  const nitaWorkflow = normalizeNitaWorkflow(application?.nitaWorkflow);
+
+  const departmentState =
+    status === "Pending"
+      ? "current"
+      : ["Needs Correction", "Verified", "Approved", "Rejected"].includes(status)
+        ? "complete"
+        : "upcoming";
+  const hrState =
+    status === "Verified"
+      ? "current"
+      : ["Approved", "Rejected"].includes(status)
+        ? "complete"
+        : "upcoming";
+  const nitaState =
+    ["Approved", "Rejected"].includes(status) || nitaWorkflow.status === "Completed"
+      ? "complete"
+      : status === "Verified" &&
+          [
+            "Pending County Signature",
+            "Awaiting Student NITA Resubmission",
+            "Under HR NITA Review"
+          ].includes(nitaWorkflow.status)
+        ? "current"
+        : "upcoming";
+  const finalDecisionState = ["Approved", "Rejected"].includes(status) ? "current" : "upcoming";
+
+  return [
+    {
+      key: "submitted",
+      label: "Submitted",
+      state: "complete",
+      date: application?.submittedAt || null,
+      note: "Application received and tracking number generated."
+    },
+    {
+      key: "department_review",
+      label: "Department Review",
+      state: departmentState,
+      date: departmentState === "complete" ? updatedAt : null,
+      note:
+        status === "Needs Correction"
+          ? "Department review requested document corrections."
+          : status === "Pending"
+            ? "Waiting for the department to check your application."
+            : "Department review completed."
+    },
+    {
+      key: "hr_review",
+      label: "HR Review",
+      state: hrState,
+      date: hrState === "complete" ? updatedAt : null,
+      note:
+        status === "Verified"
+          ? "Your application is waiting for HR final review."
+          : ["Approved", "Rejected"].includes(status)
+            ? "HR review completed."
+            : "This stage starts after department verification."
+    },
+    {
+      key: "nita_workflow",
+      label: "NITA Clearance",
+      state: nitaState,
+      date: nitaState === "complete" || nitaState === "current" ? nitaWorkflow.updatedAt : null,
+      note:
+        nitaWorkflow.status === "Pending County Signature"
+          ? "HR will upload the county-signed NITA document for student download."
+          : nitaWorkflow.status === "Awaiting Student NITA Resubmission"
+            ? "Student should download the county-signed NITA document, get it stamped, and re-submit it."
+            : nitaWorkflow.status === "Under HR NITA Review"
+              ? "HR is reviewing the stamped NITA document sent back by the student."
+              : nitaWorkflow.status === "Completed"
+                ? "NITA workflow completed."
+                : "This stage starts after department verification."
+    },
+    {
+      key: "final_decision",
+      label: "Final Decision",
+      state: finalDecisionState,
+      date: finalDecisionState === "current" ? updatedAt : null,
+      note:
+        status === "Approved"
+          ? application?.joiningLetter?.filename
+            ? "Approved and joining letter uploaded."
+            : "Approved. Joining letter upload is pending."
+          : status === "Rejected"
+            ? "Final decision recorded."
+            : "Final HR decision not reached yet."
+    }
+  ];
 }
 
 function generateApplicationId(applications) {
@@ -1338,6 +1659,15 @@ function cleanupApplicationDocuments(application) {
   Promise.resolve(fileStorage.removeStoredFile(normalizeStoredFileEntry(application?.combinedDocument))).catch(
     () => {}
   );
+  Promise.resolve(fileStorage.removeStoredFile(normalizeStoredFileEntry(application?.nitaDocument))).catch(
+    () => {}
+  );
+  Promise.resolve(
+    fileStorage.removeStoredFile(normalizeStoredFileEntry(application?.countySignedNitaDocument))
+  ).catch(() => {});
+  Promise.resolve(
+    fileStorage.removeStoredFile(normalizeStoredFileEntry(application?.nitaResubmittedDocument))
+  ).catch(() => {});
   Promise.resolve(fileStorage.removeStoredFile(normalizeStoredFileEntry(application?.joiningLetter))).catch(
     () => {}
   );
@@ -1475,7 +1805,15 @@ function scanUploadedFile(file) {
 
   if (
     ALLOW_ANY_TEST_UPLOADS &&
-    (REQUIRED_DOCUMENT_FIELDS.includes(file.fieldname) || file.fieldname === COMBINED_DOCUMENT_FIELD)
+    (
+      REQUIRED_DOCUMENT_FIELDS.includes(file.fieldname) ||
+      [
+        COMBINED_DOCUMENT_FIELD,
+        NITA_DOCUMENT_FIELD,
+        COUNTY_SIGNED_NITA_FIELD,
+        NITA_RESUBMISSION_FIELD
+      ].includes(file.fieldname)
+    )
   ) {
     const fileBufferForTest = fs.readFileSync(safePath);
     const testSha256 = crypto.createHash("sha256").update(fileBufferForTest).digest("hex");
@@ -1593,38 +1931,49 @@ async function persistUploadedApplicationFile(file, { folder, uploadedAt, securi
 function getRejectedDocuments(application) {
   const normalized = ensureApplicationDefaults(application);
   const acceptAll = ALLOW_ANY_TEST_UPLOADS ? "*/*" : undefined;
+  const rejected = [];
 
   if (normalized.combinedDocument?.filename) {
-    if (normalized.combinedDocumentReview.status !== "Rejected") {
-      return [];
-    }
-
-    return [
-      {
+    if (normalized.combinedDocumentReview.status === "Rejected") {
+      rejected.push({
         ...COMBINED_DOCUMENT_DEFINITION,
         accept: acceptAll || COMBINED_DOCUMENT_DEFINITION.accept,
         review: normalized.combinedDocumentReview
-      }
-    ];
+      });
+    }
   }
 
-  return DOCUMENT_DEFINITIONS
-    .filter((document) => normalized.documentsReview[document.key].status === "Rejected")
-    .map((document) => ({
+  if (normalized.nitaDocument?.filename && normalized.nitaDocumentReview.status === "Rejected") {
+    rejected.push({
+      ...NITA_DOCUMENT_DEFINITION,
+      accept: acceptAll || NITA_DOCUMENT_DEFINITION.accept,
+      review: normalized.nitaDocumentReview
+    });
+  }
+
+  rejected.push(
+    ...DOCUMENT_DEFINITIONS
+      .filter((document) => normalized.documentsReview[document.key].status === "Rejected")
+      .map((document) => ({
       ...document,
       accept: acceptAll || document.accept,
       review: normalized.documentsReview[document.key]
-    }));
+      }))
+  );
+
+  return rejected;
 }
 
 function hasAnyRejectedDocuments(application) {
   const normalized = ensureApplicationDefaults(application);
-  if (normalized.combinedDocument?.filename) {
-    return normalized.combinedDocumentReview.status === "Rejected";
-  }
 
-  return REQUIRED_DOCUMENT_FIELDS.some(
-    (fieldName) => normalized.documentsReview[fieldName].status === "Rejected"
+  return (
+    (normalized.combinedDocument?.filename &&
+      normalized.combinedDocumentReview.status === "Rejected") ||
+    (normalized.nitaDocument?.filename && normalized.nitaDocumentReview.status === "Rejected") ||
+    REQUIRED_DOCUMENT_FIELDS.some(
+      (fieldName) => normalized.documentsReview[fieldName].status === "Rejected"
+    )
   );
 }
 
@@ -1639,6 +1988,13 @@ function getViewCombinedDocumentDefinition() {
   return {
     ...COMBINED_DOCUMENT_DEFINITION,
     accept: ALLOW_ANY_TEST_UPLOADS ? "*/*" : COMBINED_DOCUMENT_DEFINITION.accept
+  };
+}
+
+function getViewNitaDocumentDefinition() {
+  return {
+    ...NITA_DOCUMENT_DEFINITION,
+    accept: ALLOW_ANY_TEST_UPLOADS ? "*/*" : NITA_DOCUMENT_DEFINITION.accept
   };
 }
 
@@ -1706,7 +2062,8 @@ function renderApplyPage(res, { error = null, formData = {}, statusCode = 200 } 
       Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
     departmentOptions: DEPARTMENTS,
     documentDefinitions: getViewDocumentDefinitions(),
-    combinedDocumentDefinition: getViewCombinedDocumentDefinition()
+    combinedDocumentDefinition: getViewCombinedDocumentDefinition(),
+    nitaDocumentDefinition: getViewNitaDocumentDefinition()
   });
 }
 
@@ -1714,19 +2071,41 @@ function renderTrackPage(res, {
   error = null,
   message = null,
   result = null,
+  formData = {},
   statusCode = 200
 } = {}) {
   const safeResult = result ? ensureApplicationDefaults(result) : null;
+  const safeFormData = {
+    trackingNumber:
+      formData.trackingNumber ||
+      (safeResult ? safeResult.placementNumber || safeResult.id : ""),
+    email: formData.email || (safeResult ? safeResult.email || "" : "")
+  };
+  const rejectedDocuments = safeResult ? getRejectedDocuments(safeResult) : [];
+  const studentDashboard = safeResult
+    ? {
+      status: getStudentDashboardStatus(safeResult, rejectedDocuments),
+      timeline: buildStudentTimeline(safeResult)
+    }
+    : null;
 
   return res.status(statusCode).render("track", {
     error,
     message,
     result: safeResult,
-    rejectedDocuments: safeResult ? getRejectedDocuments(safeResult) : [],
+    formData: safeFormData,
+    rejectedDocuments,
+    studentDashboard,
     formatDate,
     getPeriodLabel,
     getDepartmentLabel,
-    getStatusClass
+    getStatusClass,
+    nitaDocumentDefinition: NITA_DOCUMENT_DEFINITION,
+    countySignedNitaDefinition: COUNTY_SIGNED_NITA_DEFINITION,
+    nitaResubmissionDefinition: {
+      ...NITA_RESUBMISSION_DEFINITION,
+      accept: ALLOW_ANY_TEST_UPLOADS ? "*/*" : NITA_RESUBMISSION_DEFINITION.accept
+    }
   });
 }
 
@@ -1755,9 +2134,32 @@ function renderAdminDetailPage(res, {
     departmentOptions,
     documentDefinitions: DOCUMENT_DEFINITIONS,
     combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION,
+    nitaDocumentDefinition: NITA_DOCUMENT_DEFINITION,
     statusOptions,
     error,
     notice
+  });
+}
+
+function renderHrDetailPage(res, {
+  application,
+  error = null,
+  notice = null,
+  statusCode = 200
+}) {
+  return res.status(statusCode).render("hr-detail", {
+    application: ensureApplicationDefaults(application),
+    notice,
+    error,
+    formatDate,
+    getPeriodLabel,
+    getDepartmentLabel,
+    getStatusClass,
+    hrStatusOptions: ["Verified", "Approved", "Rejected"],
+    combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION,
+    nitaDocumentDefinition: NITA_DOCUMENT_DEFINITION,
+    countySignedNitaDefinition: COUNTY_SIGNED_NITA_DEFINITION,
+    nitaResubmissionDefinition: NITA_RESUBMISSION_DEFINITION
   });
 }
 
@@ -1883,6 +2285,7 @@ app.post("/apply", (req, res) => {
     let finalPeriod = (period || "").trim();
     let finalStartDate = (startDate || "").trim();
     let finalEndDate = (endDate || "").trim();
+    let finalCoverNote = (coverNote || "").trim();
 
     const requiredText = [
       finalFullName,
@@ -1893,20 +2296,22 @@ app.post("/apply", (req, res) => {
       finalAppliedDepartment,
       finalPeriod,
       finalStartDate,
-      finalEndDate
+      finalEndDate,
+      finalCoverNote
     ];
 
     const hasMissingText = requiredText.some((field) => !field || !field.trim());
     const hasCombinedDocument = Boolean(files[COMBINED_DOCUMENT_FIELD]?.[0]);
+    const hasNitaDocument = Boolean(files[NITA_DOCUMENT_FIELD]?.[0]);
 
     const start = new Date(finalStartDate);
     const end = new Date(finalEndDate);
 
-    if (hasMissingText || !hasCombinedDocument) {
+    if (hasMissingText || !hasCombinedDocument || !hasNitaDocument) {
       cleanupUploadedFiles(files);
       return renderApplyPage(res, {
         statusCode: 400,
-        error: "Please fill all required fields and upload one combined scanned document.",
+        error: "Please fill all required fields, upload the combined document, and upload the NITA document separately.",
         formData
       });
     }
@@ -1917,6 +2322,16 @@ app.post("/apply", (req, res) => {
       return renderApplyPage(res, {
         statusCode: 400,
         error: institutionValidationError,
+        formData
+      });
+    }
+
+    const coverNoteError = getCoverNoteError(finalCoverNote);
+    if (coverNoteError) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: coverNoteError,
         formData
       });
     }
@@ -1995,7 +2410,9 @@ app.post("/apply", (req, res) => {
       files[fieldName] = [];
     });
 
-    const uploadedFields = hasCombinedDocument ? [COMBINED_DOCUMENT_FIELD] : [];
+    const uploadedFields = [COMBINED_DOCUMENT_FIELD, NITA_DOCUMENT_FIELD].filter(
+      (fieldName) => Boolean(files[fieldName]?.[0])
+    );
     let documentSecurity = {};
     try {
       if (uploadedFields.length > 0) {
@@ -2014,11 +2431,17 @@ app.post("/apply", (req, res) => {
       const applicationId = generateApplicationId(applications);
       const placementNumber = generatePlacementNumber(applications);
       const combinedUpload = files[COMBINED_DOCUMENT_FIELD]?.[0] || null;
+      const nitaUpload = files[NITA_DOCUMENT_FIELD]?.[0] || null;
       const storedAt = new Date().toISOString();
       const combinedDocument = await persistUploadedApplicationFile(combinedUpload, {
         folder: "applications/combined-documents",
         uploadedAt: storedAt,
         security: documentSecurity[COMBINED_DOCUMENT_FIELD] || null
+      });
+      const nitaDocument = await persistUploadedApplicationFile(nitaUpload, {
+        folder: "applications/nita-initial",
+        uploadedAt: storedAt,
+        security: documentSecurity[NITA_DOCUMENT_FIELD] || null
       });
 
       const newApplication = ensureApplicationDefaults({
@@ -2034,7 +2457,7 @@ app.post("/apply", (req, res) => {
         period: finalPeriod,
         startDate: finalStartDate,
         endDate: finalEndDate,
-        coverNote: (coverNote || "").trim(),
+        coverNote: finalCoverNote,
         documents: REQUIRED_DOCUMENT_FIELDS.reduce((acc, fieldName) => {
           acc[fieldName] = null;
           return acc;
@@ -2043,6 +2466,11 @@ app.post("/apply", (req, res) => {
         documentsReview: createDefaultDocumentsReview(),
         combinedDocument,
         combinedDocumentReview: createDefaultCombinedDocumentReview(),
+        nitaDocument,
+        nitaDocumentReview: createDefaultNitaReview(),
+        countySignedNitaDocument: null,
+        nitaResubmittedDocument: null,
+        nitaWorkflow: createDefaultNitaWorkflow(),
         joiningLetter: null,
         status: "Pending",
         reviewerComment: "",
@@ -2065,18 +2493,16 @@ app.post("/apply", (req, res) => {
   });
 });
 
-app.get("/track", (_req, res) => {
-  return renderTrackPage(res);
-});
-
-app.post("/track", (req, res) => {
-  const trackingNumber = (req.body.trackingNumber || req.body.applicationId || "").trim();
-  const email = (req.body.email || "").trim().toLowerCase();
+app.get("/track", (req, res) => {
+  const trackingNumber = (req.query.trackingNumber || "").toString().trim();
+  const email = (req.query.email || "").toString().trim().toLowerCase();
 
   if (!trackingNumber || !email) {
     return renderTrackPage(res, {
-      statusCode: 400,
-      error: "Enter both tracking number and email."
+      formData: {
+        trackingNumber,
+        email
+      }
     });
   }
 
@@ -2087,12 +2513,59 @@ app.post("/track", (req, res) => {
   if (!result) {
     return renderTrackPage(res, {
       statusCode: 404,
-      error: "No application found with the provided details."
+      error: "No application found with the provided details.",
+      formData: {
+        trackingNumber,
+        email
+      }
     });
   }
 
   return renderTrackPage(res, {
-    result
+    result,
+    formData: {
+      trackingNumber,
+      email
+    }
+  });
+});
+
+app.post("/track", (req, res) => {
+  const trackingNumber = (req.body.trackingNumber || req.body.applicationId || "").trim();
+  const email = (req.body.email || "").trim().toLowerCase();
+
+  if (!trackingNumber || !email) {
+    return renderTrackPage(res, {
+      statusCode: 400,
+      error: "Enter both tracking number and email.",
+      formData: {
+        trackingNumber,
+        email
+      }
+    });
+  }
+
+  const applications = readApplications();
+  const resultIndex = findApplicationIndexByTrackingAndEmail(applications, trackingNumber, email);
+  const result = resultIndex >= 0 ? applications[resultIndex] : null;
+
+  if (!result) {
+    return renderTrackPage(res, {
+      statusCode: 404,
+      error: "No application found with the provided details.",
+      formData: {
+        trackingNumber,
+        email
+      }
+    });
+  }
+
+  return renderTrackPage(res, {
+    result,
+    formData: {
+      trackingNumber,
+      email
+    }
   });
 });
 
@@ -2112,7 +2585,11 @@ app.post("/track/resubmit", (req, res) => {
       return renderTrackPage(res, {
         statusCode: 400,
         error: getUploadErrorMessage(uploadError),
-        result: currentApplication
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
       });
     }
 
@@ -2121,7 +2598,11 @@ app.post("/track/resubmit", (req, res) => {
       return renderTrackPage(res, {
         statusCode: 400,
         error: "Tracking number and email are required for re-upload.",
-        result: currentApplication
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
       });
     }
 
@@ -2129,7 +2610,11 @@ app.post("/track/resubmit", (req, res) => {
       cleanupUploadedFiles(files);
       return renderTrackPage(res, {
         statusCode: 404,
-        error: "No application found with the provided details."
+        error: "No application found with the provided details.",
+        formData: {
+          trackingNumber,
+          email
+        }
       });
     }
 
@@ -2139,7 +2624,11 @@ app.post("/track/resubmit", (req, res) => {
       return renderTrackPage(res, {
         statusCode: 400,
         error: "No documents are currently marked for correction.",
-        result: currentApplication
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
       });
     }
 
@@ -2155,7 +2644,11 @@ app.post("/track/resubmit", (req, res) => {
       return renderTrackPage(res, {
         statusCode: 400,
         error: "Upload only the documents marked for correction by admin.",
-        result: currentApplication
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
       });
     }
 
@@ -2170,7 +2663,11 @@ app.post("/track/resubmit", (req, res) => {
         error: `Please re-upload all rejected documents: ${missingRejectedUploads
           .map(getDocumentLabel)
           .join(", ")}.`,
-        result: currentApplication
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
       });
     }
 
@@ -2182,7 +2679,11 @@ app.post("/track/resubmit", (req, res) => {
       return renderTrackPage(res, {
         statusCode: 400,
         error: scanError.message || "File security scan failed.",
-        result: currentApplication
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
       });
     }
 
@@ -2220,6 +2721,30 @@ app.post("/track/resubmit", (req, res) => {
           continue;
         }
 
+        if (fieldName === NITA_DOCUMENT_FIELD) {
+          const uploadedNita = files[fieldName][0];
+          const previousNitaDocument = currentApplication.nitaDocument;
+
+          currentApplication.nitaDocument = await persistUploadedApplicationFile(uploadedNita, {
+            folder: "applications/nita-initial",
+            uploadedAt: reuploadedAt,
+            security: scannedSecurity[fieldName] || null
+          });
+          Promise.resolve(fileStorage.removeStoredFile(previousNitaDocument)).catch(() => {});
+          currentApplication.documentSecurity[fieldName] = scannedSecurity[fieldName];
+          currentApplication.nitaDocumentReview = {
+            status: "Pending",
+            comment: "Re-uploaded by student. Awaiting admin review."
+          };
+          currentApplication.nitaWorkflow = {
+            ...normalizeNitaWorkflow(currentApplication.nitaWorkflow),
+            status: "Pending County Signature",
+            comment: "",
+            updatedAt: reuploadedAt
+          };
+          continue;
+        }
+
         const previousDocument = currentApplication.documents[fieldName];
         currentApplication.documents[fieldName] = await persistUploadedApplicationFile(
           files[fieldName][0],
@@ -2237,11 +2762,7 @@ app.post("/track/resubmit", (req, res) => {
         };
       }
 
-      const hasRejectedAfterResubmit = currentApplication.combinedDocument?.filename
-        ? currentApplication.combinedDocumentReview.status === "Rejected"
-        : REQUIRED_DOCUMENT_FIELDS.some(
-          (fieldName) => currentApplication.documentsReview[fieldName].status === "Rejected"
-        );
+      const hasRejectedAfterResubmit = hasAnyRejectedDocuments(currentApplication);
 
       if (!hasRejectedAfterResubmit && currentApplication.status === "Needs Correction") {
         currentApplication.status = "Pending";
@@ -2253,14 +2774,169 @@ app.post("/track/resubmit", (req, res) => {
 
       return renderTrackPage(res, {
         message: "Documents re-uploaded successfully. Please wait for admin verification.",
-        result: currentApplication
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
       });
     })().catch((storageError) => {
       cleanupUploadedFiles(files);
       return renderTrackPage(res, {
         statusCode: 500,
         error: storageError.message || "Failed to store re-uploaded documents.",
-        result: currentApplication
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
+      });
+    });
+  });
+});
+
+app.post("/track/nita-resubmit", (req, res) => {
+  nitaResubmissionUploadMiddleware(req, res, (uploadError) => {
+    const trackingNumber = (req.body.trackingNumber || req.body.applicationId || "").trim();
+    const email = (req.body.email || "").trim().toLowerCase();
+    const uploadedFile = req.file || null;
+
+    const applications = readApplications();
+    const index = findApplicationIndexByTrackingAndEmail(applications, trackingNumber, email);
+    const currentApplication = index >= 0 ? ensureApplicationDefaults(applications[index]) : null;
+
+    if (uploadError) {
+      cleanupUploadedFiles({ [NITA_RESUBMISSION_FIELD]: uploadedFile ? [uploadedFile] : [] });
+      return renderTrackPage(res, {
+        statusCode: 400,
+        error: getUploadErrorMessage(uploadError),
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
+      });
+    }
+
+    if (!trackingNumber || !email) {
+      cleanupUploadedFiles({ [NITA_RESUBMISSION_FIELD]: uploadedFile ? [uploadedFile] : [] });
+      return renderTrackPage(res, {
+        statusCode: 400,
+        error: "Tracking number and email are required to submit the stamped NITA document.",
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
+      });
+    }
+
+    if (index === -1 || !currentApplication) {
+      cleanupUploadedFiles({ [NITA_RESUBMISSION_FIELD]: uploadedFile ? [uploadedFile] : [] });
+      return renderTrackPage(res, {
+        statusCode: 404,
+        error: "No application found with the provided details.",
+        formData: {
+          trackingNumber,
+          email
+        }
+      });
+    }
+
+    if (!uploadedFile) {
+      return renderTrackPage(res, {
+        statusCode: 400,
+        error: "Please upload the stamped NITA document before submitting.",
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
+      });
+    }
+
+    if (!currentApplication.countySignedNitaDocument?.filename) {
+      cleanupUploadedFiles({ [NITA_RESUBMISSION_FIELD]: [uploadedFile] });
+      return renderTrackPage(res, {
+        statusCode: 400,
+        error: "HR has not uploaded the county-signed NITA document yet.",
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
+      });
+    }
+
+    if (normalizeNitaWorkflow(currentApplication.nitaWorkflow).status === "Completed") {
+      cleanupUploadedFiles({ [NITA_RESUBMISSION_FIELD]: [uploadedFile] });
+      return renderTrackPage(res, {
+        statusCode: 400,
+        error: "The NITA workflow is already complete for this application.",
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
+      });
+    }
+
+    let nitaSecurity;
+    try {
+      nitaSecurity = scanUploadedFile(uploadedFile);
+    } catch (scanError) {
+      cleanupUploadedFiles({ [NITA_RESUBMISSION_FIELD]: [uploadedFile] });
+      return renderTrackPage(res, {
+        statusCode: 400,
+        error: scanError.message || "Stamped NITA document security scan failed.",
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
+      });
+    }
+
+    return (async () => {
+      const previousResubmittedDocument = currentApplication.nitaResubmittedDocument;
+      const submittedAt = new Date().toISOString();
+
+      currentApplication.nitaResubmittedDocument = await persistUploadedApplicationFile(uploadedFile, {
+        folder: "applications/nita-resubmissions",
+        uploadedAt: submittedAt,
+        security: nitaSecurity
+      });
+      currentApplication.documentSecurity[NITA_RESUBMISSION_FIELD] = nitaSecurity;
+      currentApplication.nitaWorkflow = {
+        ...normalizeNitaWorkflow(currentApplication.nitaWorkflow),
+        status: "Under HR NITA Review",
+        comment: "Student submitted the stamped NITA document for HR review.",
+        updatedAt: submittedAt
+      };
+      currentApplication.updatedAt = submittedAt;
+
+      applications[index] = currentApplication;
+      writeApplications(applications);
+      Promise.resolve(fileStorage.removeStoredFile(previousResubmittedDocument)).catch(() => {});
+
+      return renderTrackPage(res, {
+        message: "Stamped NITA document submitted successfully. HR will review it before final approval.",
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
+      });
+    })().catch((storageError) => {
+      cleanupUploadedFiles({ [NITA_RESUBMISSION_FIELD]: [uploadedFile] });
+      return renderTrackPage(res, {
+        statusCode: 500,
+        error: storageError.message || "Failed to store the stamped NITA document.",
+        result: currentApplication,
+        formData: {
+          trackingNumber,
+          email
+        }
       });
     });
   });
@@ -2308,6 +2984,37 @@ app.get("/application/:id/joining-letter", (req, res) => {
   const downloadName = `Joining-Letter-${application.id}${extension}`;
 
   return fileStorage.sendStoredFile(res, joiningLetter, {
+    downloadName
+  });
+});
+
+app.get("/application/:id/county-signed-nita", (req, res) => {
+  const email = (req.query.email || "").toString().trim().toLowerCase();
+
+  if (!email) {
+    return res.status(400).send("Email is required to download the county-signed NITA document.");
+  }
+
+  const applications = readApplications();
+  const application = applications.find(
+    (item) => item.id === req.params.id && item.email === email
+  );
+
+  if (!application) {
+    return res.status(404).send("Application not found.");
+  }
+
+  const countySignedNitaDocument = application.countySignedNitaDocument;
+  if (!countySignedNitaDocument || !countySignedNitaDocument.filename) {
+    return res.status(404).send("County-signed NITA document is not available yet.");
+  }
+
+  const extension =
+    path.extname(countySignedNitaDocument.originalName || countySignedNitaDocument.filename) ||
+    ".pdf";
+  const downloadName = `County-Signed-NITA-${application.id}${extension}`;
+
+  return fileStorage.sendStoredFile(res, countySignedNitaDocument, {
     downloadName
   });
 });
@@ -3019,10 +3726,14 @@ app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, (req
   let hasRejected = false;
 
   if (application.combinedDocument?.filename) {
-    const status = (req.body[`docStatus_${COMBINED_DOCUMENT_FIELD}`] || "Pending").toString().trim();
-    const comment = (req.body[`docComment_${COMBINED_DOCUMENT_FIELD}`] || "").toString().trim();
+    const combinedStatus = (req.body[`docStatus_${COMBINED_DOCUMENT_FIELD}`] || "Pending")
+      .toString()
+      .trim();
+    const combinedComment = (req.body[`docComment_${COMBINED_DOCUMENT_FIELD}`] || "")
+      .toString()
+      .trim();
 
-    if (!["Pending", "Accepted", "Rejected"].includes(status)) {
+    if (!["Pending", "Accepted", "Rejected"].includes(combinedStatus)) {
       return renderAdminDetailPage(res, {
         statusCode: 400,
         application,
@@ -3031,11 +3742,37 @@ app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, (req
     }
 
     application.combinedDocumentReview = {
-      status,
-      comment
+      status: combinedStatus,
+      comment: combinedComment
     };
-    if (status === "Rejected") {
+    if (combinedStatus === "Rejected") {
       hasRejected = true;
+    }
+
+    if (application.nitaDocument?.filename) {
+      const nitaStatus = (req.body[`docStatus_${NITA_DOCUMENT_FIELD}`] || "Pending")
+        .toString()
+        .trim();
+      const nitaComment = (req.body[`docComment_${NITA_DOCUMENT_FIELD}`] || "")
+        .toString()
+        .trim();
+
+      if (!["Pending", "Accepted", "Rejected"].includes(nitaStatus)) {
+        return renderAdminDetailPage(res, {
+          statusCode: 400,
+          application,
+          error: `Invalid document status for ${getDocumentLabel(NITA_DOCUMENT_FIELD)}.`
+        });
+      }
+
+      application.nitaDocumentReview = {
+        status: nitaStatus,
+        comment: nitaComment
+      };
+
+      if (nitaStatus === "Rejected") {
+        hasRejected = true;
+      }
     }
   } else {
     const updatedReview = createDefaultDocumentsReview();
@@ -3200,7 +3937,8 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, (req, res) => {
     appliedDepartment,
     period,
     startDate,
-    endDate
+    endDate,
+    coverNote
   ];
   const hasMissingText = requiredText.some((field) => !field || !field.trim());
   const start = new Date(startDate);
@@ -3237,6 +3975,15 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, (req, res) => {
       statusCode: 400,
       application: draftApplication,
       error: institutionValidationError
+    });
+  }
+
+  const coverNoteError = getCoverNoteError(draftApplication.coverNote);
+  if (coverNoteError) {
+    return renderAdminDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: coverNoteError
     });
   }
 
@@ -3368,23 +4115,154 @@ app.get("/hr/applications/:id", ensureHrAdmin, (req, res) => {
   }
 
   const notice =
-    req.query.joiningSaved === "1"
+    req.query.nitaSaved === "1"
+      ? "County-signed NITA document uploaded successfully."
+      : req.query.nitaCompleted === "1"
+        ? "HR confirmed the stamped NITA document."
+        : req.query.joiningSaved === "1"
       ? "Joining letter uploaded successfully."
       : req.query.statusSaved === "1"
         ? "HR status updated successfully."
         : null;
 
-  return res.render("hr-detail", {
-    application: ensureApplicationDefaults(application),
-    notice,
-    error: null,
-    formatDate,
-    getPeriodLabel,
-    getDepartmentLabel,
-    getStatusClass,
-    hrStatusOptions: ["Verified", "Approved", "Rejected"],
-    combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION
+  return renderHrDetailPage(res, {
+    application,
+    notice
   });
+});
+
+app.post("/hr/applications/:id/nita-county-signed", ensureHrAdmin, (req, res) => {
+  const applications = readApplications();
+  const index = applications.findIndex((item) => item.id === req.params.id);
+
+  if (index === -1) {
+    return res.status(404).render("not-found");
+  }
+
+  const application = ensureApplicationDefaults(applications[index]);
+
+  if (!HR_VISIBLE_STATUSES.has(application.status)) {
+    return res.status(400).send("Application is not yet in HR review queue.");
+  }
+
+  if (application.status === "Rejected") {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "Cannot continue the NITA workflow after the application has been rejected."
+    });
+  }
+
+  return countySignedNitaUploadMiddleware(req, res, (uploadError) => {
+    const uploadedFile = req.file || null;
+
+    if (uploadError) {
+      cleanupUploadedFiles({
+        [COUNTY_SIGNED_NITA_FIELD]: uploadedFile ? [uploadedFile] : []
+      });
+      return renderHrDetailPage(res, {
+        application,
+        statusCode: 400,
+        error: getUploadErrorMessage(uploadError)
+      });
+    }
+
+    if (!uploadedFile) {
+      return renderHrDetailPage(res, {
+        application,
+        statusCode: 400,
+        error: "Please upload the county-signed NITA document."
+      });
+    }
+
+    let nitaSecurity;
+    try {
+      nitaSecurity = scanUploadedFile(uploadedFile);
+    } catch (scanError) {
+      cleanupUploadedFiles({ [COUNTY_SIGNED_NITA_FIELD]: [uploadedFile] });
+      return renderHrDetailPage(res, {
+        application,
+        statusCode: 400,
+        error: scanError.message || "County-signed NITA document security scan failed."
+      });
+    }
+
+    return (async () => {
+      const storedAt = new Date().toISOString();
+      const oldCountySignedNita = application.countySignedNitaDocument;
+
+      application.countySignedNitaDocument = await persistUploadedApplicationFile(uploadedFile, {
+        folder: "applications/nita-county-signed",
+        uploadedAt: storedAt,
+        security: nitaSecurity
+      });
+      application.documentSecurity[COUNTY_SIGNED_NITA_FIELD] = nitaSecurity;
+      application.nitaWorkflow = {
+        ...normalizeNitaWorkflow(application.nitaWorkflow),
+        status: "Awaiting Student NITA Resubmission",
+        comment: "County-signed NITA document uploaded. Student should download it, get it stamped, and re-submit it.",
+        updatedAt: storedAt
+      };
+      application.updatedAt = storedAt;
+
+      applications[index] = application;
+      writeApplications(applications);
+      Promise.resolve(fileStorage.removeStoredFile(oldCountySignedNita)).catch(() => {});
+
+      return res.redirect(`/hr/applications/${req.params.id}?nitaSaved=1`);
+    })().catch((storageError) => {
+      cleanupUploadedFiles({ [COUNTY_SIGNED_NITA_FIELD]: [uploadedFile] });
+      return renderHrDetailPage(res, {
+        application,
+        statusCode: 500,
+        error: storageError.message || "Failed to store the county-signed NITA document."
+      });
+    });
+  });
+});
+
+app.post("/hr/applications/:id/nita-complete", ensureHrAdmin, (req, res) => {
+  const applications = readApplications();
+  const index = applications.findIndex((item) => item.id === req.params.id);
+
+  if (index === -1) {
+    return res.status(404).render("not-found");
+  }
+
+  const application = ensureApplicationDefaults(applications[index]);
+
+  if (!HR_VISIBLE_STATUSES.has(application.status)) {
+    return res.status(400).send("Application is not yet in HR review queue.");
+  }
+
+  if (application.status === "Rejected") {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "Cannot complete NITA workflow after the application has been rejected."
+    });
+  }
+
+  if (!application.nitaResubmittedDocument?.filename) {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "Student must re-submit the stamped NITA document before HR can complete this stage."
+    });
+  }
+
+  application.nitaWorkflow = {
+    ...normalizeNitaWorkflow(application.nitaWorkflow),
+    status: "Completed",
+    comment: "HR confirmed the stamped NITA document.",
+    updatedAt: new Date().toISOString()
+  };
+  application.updatedAt = application.nitaWorkflow.updatedAt;
+
+  applications[index] = application;
+  writeApplications(applications);
+
+  return res.redirect(`/hr/applications/${req.params.id}?nitaCompleted=1`);
 });
 
 app.post("/hr/applications/:id/status", ensureHrAdmin, (req, res) => {
@@ -3410,30 +4288,27 @@ app.post("/hr/applications/:id/status", ensureHrAdmin, (req, res) => {
   }
 
   if (status === "Approved" && !["Verified", "Approved"].includes(application.status)) {
-    return res.status(400).render("hr-detail", {
+    return renderHrDetailPage(res, {
       application,
-      notice: null,
-      error: "Only department-verified applications can be approved by HR.",
-      formatDate,
-      getPeriodLabel,
-      getDepartmentLabel,
-      getStatusClass,
-      hrStatusOptions: ["Verified", "Approved", "Rejected"],
-      combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION
+      statusCode: 400,
+      error: "Only department-verified applications can be approved by HR."
     });
   }
 
   if (status === "Approved" && hasAnyRejectedDocuments(application)) {
-    return res.status(400).render("hr-detail", {
+    return renderHrDetailPage(res, {
       application,
-      notice: null,
-      error: "Cannot approve while some documents are still rejected.",
-      formatDate,
-      getPeriodLabel,
-      getDepartmentLabel,
-      getStatusClass,
-      hrStatusOptions: ["Verified", "Approved", "Rejected"],
-      combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION
+      statusCode: 400,
+      error: "Cannot approve while some documents are still rejected."
+    });
+  }
+
+  if (status === "Approved" && normalizeNitaWorkflow(application.nitaWorkflow).status !== "Completed") {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error:
+        "Complete the NITA workflow first. HR must upload the county-signed NITA document, the student must re-submit the stamped copy, and HR must confirm it before final approval."
     });
   }
 
@@ -3462,16 +4337,18 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, (req, res) => {
   }
 
   if (application.status !== "Approved") {
-    return res.status(400).render("hr-detail", {
+    return renderHrDetailPage(res, {
       application,
-      notice: null,
-      error: "Approve the application first before uploading a joining letter.",
-      formatDate,
-      getPeriodLabel,
-      getDepartmentLabel,
-      getStatusClass,
-      hrStatusOptions: ["Verified", "Approved", "Rejected"],
-      combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION
+      statusCode: 400,
+      error: "Approve the application first before uploading a joining letter."
+    });
+  }
+
+  if (normalizeNitaWorkflow(application.nitaWorkflow).status !== "Completed") {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "Complete the NITA workflow before uploading the joining letter."
     });
   }
 
@@ -3482,30 +4359,18 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, (req, res) => {
         removeStoredFile(req.file.filename);
       }
 
-      return res.status(400).render("hr-detail", {
+      return renderHrDetailPage(res, {
         application,
-        notice: null,
-        error: getUploadErrorMessage(uploadError),
-        formatDate,
-        getPeriodLabel,
-        getDepartmentLabel,
-        getStatusClass,
-        hrStatusOptions: ["Verified", "Approved", "Rejected"],
-        combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION
+        statusCode: 400,
+        error: getUploadErrorMessage(uploadError)
       });
     }
 
     if (!req.file) {
-      return res.status(400).render("hr-detail", {
+      return renderHrDetailPage(res, {
         application,
-        notice: null,
-        error: "Please select a joining letter file to upload.",
-        formatDate,
-        getPeriodLabel,
-        getDepartmentLabel,
-        getStatusClass,
-        hrStatusOptions: ["Verified", "Approved", "Rejected"],
-        combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION
+        statusCode: 400,
+        error: "Please select a joining letter file to upload."
       });
     }
 
@@ -3514,16 +4379,10 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, (req, res) => {
       joiningLetterSecurity = scanUploadedFile(req.file);
     } catch (scanError) {
       removeStoredFile(req.file.filename);
-      return res.status(400).render("hr-detail", {
+      return renderHrDetailPage(res, {
         application,
-        notice: null,
-        error: scanError.message || "Joining letter security scan failed.",
-        formatDate,
-        getPeriodLabel,
-        getDepartmentLabel,
-        getStatusClass,
-        hrStatusOptions: ["Verified", "Approved", "Rejected"],
-        combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION
+        statusCode: 400,
+        error: scanError.message || "Joining letter security scan failed."
       });
     }
 
@@ -3543,16 +4402,10 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, (req, res) => {
       return res.redirect(`/hr/applications/${req.params.id}?joiningSaved=1`);
     })().catch((storageError) => {
       cleanupUploadedFiles({ [JOINING_LETTER_FIELD]: [req.file] });
-      return res.status(500).render("hr-detail", {
+      return renderHrDetailPage(res, {
         application,
-        notice: null,
-        error: storageError.message || "Failed to store the joining letter.",
-        formatDate,
-        getPeriodLabel,
-        getDepartmentLabel,
-        getStatusClass,
-        hrStatusOptions: ["Verified", "Approved", "Rejected"],
-        combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION
+        statusCode: 500,
+        error: storageError.message || "Failed to store the joining letter."
       });
     });
   });

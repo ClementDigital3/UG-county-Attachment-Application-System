@@ -1,8 +1,8 @@
 <%- include("partials/layout-open", { pageTitle: "Track Application", activePortal: "student" }) %>
-<main class="container small">
+<main class="container <%= result ? 'wide' : 'small' %>">
       <section class="card">
         <h1>Track Application Status</h1>
-        <p>Enter your tracking/placement number (or application ID) and email used during submission.</p>
+        <p>Enter your tracking/placement number and the email used during submission to open your student dashboard.</p>
 
         <% if (error) { %>
           <div class="alert"><%= error %></div>
@@ -12,60 +12,204 @@
           <div class="notice"><%= message %></div>
         <% } %>
 
-        <form action="/track" method="post" class="form-grid">
+        <form action="/track" method="post" class="form-grid <%= result ? '' : 'auth-form' %>">
           <label class="full-width">
             Tracking / Placement Number
-            <input type="text" name="trackingNumber" placeholder="UG-ATT-2026-123456 or ATT-..." required />
+            <input
+              type="text"
+              name="trackingNumber"
+              placeholder="UG-ATT-2026-123456 or ATT-..."
+              value="<%= formData.trackingNumber || '' %>"
+              required
+            />
           </label>
 
           <label class="full-width">
             Email
-            <input type="email" name="email" required />
+            <input type="email" name="email" value="<%= formData.email || '' %>" required />
           </label>
 
           <div class="actions full-width">
-            <button class="btn" type="submit">Check Status</button>
+            <button class="btn" type="submit">Open Dashboard</button>
             <a class="btn secondary" href="/">Back</a>
           </div>
         </form>
+      </section>
 
-        <% if (result) { %>
-          <hr />
-          <div class="summary">
-            <p><strong>Tracking / Placement Number:</strong> <%= result.placementNumber || result.id %></p>
-            <p><strong>Application ID:</strong> <%= result.id %></p>
-            <p><strong>Name:</strong> <%= result.fullName %></p>
-            <p><strong>Applied Department:</strong> <%= result.appliedDepartment ? getDepartmentLabel(result.appliedDepartment) : 'Not set' %></p>
-            <p><strong>Assigned Department:</strong> <%= result.assignedDepartment ? getDepartmentLabel(result.assignedDepartment) : 'Not assigned yet' %></p>
-            <p><strong>Period:</strong> <%= result.period ? getPeriodLabel(result.period) : 'Not set' %></p>
-            <p><strong>Status:</strong> <span class="badge <%= getStatusClass(result.status) %>"><%= result.status %></span></p>
-            <p><strong>Submitted:</strong> <%= formatDate(result.submittedAt) %></p>
-            <p><strong>Last Updated:</strong> <%= formatDate(result.updatedAt) %></p>
-            <p><strong>Reviewer Comment:</strong> <%= result.reviewerComment || 'No comment yet.' %></p>
+      <% if (result && studentDashboard) { %>
+        <section class="card student-dashboard-hero">
+          <div class="row-between">
+            <div>
+              <p class="eyebrow">Student Self-Service Dashboard</p>
+              <h2><%= studentDashboard.status.heading %></h2>
+              <p><%= studentDashboard.status.summary %></p>
+            </div>
+            <div class="dashboard-badge-wrap">
+              <span class="badge <%= getStatusClass(result.status) %>"><%= result.status %></span>
+            </div>
           </div>
 
-          <% if (result.joiningLetter && result.joiningLetter.filename) { %>
-            <div class="actions">
-              <a class="btn" href="/application/<%= result.id %>/joining-letter?email=<%= encodeURIComponent(result.email) %>">
-                Download Joining Letter
-              </a>
+          <div class="dashboard-quick-grid">
+            <div class="summary">
+              <p><strong>Tracking / Placement Number:</strong> <%= result.placementNumber || result.id %></p>
+              <p><strong>Application ID:</strong> <%= result.id %></p>
+              <p><strong>Name:</strong> <%= result.fullName %></p>
+              <p><strong>Email:</strong> <%= result.email %></p>
             </div>
-          <% } %>
+            <div class="summary">
+              <p><strong>Next Action:</strong> <%= studentDashboard.status.nextActionTitle %></p>
+              <p><%= studentDashboard.status.nextActionText %></p>
+              <div class="actions tight">
+                <a class="btn secondary" href="/apply">Submit Another Application</a>
+              </div>
+            </div>
+          </div>
+        </section>
 
-          <% if (rejectedDocuments.length) { %>
-            <h2>Documents To Re-Upload</h2>
-            <p>Admin has marked the following documents as incorrect. Re-upload all listed documents.</p>
+        <section class="dashboard-grid">
+          <article class="card">
+            <h2>Application Overview</h2>
+            <div class="stats compact dashboard-stat-grid">
+              <div>
+                <strong><%= result.appliedDepartment ? getDepartmentLabel(result.appliedDepartment) : 'Not set' %></strong>
+                <span>Applied Department</span>
+              </div>
+              <div>
+                <strong><%= result.assignedDepartment ? getDepartmentLabel(result.assignedDepartment) : 'Pending' %></strong>
+                <span>Assigned Department</span>
+              </div>
+              <div>
+                <strong><%= result.period ? getPeriodLabel(result.period) : 'Not set' %></strong>
+                <span>Attachment Period</span>
+              </div>
+              <div>
+                <strong><%= formatDate(result.submittedAt) %></strong>
+                <span>Submitted</span>
+              </div>
+              <div>
+                <strong><%= formatDate(result.updatedAt) %></strong>
+                <span>Last Updated</span>
+              </div>
+              <div>
+                <strong><%= result.course %></strong>
+                <span>Course / Program</span>
+              </div>
+            </div>
+          </article>
 
-            <ul>
-              <% rejectedDocuments.forEach((document) => { %>
-                <li>
-                  <strong><%= document.label %></strong>
-                  <% if (document.review.comment) { %>
-                    - <%= document.review.comment %>
-                  <% } %>
-                </li>
+          <article class="card">
+            <h2>Progress Timeline</h2>
+            <div class="timeline-list">
+              <% studentDashboard.timeline.forEach((step) => { %>
+                <div class="timeline-step is-<%= step.state %>">
+                  <div class="timeline-marker"></div>
+                  <div class="timeline-content">
+                    <div class="row-between timeline-heading-row">
+                      <strong><%= step.label %></strong>
+                      <span class="timeline-state"><%= step.state === 'current' ? 'Current' : step.state === 'complete' ? 'Done' : 'Upcoming' %></span>
+                    </div>
+                    <p><%= step.note %></p>
+                    <% if (step.date) { %>
+                      <p class="muted-note">Updated: <%= formatDate(step.date) %></p>
+                    <% } %>
+                  </div>
+                </div>
               <% }) %>
-            </ul>
+            </div>
+          </article>
+
+          <article class="card">
+            <h2>Reviewer Feedback</h2>
+            <div class="summary">
+              <p><strong>Department / HR Comment:</strong></p>
+              <p><%= result.reviewerComment || 'No reviewer comment yet.' %></p>
+            </div>
+            <div class="summary">
+              <p><strong>Your Cover Note:</strong></p>
+              <p><%= result.coverNote || 'No cover note saved.' %></p>
+            </div>
+          </article>
+
+          <article class="card">
+            <h2>NITA Workflow</h2>
+            <div class="summary">
+              <p><strong>Initial NITA document:</strong>
+                <%= result.nitaDocument && result.nitaDocument.filename ? 'Submitted' : 'Not uploaded' %>
+              </p>
+              <p><strong>County-signed NITA document:</strong>
+                <%= result.countySignedNitaDocument && result.countySignedNitaDocument.filename ? 'Ready to download' : 'Not available yet' %>
+              </p>
+              <p><strong>Stamped NITA re-submission:</strong>
+                <%= result.nitaResubmittedDocument && result.nitaResubmittedDocument.filename ? 'Submitted to HR' : 'Not submitted yet' %>
+              </p>
+              <p><strong>NITA workflow status:</strong> <%= result.nitaWorkflow.status %></p>
+              <p><strong>Workflow note:</strong> <%= result.nitaWorkflow.comment || 'No NITA workflow note yet.' %></p>
+            </div>
+
+            <% if (result.countySignedNitaDocument && result.countySignedNitaDocument.filename) { %>
+              <div class="actions tight">
+                <a class="btn secondary" href="/application/<%= result.id %>/county-signed-nita?email=<%= encodeURIComponent(result.email) %>">
+                  Download County-Signed NITA
+                </a>
+              </div>
+            <% } %>
+
+            <% if (result.nitaWorkflow.status === 'Awaiting Student NITA Resubmission' && result.countySignedNitaDocument && result.countySignedNitaDocument.filename) { %>
+              <form action="/track/nita-resubmit" method="post" enctype="multipart/form-data" class="form-grid">
+                <input type="hidden" name="trackingNumber" value="<%= result.placementNumber || result.id %>" />
+                <input type="hidden" name="email" value="<%= result.email %>" />
+
+                <label class="full-width">
+                  <%= nitaResubmissionDefinition.label %> *
+                  <span class="field-hint">
+                    Upload the same county-signed NITA document after it has been stamped at the NITA office.
+                  </span>
+                  <input type="file" name="<%= nitaResubmissionDefinition.key %>" accept="<%= nitaResubmissionDefinition.accept %>" required />
+                </label>
+
+                <div class="actions full-width">
+                  <button class="btn" type="submit">Submit Stamped NITA Document</button>
+                </div>
+              </form>
+            <% } %>
+          </article>
+
+          <article class="card">
+            <h2>Documents And Letter</h2>
+            <div class="summary">
+              <p><strong>Submitted combined document:</strong>
+                <%= result.combinedDocument && result.combinedDocument.filename ? 'Available' : 'Not found' %>
+              </p>
+              <p><strong>Submitted NITA document:</strong>
+                <%= result.nitaDocument && result.nitaDocument.filename ? 'Available' : 'Not found' %>
+              </p>
+              <p><strong>Joining letter:</strong>
+                <%= result.joiningLetter && result.joiningLetter.filename ? 'Ready to download' : 'Not available yet' %>
+              </p>
+              <% if (result.joiningLetter && result.joiningLetter.filename) { %>
+                <div class="actions tight">
+                  <a class="btn" href="/application/<%= result.id %>/joining-letter?email=<%= encodeURIComponent(result.email) %>">
+                    Download Joining Letter
+                  </a>
+                </div>
+              <% } %>
+            </div>
+          </article>
+        </section>
+
+        <% if (rejectedDocuments.length) { %>
+          <section class="card">
+            <h2>Correction Tasks</h2>
+            <p>Department admin marked the following documents as incorrect. Re-upload all listed documents to move the application forward.</p>
+
+            <div class="task-list">
+              <% rejectedDocuments.forEach((document) => { %>
+                <div class="summary">
+                  <p><strong><%= document.label %></strong></p>
+                  <p><%= document.review.comment || 'No specific correction note was provided.' %></p>
+                </div>
+              <% }) %>
+            </div>
 
             <form action="/track/resubmit" method="post" enctype="multipart/form-data" class="form-grid">
               <input type="hidden" name="trackingNumber" value="<%= result.placementNumber || result.id %>" />
@@ -85,9 +229,8 @@
                 <button class="btn" type="submit">Submit Corrected Documents</button>
               </div>
             </form>
-          <% } %>
+          </section>
         <% } %>
-      </section>
+      <% } %>
     </main>
 <%- include("partials/layout-close") %>
-
