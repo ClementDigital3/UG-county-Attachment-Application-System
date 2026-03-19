@@ -464,7 +464,7 @@ p {
     var(--card);
 }
 
-.landing-window-legend {
+.landing-window-status {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -473,19 +473,12 @@ p {
   font-weight: 700;
 }
 
-.legend-dot {
+.landing-window-status-dot {
   display: inline-block;
   width: 0.7rem;
   height: 0.7rem;
   border-radius: 50%;
-}
-
-.legend-dot.open {
   background: var(--success);
-}
-
-.legend-dot.closed {
-  background: #a9b6ad;
 }
 
 .landing-window-grid {
@@ -501,6 +494,11 @@ p {
   border: 1px solid var(--border);
   border-top: 3px solid var(--accent);
   background: var(--surface-soft);
+}
+
+.landing-window-card.is-closed {
+  background: linear-gradient(180deg, #f5f7f4, #eef2ee);
+  border-color: #c9d1cb;
 }
 
 .landing-window-card strong {

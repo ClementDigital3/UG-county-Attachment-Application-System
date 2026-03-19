@@ -80,9 +80,9 @@
             <p class="eyebrow">Attachment Windows</p>
             <h2>Four county application quarters each year</h2>
           </div>
-          <div class="landing-window-legend">
-            <span class="legend-dot open"></span> Open
-            <span class="legend-dot closed"></span> Closed
+          <div class="landing-window-status">
+            <span class="landing-window-status-dot"></span>
+            <span><%= openPeriodOptions.length ? 'Open' : 'Closed' %></span>
           </div>
         </div>
 
@@ -90,7 +90,7 @@
           <% periodOptions.forEach((period) => { %>
             <article class="landing-window-card <%= period.isOpen ? 'is-open' : 'is-closed' %>">
               <strong><%= period.shortLabel || period.label %></strong>
-              <span><%= period.isOpen ? 'Applications are ongoing' : 'Waiting for county opening' %></span>
+              <span><%= period.isOpen ? 'Applications are ongoing' : 'Closed until HR opens this quarter' %></span>
             </article>
           <% }) %>
         </div>
