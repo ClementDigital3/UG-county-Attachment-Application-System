@@ -214,7 +214,7 @@ function createDefaultSettings() {
     }, {}),
     maxApplicants: totalCapacity,
     institutionMaxSharePercent: DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
-    landingTickerText: "Attachment application window is open. Submit before the deadline shown below.",
+    landingTickerText: "Attachment application dates will appear here once HR opens the next county window.",
     applicationDeadline: "",
     departmentCapacities,
     updatedAt: new Date().toISOString()
