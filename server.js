@@ -38,10 +38,17 @@ const DATABASE_FILE = process.env.DATABASE_FILE
   : path.join(DATA_DIR, "attachment-application-system.db");
 
 const PERIODS = [
-  { key: "JAN_APR", label: "January - April" },
-  { key: "MAY_AUG", label: "May - August" },
-  { key: "SEP_DEC", label: "September - December" }
+  { key: "JAN_MAR", label: "January - March", shortLabel: "Jan - Mar" },
+  { key: "APR_JUN", label: "April - June", shortLabel: "Apr - Jun" },
+  { key: "JUL_SEP", label: "July - September", shortLabel: "Jul - Sep" },
+  { key: "OCT_DEC", label: "October - December", shortLabel: "Oct - Dec" }
 ];
+
+const LEGACY_PERIOD_LABELS = {
+  JAN_APR: "January - April",
+  MAY_AUG: "May - August",
+  SEP_DEC: "September - December"
+};
 
 const DEPARTMENTS = [
   { key: "ict", label: "ICT, E-Governonance & Innovation" },
@@ -207,6 +214,8 @@ function createDefaultSettings() {
     }, {}),
     maxApplicants: totalCapacity,
     institutionMaxSharePercent: DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
+    landingTickerText: "Attachment application window is open. Submit before the deadline shown below.",
+    applicationDeadline: "",
     departmentCapacities,
     updatedAt: new Date().toISOString()
   };
@@ -590,6 +599,10 @@ function readSettings() {
       ? institutionShare
       : DEFAULT_INSTITUTION_MAX_SHARE_PERCENT;
 
+  normalized.landingTickerText = (parsed?.landingTickerText || normalized.landingTickerText)
+    .toString()
+    .trim();
+  normalized.applicationDeadline = (parsed?.applicationDeadline || "").toString().trim();
   normalized.updatedAt = parsed?.updatedAt || normalized.updatedAt;
   return normalized;
 }
@@ -987,7 +1000,42 @@ function getPeriodOptions(settings) {
 }
 
 function getPeriodLabel(periodKey) {
-  return PERIODS.find((period) => period.key === periodKey)?.label || periodKey;
+  return (
+    PERIODS.find((period) => period.key === periodKey)?.label ||
+    LEGACY_PERIOD_LABELS[periodKey] ||
+    periodKey
+  );
+}
+
+function getPeriodShortLabel(periodKey) {
+  return (
+    PERIODS.find((period) => period.key === periodKey)?.shortLabel ||
+    LEGACY_PERIOD_LABELS[periodKey] ||
+    periodKey
+  );
+}
+
+function buildLandingRunner(settings) {
+  const periodOptions = getPeriodOptions(settings);
+  const openPeriods = periodOptions.filter((period) => period.isOpen);
+  const customText = (settings?.landingTickerText || "").toString().trim();
+  const deadline = (settings?.applicationDeadline || "").toString().trim();
+  const openPeriodText = openPeriods.length
+    ? openPeriods.map((period) => period.shortLabel || period.label).join(" | ")
+    : "No active attachment window";
+
+  const message = openPeriods.length
+    ? customText || `Attachment applications are ongoing. Apply within the active county window.`
+    : `Attachment applications are currently closed. Watch this board for the next county window.`;
+
+  return {
+    isOpen: openPeriods.length > 0,
+    openPeriods,
+    openPeriodText,
+    message,
+    deadline,
+    deadlineLabel: deadline ? formatDate(deadline) : "To be announced"
+  };
 }
 
 function getDepartmentLabel(departmentKey) {
@@ -2195,6 +2243,7 @@ app.get("/", (_req, res) => {
   const settings = readSettings();
   const periodOptions = getPeriodOptions(settings);
   const capacitySummary = getCapacitySummary(settings, applications);
+  const landingRunner = buildLandingRunner(settings);
   const institutionDepartmentLimits = DEPARTMENTS.map((department) => ({
     key: department.key,
     label: department.label,
@@ -2211,7 +2260,8 @@ app.get("/", (_req, res) => {
       Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
     institutionDepartmentLimits,
     periodOptions,
-    openPeriodOptions: periodOptions.filter((period) => period.isOpen)
+    openPeriodOptions: periodOptions.filter((period) => period.isOpen),
+    landingRunner
   });
 });
 
@@ -3187,6 +3237,8 @@ app.get("/hr/periods", ensureHrAdmin, (req, res) => {
     departmentCapacities: settings.departmentCapacities || createDefaultDepartmentCapacities(0),
     institutionMaxSharePercent:
       Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
+    landingTickerText: settings.landingTickerText || "",
+    applicationDeadline: settings.applicationDeadline || "",
     editableDepartments: DEPARTMENTS,
     maxApplicants: Number(settings.maxApplicants) || 0,
     updatedAt: settings.updatedAt,
@@ -3215,6 +3267,8 @@ app.post("/hr/periods", ensureHrAdmin, (req, res) => {
       departmentCapacities: settings.departmentCapacities || createDefaultDepartmentCapacities(0),
       institutionMaxSharePercent:
         Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
+      landingTickerText: (req.body.landingTickerText || settings.landingTickerText || "").toString(),
+      applicationDeadline: (req.body.applicationDeadline || settings.applicationDeadline || "").toString(),
       editableDepartments: DEPARTMENTS,
       maxApplicants: Number(settings.maxApplicants) || 0,
       updatedAt: settings.updatedAt,
@@ -3224,6 +3278,8 @@ app.post("/hr/periods", ensureHrAdmin, (req, res) => {
     });
   }
   updated.institutionMaxSharePercent = institutionRatio;
+  updated.landingTickerText = (req.body.landingTickerText || "").toString().trim();
+  updated.applicationDeadline = (req.body.applicationDeadline || "").toString().trim();
 
   const selected = req.body.openPeriods;
   const selectedPeriods = new Set(Array.isArray(selected) ? selected : selected ? [selected] : []);
@@ -3239,6 +3295,8 @@ app.post("/hr/periods", ensureHrAdmin, (req, res) => {
         departmentCapacities: settings.departmentCapacities || createDefaultDepartmentCapacities(0),
         institutionMaxSharePercent:
           Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
+        landingTickerText: updated.landingTickerText,
+        applicationDeadline: updated.applicationDeadline,
         editableDepartments: DEPARTMENTS,
         maxApplicants: Number(settings.maxApplicants) || 0,
         updatedAt: settings.updatedAt,
@@ -3255,6 +3313,27 @@ app.post("/hr/periods", ensureHrAdmin, (req, res) => {
     const capacity = Number(updated.departmentCapacities[department.key]) || 0;
     return sum + capacity;
   }, 0);
+
+  if (updated.applicationDeadline) {
+    const deadlineProbe = new Date(updated.applicationDeadline);
+    if (Number.isNaN(deadlineProbe.getTime())) {
+      return res.status(400).render("admin-periods", {
+        periodOptions: getPeriodOptions(settings),
+        departmentCapacities: settings.departmentCapacities || createDefaultDepartmentCapacities(0),
+        institutionMaxSharePercent:
+          Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
+        landingTickerText: updated.landingTickerText,
+        applicationDeadline: updated.applicationDeadline,
+        editableDepartments: DEPARTMENTS,
+        maxApplicants: Number(settings.maxApplicants) || 0,
+        updatedAt: settings.updatedAt,
+        saved: false,
+        error: "Application deadline must be a valid date.",
+        formatDate
+      });
+    }
+  }
+
   updated.updatedAt = new Date().toISOString();
 
   writeSettings(updated);
@@ -3448,6 +3527,8 @@ app.get("/admin/periods", ensureDepartmentAdmin, (req, res) => {
     departmentCapacities: settings.departmentCapacities || createDefaultDepartmentCapacities(0),
     institutionMaxSharePercent:
       Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
+    landingTickerText: settings.landingTickerText || "",
+    applicationDeadline: settings.applicationDeadline || "",
     editableDepartments,
     maxApplicants: Number(settings.maxApplicants) || 0,
     updatedAt: settings.updatedAt,
@@ -3489,6 +3570,8 @@ app.post("/admin/periods", ensureDepartmentAdmin, (req, res) => {
         departmentCapacities: settings.departmentCapacities || createDefaultDepartmentCapacities(0),
         institutionMaxSharePercent:
           Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
+        landingTickerText: settings.landingTickerText || "",
+        applicationDeadline: settings.applicationDeadline || "",
         editableDepartments,
         maxApplicants: Number(settings.maxApplicants) || 0,
         updatedAt: settings.updatedAt,
@@ -3512,6 +3595,8 @@ app.post("/admin/periods", ensureDepartmentAdmin, (req, res) => {
       departmentCapacities: settings.departmentCapacities || createDefaultDepartmentCapacities(0),
       institutionMaxSharePercent:
         Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
+      landingTickerText: settings.landingTickerText || "",
+      applicationDeadline: settings.applicationDeadline || "",
       editableDepartments,
       maxApplicants: Number(settings.maxApplicants) || 0,
       updatedAt: settings.updatedAt,

@@ -37,7 +37,7 @@ Why it matters:
 
 Possible options:
 - Cloudinary
-- Amazon S3
+- Amazon S3 nb
 - Supabase Storage
 
 ### 2. Admin account management UI

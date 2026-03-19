@@ -21,8 +21,7 @@
 
         <% if (canManageOpenPeriods) { %>
           <p>
-            Select period windows that are open for student applications.
-            Students can only apply in periods marked open.
+            Open the quarterly attachment windows, set the homepage runner message, and define the application deadline.
           </p>
         <% } else { %>
           <p>
@@ -52,11 +51,28 @@
 
         <form action="<%= isHrAdmin ? '/hr/periods' : '/admin/periods' %>" method="post" class="form-grid">
           <% if (canManageOpenPeriods) { %>
+            <label class="full-width">
+              Landing Page Runner Message
+              <input
+                type="text"
+                name="landingTickerText"
+                maxlength="180"
+                value="<%= landingTickerText || '' %>"
+                placeholder="Attachment applications are ongoing. Submit before the county deadline."
+              />
+              <span class="field-hint">Short message shown in the moving announcement strip on the landing page.</span>
+            </label>
+
+            <label>
+              Application Deadline
+              <input type="date" name="applicationDeadline" value="<%= applicationDeadline || '' %>" />
+            </label>
+
             <div class="full-width period-admin-grid">
               <% periodOptions.forEach((period) => { %>
                 <label class="checkbox-card">
                   <input type="checkbox" name="openPeriods" value="<%= period.key %>" <%= period.isOpen ? 'checked' : '' %> />
-                  <span><%= period.label %></span>
+                  <span><%= period.shortLabel || period.label %></span>
                 </label>
               <% }) %>
             </div>

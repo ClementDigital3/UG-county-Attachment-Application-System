@@ -254,9 +254,10 @@ Intended flow:
 
 Three attachment windows are implemented:
 
-- `JAN_APR` -> January to April
-- `MAY_AUG` -> May to August
-- `SEP_DEC` -> September to December
+- `JAN_MAR` -> January to March
+- `APR_JUN` -> April to June
+- `JUL_SEP` -> July to September
+- `OCT_DEC` -> October to December
 
 Current behavior:
 

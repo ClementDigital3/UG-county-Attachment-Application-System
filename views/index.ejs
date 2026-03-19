@@ -1,77 +1,147 @@
 <%- include("partials/layout-open", { pageTitle: "County Attachment Portal", activePortal: "home" }) %>
-<main class="container">
-      <section class="card hero">
-        <h1>County Attachment Application Portal</h1>
-        <p>
-          Student applications are accepted only during open county attachment windows.
-          Admin staff control which period is open.
-        </p>
-        <div class="stats">
-          <div>
-            <strong><%= total %></strong>
-            <span>Total applications</span>
+<main class="container wide landing-page">
+      <section class="landing-hero-grid">
+        <section class="card landing-hero-panel">
+          <p class="eyebrow">County Attachment Offer</p>
+          <h1>Attachment placement for students seeking practical service experience in Uasin Gishu County.</h1>
+          <p class="landing-lead">
+            Apply during the open county window, upload your documents in the right format, and follow your progress up to the final joining letter.
+          </p>
+
+          <div class="actions">
+            <a class="btn" href="/apply">Start Application</a>
+            <a class="btn secondary" href="/track">Track Application</a>
           </div>
-          <div>
-            <strong><%= pending %></strong>
-            <span>Pending review</span>
-          </div>
-          <% if (remainingApplicants !== null) { %>
+
+          <div class="landing-stat-grid">
+            <div>
+              <strong><%= openPeriodOptions.length %></strong>
+              <span>Open windows</span>
+            </div>
             <div>
               <strong><%= remainingApplicants %></strong>
               <span>Remaining slots</span>
             </div>
-          <% } %>
-          <div>
-            <strong><%= openPeriodOptions.length %></strong>
-            <span>Open periods</span>
+            <div>
+              <strong><%= pending %></strong>
+              <span>Pending review</span>
+            </div>
+            <div>
+              <strong><%= total %></strong>
+              <span>Total applications</span>
+            </div>
           </div>
-        </div>
-        <% if (remainingApplicants !== null) { %>
-          <p>Intake capacity: <strong><%= maxApplicants %></strong> applicants.</p>
-        <% } %>
+        </section>
+
+        <aside class="card landing-illustration-panel">
+          <p class="eyebrow">Quick Guide</p>
+          <div class="landing-illustration">
+            <div class="illustration-badge">01</div>
+            <div class="illustration-card">
+              <strong>Apply only in an open quarter</strong>
+              <span>Watch the live runner for the current county window and deadline.</span>
+            </div>
+            <div class="illustration-line"></div>
+            <div class="illustration-badge">02</div>
+            <div class="illustration-card">
+              <strong>Prepare the right uploads</strong>
+              <span>Use one combined document for the main documents and a separate NITA document.</span>
+            </div>
+            <div class="illustration-line"></div>
+            <div class="illustration-badge">03</div>
+            <div class="illustration-card">
+              <strong>Follow review to final letter</strong>
+              <span>Track department review, NITA return, HR approval, and joining letter download from one dashboard.</span>
+            </div>
+          </div>
+        </aside>
       </section>
 
-      <section class="card">
-        <h2>Attachment Period Windows</h2>
-        <p>County attachment runs in three windows per year.</p>
-        <div class="period-chip-wrap">
+      <section class="landing-runner <%= landingRunner.isOpen ? 'is-open' : 'is-closed' %>">
+        <div class="landing-runner-track" aria-label="Attachment application announcement">
+          <div class="landing-runner-text">
+            <span><%= landingRunner.message %></span>
+            <span>Open windows: <%= landingRunner.openPeriodText %></span>
+            <span>Deadline: <%= landingRunner.deadlineLabel %></span>
+            <span><%= landingRunner.message %></span>
+            <span>Open windows: <%= landingRunner.openPeriodText %></span>
+            <span>Deadline: <%= landingRunner.deadlineLabel %></span>
+          </div>
+        </div>
+        <div class="landing-runner-deadline">
+          <span>Application deadline</span>
+          <strong><%= landingRunner.deadlineLabel %></strong>
+        </div>
+      </section>
+
+      <section class="card landing-window-panel">
+        <div class="row-between">
+          <div>
+            <p class="eyebrow">Attachment Windows</p>
+            <h2>Four county application quarters each year</h2>
+          </div>
+          <div class="landing-window-legend">
+            <span class="legend-dot open"></span> Open
+            <span class="legend-dot closed"></span> Closed
+          </div>
+        </div>
+
+        <div class="landing-window-grid">
           <% periodOptions.forEach((period) => { %>
-            <span class="period-chip <%= period.isOpen ? 'open' : 'closed' %>">
-              <%= period.label %> - <%= period.isOpen ? 'Open' : 'Closed' %>
-            </span>
+            <article class="landing-window-card <%= period.isOpen ? 'is-open' : 'is-closed' %>">
+              <strong><%= period.shortLabel || period.label %></strong>
+              <span><%= period.isOpen ? 'Applications are ongoing' : 'Waiting for county opening' %></span>
+            </article>
           <% }) %>
         </div>
       </section>
 
-      <section class="card">
-        <h2>Institution Distribution</h2>
-        <div class="summary">
-          <p>
-            Institution distribution helps the county share attachment opportunities fairly
-            across different institutions.
-          </p>
-          <p>
-            It prevents one institution from taking all the slots in the same department and
-            helps give students from other institutions a fair chance to apply.
-          </p>
-          <p>
-            Students should enter institution names in full so the system can count each
-            institution correctly.
-          </p>
-        </div>
-        <% if (institutionDepartmentLimits && institutionDepartmentLimits.length) { %>
-          <div class="stats compact">
-            <% institutionDepartmentLimits.forEach((department) => { %>
-              <div>
-                <strong><%= department.institutionLimit %></strong>
-                <span><%= department.label %> per institution</span>
-              </div>
-            <% }) %>
+      <section class="landing-bottom-grid">
+        <section class="card landing-brief-card landing-checklist-card">
+          <p class="eyebrow">Student Checklist</p>
+          <h2>Before you click apply</h2>
+          <ul class="landing-checklist">
+            <li>Choose the department first for fair departmental institution distribution.</li>
+            <li>Prepare the combined scanned document.</li>
+            <li>Upload the NITA document separately.</li>
+            <li>Keep your tracking number for follow-up.</li>
+          </ul>
+        </section>
+
+        <section class="card landing-brief-card landing-distribution-box">
+          <div class="row-between">
+            <div>
+              <p class="eyebrow">Department Fair Limits</p>
+              <h2>Per-institution intake</h2>
+            </div>
           </div>
-        <% } else { %>
-          <p>No department slot capacities are configured yet.</p>
-        <% } %>
+          <p class="landing-brief-copy">
+            Scroll through all departments to see the number of slots one institution can use in each department.
+          </p>
+          <div class="landing-scroll-list">
+            <% if (institutionDepartmentLimits && institutionDepartmentLimits.length) { %>
+              <% institutionDepartmentLimits.forEach((department) => { %>
+                <div class="landing-scroll-item">
+                  <div>
+                    <strong><%= department.label %></strong>
+                    <span><%= department.capacity %> total department slots</span>
+                  </div>
+                  <div class="landing-scroll-metric">
+                    <strong><%= department.institutionLimit %></strong>
+                    <span>per institution</span>
+                  </div>
+                </div>
+              <% }) %>
+            <% } else { %>
+              <div class="landing-scroll-item">
+                <div>
+                  <strong>No capacities configured yet</strong>
+                  <span>HR can set departmental limits from the HR portal.</span>
+                </div>
+              </div>
+            <% } %>
+          </div>
+        </section>
       </section>
     </main>
 <%- include("partials/layout-close") %>
-
