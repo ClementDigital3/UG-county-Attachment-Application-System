@@ -1,8 +1,49 @@
       <footer class="site-footer">
         <div class="site-footer-inner">
-          <span>County Government of Uasin Gishu</span>
-          <span>Attachment Application Portal</span>
-          <span>&copy; <%= new Date().getFullYear() %></span>
+          <div class="site-footer-grid">
+            <section class="site-footer-panel site-footer-brand-panel">
+              <p class="site-footer-kicker">County Government of Uasin Gishu</p>
+              <h2 class="site-footer-title">Attachment Application Portal</h2>
+              <p class="site-footer-copy">
+                Practical placement intake, departmental review, HR clearance, and student follow-up
+                in one county portal.
+              </p>
+            </section>
+
+            <section class="site-footer-panel">
+              <h3 class="site-footer-heading">Quick Access</h3>
+              <div class="site-footer-links">
+                <a href="/">Home</a>
+                <a href="/apply">Apply</a>
+                <a href="/track">Track Application</a>
+                <a href="<%= adminPortalPath || '/staff-portal' %>">Admin Portal</a>
+                <a href="<%= hrPortalPath || '/hr-portal' %>">HR Portal</a>
+              </div>
+            </section>
+
+            <section class="site-footer-panel site-footer-contact-panel">
+              <h3 class="site-footer-heading">Managed by DevClaud</h3>
+              <p class="site-footer-copy">
+                DevClaud manages system support, updates, technical maintenance, and direct follow-up
+                for the county attachment portal.
+              </p>
+            </section>
+          </div>
+
+          <div class="site-footer-bottom">
+            <span>&copy; <%= new Date().getFullYear() %> County Government of Uasin Gishu</span>
+            <span>
+              Managed and maintained by
+              <a
+                class="site-footer-dev-link"
+                href="https://wa.me/254746195839"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                DevClaud
+              </a>
+            </span>
+          </div>
         </div>
       </footer>
 
