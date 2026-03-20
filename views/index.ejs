@@ -41,10 +41,9 @@
                   <small>Seconds</small>
                 </div>
               </div>
-              <strong class="landing-countdown-fallback <%= landingRunner.hasCountdown ? '' : 'is-visible' %>" data-countdown-value>
-                <%= landingRunner.hasCountdown ? 'Loading...' : 'To be announced' %>
-              </strong>
-              <small data-countdown-hint>Deadline: <%= landingRunner.deadlineLabel %></small>
+              <small data-countdown-hint>
+                <%= landingRunner.hasCountdown ? `Deadline: ${landingRunner.deadlineLabel}` : 'To be announced' %>
+              </small>
             </div>
             <span class="landing-runner-tag">
               <span class="landing-runner-tag-dot"></span>

@@ -43,7 +43,6 @@
         function formatCountdown(remainingMs) {
           if (remainingMs <= 0) {
             return {
-              text: "Deadline reached",
               days: "00",
               hours: "00",
               minutes: "00",
@@ -58,7 +57,6 @@
           const seconds = totalSeconds % 60;
 
           return {
-            text: `${days}d ${hours}h ${minutes}m ${seconds}s`,
             days: String(days).padStart(2, "0"),
             hours: String(hours).padStart(2, "0"),
             minutes: String(minutes).padStart(2, "0"),
@@ -68,7 +66,6 @@
 
         function syncCountdowns() {
           document.querySelectorAll("[data-countdown-deadline]").forEach((countdown) => {
-            const value = countdown.querySelector("[data-countdown-value]");
             const hint = countdown.querySelector("[data-countdown-hint]");
             const days = countdown.querySelector("[data-countdown-days]");
             const hours = countdown.querySelector("[data-countdown-hours]");
@@ -77,40 +74,33 @@
             const deadlineIso = countdown.dataset.countdownDeadline;
             const deadlineLabel = countdown.dataset.deadlineLabel || "To be announced";
 
-            if (!value) {
-              return;
-            }
-
             if (!deadlineIso) {
-              value.textContent = "To be announced";
               [days, hours, minutes, seconds].forEach((node) => {
                 if (node) {
                   node.textContent = "--";
                 }
               });
               if (hint) {
-                hint.textContent = `Deadline: ${deadlineLabel}`;
+                hint.textContent = "To be announced";
               }
               return;
             }
 
             const deadlineTime = Date.parse(deadlineIso);
             if (Number.isNaN(deadlineTime)) {
-              value.textContent = "To be announced";
               [days, hours, minutes, seconds].forEach((node) => {
                 if (node) {
                   node.textContent = "--";
                 }
               });
               if (hint) {
-                hint.textContent = `Deadline: ${deadlineLabel}`;
+                hint.textContent = "To be announced";
               }
               return;
             }
 
             const remainingMs = deadlineTime - Date.now();
             const countdownParts = formatCountdown(remainingMs);
-            value.textContent = countdownParts.text;
             if (days) {
               days.textContent = countdownParts.days;
             }

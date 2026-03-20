@@ -491,14 +491,6 @@ p {
   text-transform: uppercase;
 }
 
-.landing-countdown-fallback {
-  display: none;
-}
-
-.landing-countdown-fallback.is-visible {
-  display: block;
-}
-
 .landing-runner-deadline small {
   display: block;
   margin-top: 0.15rem;
