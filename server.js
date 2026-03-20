@@ -20,6 +20,7 @@ const DATA_DIR = path.join(STORAGE_ROOT, "data");
 const UPLOAD_DIR = path.join(STORAGE_ROOT, "uploads");
 const PUBLIC_DIR = path.join(APP_ROOT, "public");
 const VIEWS_DIR = path.join(APP_ROOT, "views");
+const KENYA_INSTITUTIONS_FILE = path.join(APP_ROOT, "data", "kenya-institutions.json");
 
 const FILE_TYPE_HEADERS = {
   pdf: Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d]), // %PDF-
@@ -186,6 +187,57 @@ const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "";
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || "";
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || "";
 const CLOUDINARY_FOLDER = process.env.CLOUDINARY_FOLDER || "attachment-application-system";
+const OTHER_INSTITUTION_VALUE = "__OTHER__";
+
+const APPLICATION_REQUIREMENTS = [
+  "Choose the department first, then select your institution before filling the rest of the form.",
+  "Prepare a brief cover note introducing yourself and explaining why you need the attachment.",
+  "Prepare one combined scanned document containing passport photo, school cover letter, insurance copy, and both sides of your national ID or school ID.",
+  "Prepare the NITA document separately with your school stamp.",
+  "Have a working email address, phone number, course/program, and attachment dates ready."
+];
+
+function loadKenyaInstitutionGroups() {
+  if (!fs.existsSync(KENYA_INSTITUTIONS_FILE)) {
+    return [];
+  }
+
+  try {
+    const raw = JSON.parse(fs.readFileSync(KENYA_INSTITUTIONS_FILE, "utf-8"));
+    const seen = new Set();
+
+    return (Array.isArray(raw) ? raw : [])
+      .map((group) => {
+        const institutions = (Array.isArray(group?.institutions) ? group.institutions : [])
+          .map((name) => (name || "").toString().trim().replace(/\s+/g, " "))
+          .filter((name) => {
+            const key = name
+              .toLowerCase()
+              .replace(/[^a-z0-9\s]/g, " ")
+              .replace(/\s+/g, " ")
+              .trim();
+
+            if (!key || seen.has(key)) {
+              return false;
+            }
+
+            seen.add(key);
+            return true;
+          })
+          .sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
+
+        return {
+          category: (group?.category || "Institutions").toString().trim(),
+          institutions
+        };
+      })
+      .filter((group) => group.institutions.length > 0);
+  } catch (_error) {
+    return [];
+  }
+}
+
+const KENYA_INSTITUTION_GROUPS = loadKenyaInstitutionGroups();
 
 function ensureDirectoryExists(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -549,6 +601,7 @@ function ensureApplicationDefaults(application) {
   return {
     ...application,
     placementNumber: application.placementNumber || application.id || "",
+    idNumber: (application.idNumber || "").toString(),
     appliedDepartment,
     assignedDepartment: application.assignedDepartment || "",
     documents: normalizeStoredDocuments(application.documents || {}),
@@ -1015,11 +1068,35 @@ function getPeriodShortLabel(periodKey) {
   );
 }
 
+function resolveDeadlineDate(deadlineInput) {
+  const deadline = (deadlineInput || "").toString().trim();
+  if (!deadline) {
+    return null;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(deadline)) {
+    return new Date(`${deadline}T23:59:59+03:00`);
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(deadline)) {
+    return new Date(`${deadline}:00+03:00`);
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(deadline)) {
+    return new Date(`${deadline}+03:00`);
+  }
+
+  const parsed = new Date(deadline);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function buildLandingRunner(settings) {
   const periodOptions = getPeriodOptions(settings);
   const openPeriods = periodOptions.filter((period) => period.isOpen);
   const customText = (settings?.landingTickerText || "").toString().trim();
   const deadline = (settings?.applicationDeadline || "").toString().trim();
+  const deadlineDate = resolveDeadlineDate(deadline);
+  const hasCountdown = openPeriods.length > 0 && Boolean(deadlineDate);
   const openPeriodText = openPeriods.length
     ? openPeriods.map((period) => period.shortLabel || period.label).join(" | ")
     : "No active attachment window";
@@ -1034,7 +1111,9 @@ function buildLandingRunner(settings) {
     openPeriodText,
     message,
     deadline,
-    deadlineLabel: deadline ? formatDate(deadline) : "To be announced"
+    hasCountdown,
+    deadlineIso: hasCountdown ? deadlineDate.toISOString() : "",
+    deadlineLabel: hasCountdown ? formatDate(deadlineDate.toISOString()) : "To be announced"
   };
 }
 
@@ -1053,6 +1132,103 @@ function normalizeInstitutionName(institutionName) {
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ");
+}
+
+function findKnownInstitutionName(institutionName) {
+  const institutionKey = normalizeInstitutionName(institutionName);
+  if (!institutionKey) {
+    return "";
+  }
+
+  for (const group of KENYA_INSTITUTION_GROUPS) {
+    const match = group.institutions.find(
+      (label) => normalizeInstitutionName(label) === institutionKey
+    );
+
+    if (match) {
+      return match;
+    }
+  }
+
+  return "";
+}
+
+function resolveInstitutionSelection(selectedInstitution, otherInstitution = "") {
+  const selected = (selectedInstitution || "").toString().trim();
+  const other = (otherInstitution || "").toString().trim();
+
+  if (selected === OTHER_INSTITUTION_VALUE) {
+    return {
+      isOther: true,
+      institution: other,
+      knownInstitution: "",
+      fullNameError: getInstitutionFullNameError(other)
+    };
+  }
+
+  const knownInstitution = findKnownInstitutionName(selected);
+  const directFullNameError = getInstitutionFullNameError(selected);
+
+  return {
+    isOther: !knownInstitution,
+    institution: knownInstitution || selected,
+    knownInstitution,
+    fullNameError: knownInstitution ? null : directFullNameError
+  };
+}
+
+function getInstitutionAvailability(
+  settings,
+  applications,
+  departmentKey,
+  institutionName,
+  excludeId = null,
+  options = {}
+) {
+  const departmentCapacity = Number(settings?.departmentCapacities?.[departmentKey] || 0);
+  const departmentUsed = applications.filter((application) => {
+    if (excludeId && application.id === excludeId) {
+      return false;
+    }
+
+    return application.appliedDepartment === departmentKey;
+  }).length;
+  const departmentRemaining = Math.max(0, departmentCapacity - departmentUsed);
+  const resolvedInstitution = resolveInstitutionSelection(
+    institutionName,
+    options.otherInstitution || ""
+  );
+  const institutionLabel = resolvedInstitution.fullNameError ? "" : resolvedInstitution.institution;
+  const institutionLimit = getInstitutionLimitForDepartment(settings, departmentKey);
+  const institutionUsed = institutionLabel
+    ? getInstitutionUsageCount(applications, departmentKey, institutionLabel, excludeId)
+    : 0;
+  const institutionRemaining =
+    institutionLimit > 0 ? Math.max(0, institutionLimit - institutionUsed) : 0;
+  const departmentSelected = Boolean(departmentKey && isValidDepartment(departmentKey));
+  const institutionSelected = Boolean(institutionLabel);
+
+  return {
+    departmentSelected,
+    departmentKey: departmentSelected ? departmentKey : "",
+    departmentLabel: departmentSelected ? getDepartmentLabel(departmentKey) : "",
+    departmentCapacity,
+    departmentUsed,
+    departmentRemaining,
+    institutionSelected,
+    institutionLabel,
+    institutionLimit,
+    institutionUsed,
+    institutionRemaining,
+    institutionResolutionError: resolvedInstitution.fullNameError,
+    isDepartmentFull: departmentSelected && departmentRemaining <= 0,
+    isInstitutionFull: institutionSelected && institutionLimit > 0 && institutionRemaining <= 0,
+    canApply:
+      departmentSelected &&
+      institutionSelected &&
+      departmentRemaining > 0 &&
+      (institutionLimit <= 0 || institutionRemaining > 0)
+  };
 }
 
 function getInstitutionLimitForDepartment(settings, departmentKey) {
@@ -2097,6 +2273,14 @@ function renderApplyPage(res, { error = null, formData = {}, statusCode = 200 } 
   const maxApplicants = capacitySummary.totalCapacity;
   const remainingApplicants = capacitySummary.totalRemaining;
   const slotsFull = remainingApplicants <= 0;
+  const selectedInstitutionAvailability = getInstitutionAvailability(
+    settings,
+    applications,
+    (formData.appliedDepartment || "").toString().trim(),
+    (formData.institution || "").toString().trim()
+  );
+  const canStartApplication = hasOpenPeriods && !slotsFull;
+  const showApplicationFields = canStartApplication && selectedInstitutionAvailability.canApply;
 
   return res.status(statusCode).render("apply", {
     error,
@@ -2109,6 +2293,11 @@ function renderApplyPage(res, { error = null, formData = {}, statusCode = 200 } 
     institutionMaxSharePercent:
       Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
     departmentOptions: DEPARTMENTS,
+    institutionGroups: KENYA_INSTITUTION_GROUPS,
+    applicationRequirements: APPLICATION_REQUIREMENTS,
+    canStartApplication,
+    showApplicationFields,
+    selectedInstitutionAvailability,
     documentDefinitions: getViewDocumentDefinitions(),
     combinedDocumentDefinition: getViewCombinedDocumentDefinition(),
     nitaDocumentDefinition: getViewNitaDocumentDefinition()
@@ -2269,6 +2458,44 @@ app.get("/apply", (_req, res) => {
   return renderApplyPage(res);
 });
 
+app.get("/api/institution-availability", (req, res) => {
+  const departmentKey = (req.query.department || "").toString().trim();
+  const institutionName = (req.query.institution || "").toString().trim();
+  const otherInstitution = (req.query.otherInstitution || "").toString().trim();
+
+  if (!departmentKey || !isValidDepartment(departmentKey)) {
+    return res.json({
+      departmentSelected: false,
+      institutionSelected: false,
+      departmentLabel: "",
+      institutionLabel: "",
+      departmentCapacity: 0,
+      departmentUsed: 0,
+      departmentRemaining: 0,
+      institutionLimit: 0,
+      institutionUsed: 0,
+      institutionRemaining: 0,
+      institutionResolutionError: "",
+      isDepartmentFull: false,
+      isInstitutionFull: false,
+      canApply: false
+    });
+  }
+
+  const settings = readSettings();
+  const applications = readApplications();
+  const availability = getInstitutionAvailability(
+    settings,
+    applications,
+    departmentKey,
+    institutionName,
+    null,
+    { otherInstitution }
+  );
+
+  return res.json(availability);
+});
+
 app.get("/api/institution-suggestions", (req, res) => {
   const departmentKey = (req.query.department || "").toString().trim();
   const query = (req.query.q || "").toString().trim().slice(0, 120);
@@ -2314,6 +2541,7 @@ app.post("/apply", (req, res) => {
       fullName,
       email,
       phone,
+      idNumber,
       institution,
       course,
       appliedDepartment,
@@ -2329,6 +2557,7 @@ app.post("/apply", (req, res) => {
     let finalFullName = (fullName || "").trim();
     let finalEmail = (email || "").trim().toLowerCase();
     let finalPhone = (phone || "").trim();
+    let finalIdNumber = (idNumber || "").trim();
     let finalInstitution = (institution || "").trim();
     let finalCourse = (course || "").trim();
     let finalAppliedDepartment = (appliedDepartment || "").trim();
@@ -2341,6 +2570,7 @@ app.post("/apply", (req, res) => {
       finalFullName,
       finalEmail,
       finalPhone,
+      finalIdNumber,
       finalInstitution,
       finalCourse,
       finalAppliedDepartment,
@@ -2362,16 +2592,6 @@ app.post("/apply", (req, res) => {
       return renderApplyPage(res, {
         statusCode: 400,
         error: "Please fill all required fields, upload the combined document, and upload the NITA document separately.",
-        formData
-      });
-    }
-
-    const institutionValidationError = getInstitutionFullNameError(finalInstitution);
-    if (institutionValidationError) {
-      cleanupUploadedFiles(files);
-      return renderApplyPage(res, {
-        statusCode: 400,
-        error: institutionValidationError,
         formData
       });
     }
@@ -2413,6 +2633,17 @@ app.post("/apply", (req, res) => {
         formData
       });
     }
+
+    const resolvedInstitution = resolveInstitutionSelection(finalInstitution);
+    if (resolvedInstitution.fullNameError) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: resolvedInstitution.fullNameError,
+        formData
+      });
+    }
+    finalInstitution = resolvedInstitution.institution;
 
     const applications = readApplications();
     const capacitySummary = getCapacitySummary(settings, applications);
@@ -2500,6 +2731,7 @@ app.post("/apply", (req, res) => {
         fullName: finalFullName,
         email: finalEmail,
         phone: finalPhone,
+        idNumber: finalIdNumber,
         institution: finalInstitution,
         course: finalCourse,
         appliedDepartment: finalAppliedDepartment,
@@ -3992,6 +4224,7 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, (req, res) => {
     fullName,
     email,
     phone,
+    idNumber,
     institution,
     course,
     appliedDepartment,
@@ -4017,6 +4250,7 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, (req, res) => {
     fullName,
     email,
     phone,
+    idNumber,
     institution,
     course,
     appliedDepartment,
@@ -4037,6 +4271,7 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, (req, res) => {
     fullName: (fullName || "").trim(),
     email: (email || "").trim().toLowerCase(),
     phone: (phone || "").trim(),
+    idNumber: (idNumber || "").trim(),
     institution: (institution || "").trim(),
     course: (course || "").trim(),
     appliedDepartment,

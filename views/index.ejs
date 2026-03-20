@@ -1,5 +1,59 @@
 <%- include("partials/layout-open", { pageTitle: "County Attachment Portal", activePortal: "home" }) %>
 <main class="container wide landing-page">
+      <section class="landing-runner <%= landingRunner.isOpen ? 'is-open' : 'is-closed' %>">
+        <div class="landing-runner-box">
+          <div class="landing-runner-copy">
+            <span class="landing-runner-label">Live window</span>
+            <div class="landing-runner-track" aria-label="Attachment application announcement">
+              <div class="landing-runner-text">
+                <span><%= landingRunner.message %></span>
+                <span>Open windows: <%= landingRunner.openPeriodText %></span>
+                <span>Deadline: <%= landingRunner.deadlineLabel %></span>
+                <span><%= landingRunner.message %></span>
+                <span>Open windows: <%= landingRunner.openPeriodText %></span>
+                <span>Deadline: <%= landingRunner.deadlineLabel %></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="landing-runner-actions">
+            <div
+              class="landing-runner-deadline"
+              data-countdown-deadline="<%= landingRunner.deadlineIso %>"
+              data-deadline-label="<%= landingRunner.deadlineLabel %>"
+            >
+              <span>Time left</span>
+              <div class="landing-countdown" data-countdown-grid>
+                <div class="landing-countdown-segment">
+                  <strong data-countdown-days>--</strong>
+                  <small>Days</small>
+                </div>
+                <div class="landing-countdown-segment">
+                  <strong data-countdown-hours>--</strong>
+                  <small>Hours</small>
+                </div>
+                <div class="landing-countdown-segment">
+                  <strong data-countdown-minutes>--</strong>
+                  <small>Minutes</small>
+                </div>
+                <div class="landing-countdown-segment">
+                  <strong data-countdown-seconds>--</strong>
+                  <small>Seconds</small>
+                </div>
+              </div>
+              <strong class="landing-countdown-fallback <%= landingRunner.hasCountdown ? '' : 'is-visible' %>" data-countdown-value>
+                <%= landingRunner.hasCountdown ? 'Loading...' : 'To be announced' %>
+              </strong>
+              <small data-countdown-hint>Deadline: <%= landingRunner.deadlineLabel %></small>
+            </div>
+            <span class="landing-runner-tag">
+              <span class="landing-runner-tag-dot"></span>
+              <%= landingRunner.isOpen ? 'Applications open' : 'Applications closed' %>
+            </span>
+          </div>
+        </div>
+      </section>
+
       <section class="landing-hero-grid">
         <section class="card landing-hero-panel">
           <p class="eyebrow">County Attachment Offer</p>
@@ -55,23 +109,6 @@
             </div>
           </div>
         </aside>
-      </section>
-
-      <section class="landing-runner <%= landingRunner.isOpen ? 'is-open' : 'is-closed' %>">
-        <div class="landing-runner-track" aria-label="Attachment application announcement">
-          <div class="landing-runner-text">
-            <span><%= landingRunner.message %></span>
-            <span>Open windows: <%= landingRunner.openPeriodText %></span>
-            <span>Deadline: <%= landingRunner.deadlineLabel %></span>
-            <span><%= landingRunner.message %></span>
-            <span>Open windows: <%= landingRunner.openPeriodText %></span>
-            <span>Deadline: <%= landingRunner.deadlineLabel %></span>
-          </div>
-        </div>
-        <div class="landing-runner-deadline">
-          <span>Application deadline</span>
-          <strong><%= landingRunner.deadlineLabel %></strong>
-        </div>
       </section>
 
       <section class="card landing-window-panel">
