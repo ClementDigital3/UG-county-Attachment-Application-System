@@ -29,6 +29,7 @@
           <p><strong>Name:</strong> <%= application.fullName %></p>
           <p><strong>Email:</strong> <%= application.email %></p>
           <p><strong>Phone:</strong> <%= application.phone %></p>
+          <p><strong>ID Number:</strong> <%= application.idNumber || 'Not provided' %></p>
           <p><strong>Institution:</strong> <%= application.institution %></p>
           <p><strong>Course:</strong> <%= application.course %></p>
           <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
@@ -55,6 +56,17 @@
           <label>
             Phone Number *
             <input type="text" name="phone" value="<%= application.phone %>" required />
+          </label>
+
+          <label>
+            ID Number / School ID Number *
+            <input
+              type="text"
+              name="idNumber"
+              value="<%= application.idNumber || '' %>"
+              placeholder="Example: 12345678 or SC/ICT/2024/015"
+              required
+            />
           </label>
 
           <label>

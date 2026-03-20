@@ -231,7 +231,8 @@ function loadKenyaInstitutionGroups() {
           institutions
         };
       })
-      .filter((group) => group.institutions.length > 0);
+      .filter((group) => group.institutions.length > 0)
+      .sort((a, b) => a.category.localeCompare(b.category, "en", { sensitivity: "base" }));
   } catch (_error) {
     return [];
   }

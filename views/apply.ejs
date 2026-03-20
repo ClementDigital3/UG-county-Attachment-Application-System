@@ -1,501 +1,430 @@
 <%- include("partials/layout-open", { pageTitle: "Apply - County Attachment Portal", activePortal: "student" }) %>
 <main class="container">
-      <section class="card">
-        <h1>Attachment Application Form</h1>
-        <p>Fill in your details, upload one combined scanned file for the main documents, and upload the NITA document separately.</p>
+  <section class="card">
+    <h1>Attachment Application Form</h1>
+    <p>
+      Start with the department and institution selection first. The rest of the form opens only when that institution still has room in the selected department.
+    </p>
 
-        <% if (error) { %>
-          <div class="alert"><%= error %></div>
-        <% } %>
+    <% if (error) { %>
+      <div class="alert"><%= error %></div>
+    <% } %>
 
-        <% if (!hasOpenPeriods) { %>
-          <div class="alert">
-            Applications are currently closed for all periods. Please check back when county admin opens a period.
+    <% if (!hasOpenPeriods) { %>
+      <div class="alert">
+        Applications are currently closed for all periods. Check the landing page runner for the next county opening.
+      </div>
+    <% } %>
+
+    <% if (slotsFull) { %>
+      <div class="alert">
+        Application slots are currently full for this intake. Please check again later.
+      </div>
+    <% } %>
+
+    <% if (remainingApplicants !== null) { %>
+      <div class="summary">
+        <p><strong>Application Capacity:</strong> <%= maxApplicants %></p>
+        <p><strong>Remaining Slots:</strong> <%= remainingApplicants %></p>
+        <p>
+          <strong>Institution Fairness Rule:</strong>
+          A single institution can use up to <%= institutionMaxSharePercent %>% of each department's slots.
+        </p>
+      </div>
+    <% } %>
+
+    <div class="summary">
+      <h3>Requirements Before You Apply</h3>
+      <ul class="requirements-list">
+        <% applicationRequirements.forEach((requirement) => { %>
+          <li><%= requirement %></li>
+        <% }) %>
+      </ul>
+    </div>
+
+    <div class="summary">
+      <p><strong>Already Applied?</strong></p>
+      <p>
+        Use the Student Dashboard to check whether your application is pending,
+        verified, approved, rejected, or needs correction.
+      </p>
+      <p>
+        HR will return the county-signed NITA document there for download, and the same dashboard is used to re-submit the stamped copy and later download the joining letter.
+      </p>
+      <div class="actions tight">
+        <a class="btn secondary" href="/track">Track Application</a>
+      </div>
+    </div>
+
+    <% if (canStartApplication) { %>
+      <form action="/apply" method="post" enctype="multipart/form-data" class="form-grid" id="applyForm">
+        <section class="selection-panel full-width">
+          <div class="selection-panel-header">
+            <div>
+              <p class="eyebrow">Step 1</p>
+              <h2>Choose department and institution first</h2>
+            </div>
+            <div class="selection-panel-note">
+              Institution slots are checked immediately after you choose both.
+            </div>
           </div>
-        <% } %>
 
-        <% if (slotsFull) { %>
-          <div class="alert">
-            Application slots are currently full for this intake. Please check again later.
+          <div class="selection-grid">
+            <label>
+              Department Applied For *
+              <select id="appliedDepartmentSelect" name="appliedDepartment" required>
+                <option value="">Select department</option>
+                <% departmentOptions.forEach((department) => { %>
+                  <option value="<%= department.key %>" <%= formData.appliedDepartment === department.key ? 'selected' : '' %>>
+                    <%= department.label %>
+                  </option>
+                <% }) %>
+              </select>
+            </label>
+
+            <label>
+              Institution *
+              <input
+                id="institutionInput"
+                type="text"
+                name="institution"
+                value="<%= formData.institution || '' %>"
+                list="institutionOptions"
+                placeholder="Search or type institution name"
+                required
+                autocomplete="off"
+                <%= formData.appliedDepartment ? '' : 'disabled' %>
+              >
+              <datalist id="institutionOptions">
+                <% institutionGroups.forEach((group) => { %>
+                  <% group.institutions.forEach((institution) => { %>
+                    <option value="<%= institution %>"></option>
+                  <% }) %>
+                <% }) %>
+              </datalist>
+              <span class="field-hint">
+                Start typing to search. If your institution is not listed, enter the full institution name without abbreviations.
+              </span>
+            </label>
           </div>
-        <% } %>
 
-        <% if (remainingApplicants !== null) { %>
-          <div class="summary">
-            <p><strong>Application Capacity:</strong> <%= maxApplicants %></p>
-            <p><strong>Remaining Slots:</strong> <%= remainingApplicants %></p>
-            <p>
-              <strong>Institution Fairness Rule:</strong>
-              A single institution can use up to <%= institutionMaxSharePercent %>% of each department's slots.
+          <div
+            id="institutionSlotBox"
+            class="selection-status-card tone-<%= showApplicationFields ? 'success' : (selectedInstitutionAvailability.institutionResolutionError || selectedInstitutionAvailability.isDepartmentFull || selectedInstitutionAvailability.isInstitutionFull ? 'danger' : 'muted') %>"
+          >
+            <strong id="institutionStatusHeading">
+              <%= showApplicationFields ? 'You can continue with the application.' : 'Department and institution selection required.' %>
+            </strong>
+            <p id="institutionStatusMessage" class="selection-status-message">
+              <% if (!formData.appliedDepartment) { %>
+                Select the department first, then choose the institution to confirm whether that institution still has room in the department.
+              <% } else if (!formData.institution) { %>
+                Department selected. Choose the institution next so the system can confirm the remaining institution slots.
+              <% } else if (selectedInstitutionAvailability.institutionResolutionError) { %>
+                <%= selectedInstitutionAvailability.institutionResolutionError %>
+              <% } else if (showApplicationFields) { %>
+                <%= selectedInstitutionAvailability.institutionLabel %> can still use <%= selectedInstitutionAvailability.institutionRemaining %> of <%= selectedInstitutionAvailability.institutionLimit %> institution slot(s) in <%= selectedInstitutionAvailability.departmentLabel %>.
+              <% } else if (selectedInstitutionAvailability.isDepartmentFull) { %>
+                <%= selectedInstitutionAvailability.departmentLabel %> has no remaining department slots.
+              <% } else if (selectedInstitutionAvailability.isInstitutionFull) { %>
+                <%= selectedInstitutionAvailability.institutionLabel %> has no institution slots remaining in <%= selectedInstitutionAvailability.departmentLabel %>. Choose another institution or department.
+              <% } else { %>
+                Choose the department and institution to confirm whether you can continue.
+              <% } %>
             </p>
+            <div class="selection-status-metrics" id="institutionStatusMetrics">
+              <% if (formData.appliedDepartment) { %>
+                <span>
+                  Department remaining:
+                  <strong><%= selectedInstitutionAvailability.departmentRemaining %></strong>
+                </span>
+                <span>
+                  Institution limit:
+                  <strong><%= selectedInstitutionAvailability.institutionLimit %></strong>
+                </span>
+                <% if (formData.institution && selectedInstitutionAvailability.institutionSelected) { %>
+                  <span>
+                    Institution remaining:
+                    <strong><%= selectedInstitutionAvailability.institutionRemaining %></strong>
+                  </span>
+                <% } %>
+              <% } %>
+            </div>
           </div>
-        <% } %>
+        </section>
 
-        <div class="summary">
-          <p><strong>Already Applied?</strong></p>
-          <p>
-            Use the Track Application page to check whether your application is pending,
-            verified, approved, rejected, or needs correction.
-          </p>
-          <p>
-            HR will return the county-signed NITA document through the same tracking page. After you take it for NITA stamping and re-submit it, HR can complete final approval and upload your joining letter there.
-          </p>
-          <div class="actions tight">
-            <a class="btn secondary" href="/track">Track Application</a>
+        <section
+          id="applicationFields"
+          class="application-fields full-width <%= showApplicationFields ? '' : 'is-hidden' %>"
+          aria-hidden="<%= showApplicationFields ? 'false' : 'true' %>"
+        >
+          <div class="application-fields-header">
+            <p class="eyebrow">Step 2</p>
+            <h2>Complete the application details</h2>
           </div>
-        </div>
 
-        <form action="/apply" method="post" enctype="multipart/form-data" class="form-grid">
-          <label>
-            Full Name *
-            <input type="text" name="fullName" value="<%= formData.fullName || '' %>" required />
-          </label>
+          <div class="form-grid nested-form-grid">
+            <label>
+              Full Name *
+              <input type="text" name="fullName" value="<%= formData.fullName || '' %>" required />
+            </label>
 
-          <label>
-            Email Address *
-            <input type="email" name="email" value="<%= formData.email || '' %>" required />
-          </label>
+            <label>
+              Email Address *
+              <input type="email" name="email" value="<%= formData.email || '' %>" required />
+            </label>
 
-          <label>
-            Phone Number *
-            <input type="text" name="phone" value="<%= formData.phone || '' %>" required />
-          </label>
+            <label>
+              Phone Number *
+              <input type="text" name="phone" value="<%= formData.phone || '' %>" required />
+            </label>
 
-          <label>
-            Course/Program *
-            <input type="text" name="course" value="<%= formData.course || '' %>" required />
-          </label>
+            <label>
+              ID Number / School ID Number *
+              <input
+                type="text"
+                name="idNumber"
+                value="<%= formData.idNumber || '' %>"
+                placeholder="Example: 12345678 or SC/ICT/2024/015"
+                required
+              />
+            </label>
 
-          <label class="institution-field full-width">
-            Institution *
-            <span class="field-hint">Write the institution name in full (no abbreviations), for example: University of Nairobi.</span>
-            <input
-              id="institutionInput"
-              type="text"
-              name="institution"
-              value="<%= formData.institution || '' %>"
-              autocomplete="off"
-              aria-autocomplete="list"
-              aria-controls="institutionSuggestions"
-              aria-expanded="false"
-              required
-            />
-            <span class="field-hint institution-status-note" id="institutionStatusNote">
-              Select a department first, then start typing the institution name to see saved suggestions and remaining institution slots.
-            </span>
-            <div
-              class="institution-suggestions"
-              id="institutionSuggestions"
-              role="listbox"
-              hidden
-            ></div>
-          </label>
+            <label>
+              Course/Program *
+              <input type="text" name="course" value="<%= formData.course || '' %>" required />
+            </label>
 
-          <label>
-            Department Applied For *
-            <select id="appliedDepartmentSelect" name="appliedDepartment" required>
-              <option value="">Select department</option>
-              <% departmentOptions.forEach((department) => { %>
-                <option value="<%= department.key %>" <%= formData.appliedDepartment === department.key ? 'selected' : '' %>>
-                  <%= department.label %>
-                </option>
-              <% }) %>
-            </select>
-          </label>
+            <label>
+              Attachment Period *
+              <select name="period" required>
+                <option value="">Select period</option>
+                <% periodOptions.forEach((period) => { %>
+                  <option
+                    value="<%= period.key %>"
+                    <%= formData.period === period.key ? 'selected' : '' %>
+                    <%= !period.isOpen ? 'disabled' : '' %>
+                  >
+                    <%= period.label %> (<%= period.isOpen ? 'Open' : 'Closed' %>)
+                  </option>
+                <% }) %>
+              </select>
+            </label>
 
-          <label>
-            Attachment Period *
-            <select name="period" required>
-              <option value="">Select period</option>
-              <% periodOptions.forEach((period) => { %>
-                <option
-                  value="<%= period.key %>"
-                  <%= formData.period === period.key ? 'selected' : '' %>
-                  <%= !period.isOpen ? 'disabled' : '' %>
-                >
-                  <%= period.label %> (<%= period.isOpen ? 'Open' : 'Closed' %>)
-                </option>
-              <% }) %>
-            </select>
-          </label>
+            <label>
+              Attachment Start Date *
+              <input type="date" name="startDate" value="<%= formData.startDate || '' %>" required />
+            </label>
 
-          <label>
-            Attachment Start Date *
-            <input type="date" name="startDate" value="<%= formData.startDate || '' %>" required />
-          </label>
+            <label>
+              Attachment End Date *
+              <input type="date" name="endDate" value="<%= formData.endDate || '' %>" required />
+            </label>
 
-          <label>
-            Attachment End Date *
-            <input type="date" name="endDate" value="<%= formData.endDate || '' %>" required />
-          </label>
+            <label class="full-width">
+              Cover Note / Self Introduction *
+              <span class="field-hint">
+                Briefly explain who you are, your institution, course/program, attachment goals, and why you are applying.
+                This required cover note replaces a separate application letter.
+              </span>
+              <textarea
+                name="coverNote"
+                rows="5"
+                placeholder="Example: I am a third-year Information Technology student at University of Eldoret seeking attachment to build practical skills in county systems and public service delivery."
+                required
+              ><%= formData.coverNote || '' %></textarea>
+            </label>
 
-          <label class="full-width">
-            Cover Note / Self Introduction *
-            <span class="field-hint">
-              Briefly explain who you are, your institution, course/program, attachment goals, and why you are applying.
-              This required cover note replaces a separate application letter.
-            </span>
-            <textarea
-              name="coverNote"
-              rows="5"
-              placeholder="Example: I am a third-year Information Technology student at University of Eldoret seeking attachment to build practical skills in county systems and public service delivery."
-              required
-            ><%= formData.coverNote || '' %></textarea>
-          </label>
+            <label class="full-width">
+              <%= combinedDocumentDefinition.label %> *
+              <span class="field-hint">
+                Upload one scanned file that includes passport photo, school cover letter, insurance copy, and both sides of your national ID or school ID.
+                A separate application letter is not required because you have already written the cover note above.
+              </span>
+              <input
+                type="file"
+                name="<%= combinedDocumentDefinition.key %>"
+                accept="<%= combinedDocumentDefinition.accept %>"
+                required
+              />
+            </label>
 
-          <label class="full-width">
-            <%= combinedDocumentDefinition.label %> *
-            <span class="field-hint">
-              Upload one scanned file that includes passport photo, school cover letter, insurance copy, and both sides of your national ID or school ID.
-              A separate application letter is not required because you have already written the cover note above.
-            </span>
-            <input
-              type="file"
-              name="<%= combinedDocumentDefinition.key %>"
-              accept="<%= combinedDocumentDefinition.accept %>"
-              required
-            />
-          </label>
+            <label class="full-width">
+              <%= nitaDocumentDefinition.label %> *
+              <span class="field-hint">
+                Upload the NITA document separately with your school stamp. HR will later return a county-signed copy here for you to download, take to the NITA office for stamping, and re-submit from the student dashboard.
+              </span>
+              <input
+                type="file"
+                name="<%= nitaDocumentDefinition.key %>"
+                accept="<%= nitaDocumentDefinition.accept %>"
+                required
+              />
+            </label>
 
-          <label class="full-width">
-            <%= nitaDocumentDefinition.label %> *
-            <span class="field-hint">
-              Upload the NITA document separately with your school stamp. HR will later return a county-signed copy here for you to download, take to the NITA office for stamping, and re-submit from the student dashboard.
-            </span>
-            <input
-              type="file"
-              name="<%= nitaDocumentDefinition.key %>"
-              accept="<%= nitaDocumentDefinition.accept %>"
-              required
-            />
-          </label>
-
-          <div class="full-width actions">
-            <button
-              id="applySubmitButton"
-              class="btn"
-              type="submit"
-              <%= ((!hasOpenPeriods || slotsFull) ? 'disabled' : '') %>
-            >
-              Submit Application
-            </button>
-            <a class="btn secondary" href="/">Cancel</a>
+            <div class="full-width actions">
+              <button id="applySubmitButton" class="btn" type="submit" <%= showApplicationFields ? '' : 'disabled' %>>
+                Submit Application
+              </button>
+              <a class="btn secondary" href="/">Cancel</a>
+            </div>
           </div>
-        </form>
-      </section>
-    </main>
-<script>
-  (() => {
-    const institutionInput = document.getElementById("institutionInput");
-    const departmentSelect = document.getElementById("appliedDepartmentSelect");
-    const statusNote = document.getElementById("institutionStatusNote");
-    const suggestionsBox = document.getElementById("institutionSuggestions");
-    const submitButton = document.getElementById("applySubmitButton");
-    const baseSubmitDisabled = <%= (!hasOpenPeriods || slotsFull) ? "true" : "false" %>;
+        </section>
+      </form>
+    <% } %>
+  </section>
+</main>
 
-    if (!institutionInput || !departmentSelect || !statusNote || !suggestionsBox || !submitButton) {
-      return;
-    }
+<% if (canStartApplication) { %>
+  <script>
+    (() => {
+      const departmentSelect = document.getElementById("appliedDepartmentSelect");
+      const institutionInput = document.getElementById("institutionInput");
+      const applicationFields = document.getElementById("applicationFields");
+      const statusBox = document.getElementById("institutionSlotBox");
+      const statusHeading = document.getElementById("institutionStatusHeading");
+      const statusMessage = document.getElementById("institutionStatusMessage");
+      const statusMetrics = document.getElementById("institutionStatusMetrics");
+      const submitButton = document.getElementById("applySubmitButton");
 
-    let activeController = null;
-    let debounceTimer = null;
-    let currentSuggestions = [];
-    let highlightedIndex = -1;
-
-    function resetInputState() {
-      institutionInput.classList.remove("input-danger-blink", "input-ok");
-    }
-
-    function setSubmitDisabled(extraDisabled) {
-      submitButton.disabled = baseSubmitDisabled || extraDisabled;
-    }
-
-    function setStatus(message, tone = "muted", blink = false) {
-      statusNote.textContent = message;
-      statusNote.className = `field-hint institution-status-note tone-${tone}`;
-
-      resetInputState();
-
-      if (tone === "success") {
-        institutionInput.classList.add("input-ok");
-      }
-
-      if (blink) {
-        void institutionInput.offsetWidth;
-        institutionInput.classList.add("input-danger-blink");
-      }
-    }
-
-    function clearSuggestions() {
-      suggestionsBox.hidden = true;
-      suggestionsBox.innerHTML = "";
-      currentSuggestions = [];
-      highlightedIndex = -1;
-      institutionInput.setAttribute("aria-expanded", "false");
-      institutionInput.removeAttribute("aria-activedescendant");
-    }
-
-    function selectSuggestion(item, departmentLabel) {
-      institutionInput.value = item.label;
-      clearSuggestions();
-      updateStatus({
-        departmentLabel,
-        institutionLimit: item.institutionLimit,
-        exactMatch: item
-      });
-      institutionInput.focus();
-    }
-
-    function setHighlightedSuggestion(index) {
-      const buttons = Array.from(
-        suggestionsBox.querySelectorAll(".institution-suggestion")
-      );
-
-      buttons.forEach((button, buttonIndex) => {
-        const isActive = buttonIndex === index;
-        button.classList.toggle("is-active", isActive);
-        button.setAttribute("aria-selected", isActive ? "true" : "false");
-
-        if (isActive) {
-          institutionInput.setAttribute("aria-activedescendant", button.id);
-          button.scrollIntoView({ block: "nearest" });
-        }
-      });
-
-      highlightedIndex = index;
-
-      if (index < 0) {
-        institutionInput.removeAttribute("aria-activedescendant");
-      }
-    }
-
-    function moveHighlightedSuggestion(direction) {
-      if (!currentSuggestions.length) {
+      if (!departmentSelect || !institutionInput || !applicationFields || !statusBox || !statusHeading || !statusMessage || !statusMetrics || !submitButton) {
         return;
       }
 
-      if (highlightedIndex < 0) {
-        setHighlightedSuggestion(direction > 0 ? 0 : currentSuggestions.length - 1);
-        return;
+      let controller = null;
+
+      function setTone(tone) {
+        statusBox.classList.remove("tone-muted", "tone-success", "tone-warning", "tone-danger");
+        statusBox.classList.add(`tone-${tone}`);
       }
 
-      const nextIndex =
-        (highlightedIndex + direction + currentSuggestions.length) %
-        currentSuggestions.length;
-      setHighlightedSuggestion(nextIndex);
-    }
-
-    function createSuggestionButton(item, departmentLabel, index) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "institution-suggestion";
-      button.id = `institutionSuggestion${index}`;
-      button.setAttribute("role", "option");
-      button.setAttribute("aria-selected", "false");
-
-      if (item.isFull) {
-        button.classList.add("is-full");
+      function setFieldsVisible(visible) {
+        applicationFields.classList.toggle("is-hidden", !visible);
+        applicationFields.setAttribute("aria-hidden", visible ? "false" : "true");
+        submitButton.disabled = !visible;
       }
 
-      const name = document.createElement("span");
-      name.className = "institution-suggestion-name";
-      name.textContent = item.label;
+      function renderMetrics(data) {
+        const metrics = [];
 
-      const meta = document.createElement("span");
-      meta.className = "institution-suggestion-meta";
-      meta.textContent = item.isFull
-        ? `0 slots left in ${departmentLabel}`
-        : `${item.remainingSlots} of ${item.institutionLimit} slots left`;
-
-      button.appendChild(name);
-      button.appendChild(meta);
-
-      button.addEventListener("click", () => {
-        selectSuggestion(item, departmentLabel);
-      });
-
-      button.addEventListener("mouseenter", () => {
-        setHighlightedSuggestion(index);
-      });
-
-      return button;
-    }
-
-    function renderSuggestions(data) {
-      const suggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
-
-      if (!suggestions.length) {
-        clearSuggestions();
-        return;
-      }
-
-      suggestionsBox.hidden = false;
-      suggestionsBox.innerHTML = "";
-      institutionInput.setAttribute("aria-expanded", "true");
-      currentSuggestions = suggestions;
-      highlightedIndex = -1;
-
-      suggestions.forEach((item, index) => {
-        suggestionsBox.appendChild(createSuggestionButton(item, data.departmentLabel, index));
-      });
-    }
-
-    function updateStatus(data) {
-      const departmentLabel = data.departmentLabel || "the selected department";
-      const institutionLimit = Number(data.institutionLimit || 0);
-      const exactMatch = data.exactMatch || null;
-      const typedValue = institutionInput.value.trim();
-
-      if (!departmentSelect.value) {
-        setSubmitDisabled(false);
-        clearSuggestions();
-        setStatus(
-          "Select a department first, then start typing the institution name to see saved suggestions and remaining institution slots.",
-          "muted"
-        );
-        return;
-      }
-
-      if (!typedValue) {
-        setSubmitDisabled(false);
-        clearSuggestions();
-        setStatus(
-          "Start typing the institution name to see matching institutions and how many slots remain for that institution in the selected department.",
-          "muted"
-        );
-        return;
-      }
-
-      if (exactMatch && exactMatch.remainingSlots <= 0) {
-        setSubmitDisabled(true);
-        setStatus(
-          `${exactMatch.label} has 0 institution slots remaining in ${departmentLabel}. Choose another institution or a different department.`,
-          "danger",
-          true
-        );
-        return;
-      }
-
-      setSubmitDisabled(false);
-
-      if (exactMatch) {
-        const tone = exactMatch.remainingSlots <= 1 ? "warning" : "success";
-        setStatus(
-          `${exactMatch.label} has ${exactMatch.remainingSlots} of ${exactMatch.institutionLimit} institution slots remaining in ${departmentLabel}.`,
-          tone
-        );
-        return;
-      }
-
-      if (institutionLimit > 0) {
-        setStatus(
-          `No exact saved match selected yet. ${departmentLabel} allows up to ${institutionLimit} slot(s) per institution.`,
-          "muted"
-        );
-      } else {
-        setStatus(
-          `No institution slots are currently configured for ${departmentLabel}.`,
-          "warning"
-        );
-      }
-    }
-
-    async function fetchSuggestions() {
-      const query = institutionInput.value.trim();
-      const department = departmentSelect.value.trim();
-
-      if (!department) {
-        updateStatus({ institutionLimit: 0, exactMatch: null, departmentLabel: "" });
-        return;
-      }
-
-      if (!query) {
-        updateStatus({ institutionLimit: 0, exactMatch: null, departmentLabel: departmentSelect.options[departmentSelect.selectedIndex]?.text || "" });
-        return;
-      }
-
-      if (activeController) {
-        activeController.abort();
-      }
-
-      activeController = new AbortController();
-
-      try {
-        const response = await fetch(
-          `/api/institution-suggestions?department=${encodeURIComponent(department)}&q=${encodeURIComponent(query)}`,
-          { signal: activeController.signal }
-        );
-
-        if (!response.ok) {
-          throw new Error("Failed to load institution suggestions.");
+        if (data.departmentSelected) {
+          metrics.push(
+            `<span>Department remaining: <strong>${Number(data.departmentRemaining || 0)}</strong></span>`
+          );
+          metrics.push(
+            `<span>Institution limit: <strong>${Number(data.institutionLimit || 0)}</strong></span>`
+          );
         }
 
-        const data = await response.json();
-        renderSuggestions(data);
-        updateStatus(data);
-      } catch (error) {
-        if (error.name === "AbortError") {
+        if (data.institutionSelected) {
+          metrics.push(
+            `<span>Institution remaining: <strong>${Number(data.institutionRemaining || 0)}</strong></span>`
+          );
+        }
+
+        statusMetrics.innerHTML = metrics.join("");
+      }
+
+      function renderDefaultState() {
+        setTone("muted");
+        statusHeading.textContent = "Department and institution selection required.";
+        statusMessage.textContent =
+          "Select the department first, then choose the institution to confirm whether that institution still has room in the department.";
+        statusMetrics.innerHTML = "";
+        institutionInput.disabled = !departmentSelect.value;
+        setFieldsVisible(false);
+      }
+
+      async function refreshAvailability() {
+        const department = departmentSelect.value.trim();
+        const institution = institutionInput.value.trim();
+
+        institutionInput.disabled = !department;
+
+        if (!department) {
+          renderDefaultState();
           return;
         }
 
-        clearSuggestions();
-        setSubmitDisabled(false);
-        setStatus(
-          "Institution suggestions are temporarily unavailable. You can still type the institution name in full.",
-          "warning"
-        );
-      }
-    }
-
-    function queueFetch() {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(fetchSuggestions, 180);
-    }
-
-    institutionInput.addEventListener("input", queueFetch);
-    institutionInput.addEventListener("focus", queueFetch);
-    institutionInput.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowDown") {
-        if (currentSuggestions.length) {
-          event.preventDefault();
-          moveHighlightedSuggestion(1);
+        if (controller) {
+          controller.abort();
         }
-        return;
-      }
 
-      if (event.key === "ArrowUp") {
-        if (currentSuggestions.length) {
-          event.preventDefault();
-          moveHighlightedSuggestion(-1);
-        }
-        return;
-      }
+        controller = new AbortController();
 
-      if (event.key === "Enter") {
-        if (highlightedIndex >= 0 && currentSuggestions[highlightedIndex]) {
-          event.preventDefault();
-          selectSuggestion(
-            currentSuggestions[highlightedIndex],
-            departmentSelect.options[departmentSelect.selectedIndex]?.text || ""
+        try {
+          const response = await fetch(
+            `/api/institution-availability?department=${encodeURIComponent(department)}&institution=${encodeURIComponent(institution)}`,
+            { signal: controller.signal }
           );
+
+          if (!response.ok) {
+            throw new Error("Failed to check institution availability.");
+          }
+
+          const data = await response.json();
+          renderMetrics(data);
+
+          if (!institution) {
+            setTone("muted");
+            statusHeading.textContent = "Institution selection required.";
+            statusMessage.textContent =
+              `${data.departmentLabel} selected. Choose the institution next so the system can confirm the remaining institution slots.`;
+            setFieldsVisible(false);
+            return;
+          }
+
+          if (!data.institutionSelected) {
+            setTone("danger");
+            statusHeading.textContent = "Institution not recognised.";
+            statusMessage.textContent =
+              data.institutionResolutionError ||
+              "Please choose a recognised institution from the dropdown before continuing.";
+            setFieldsVisible(false);
+            return;
+          }
+
+          if (data.isDepartmentFull) {
+            setTone("danger");
+            statusHeading.textContent = "Department slots are full.";
+            statusMessage.textContent =
+              `${data.departmentLabel} has no remaining department slots. Choose another department.`;
+            setFieldsVisible(false);
+            return;
+          }
+
+          if (data.isInstitutionFull) {
+            setTone("danger");
+            statusHeading.textContent = "Institution limit reached.";
+            statusMessage.textContent =
+              `${data.institutionLabel} has no institution slots remaining in ${data.departmentLabel}. Choose another institution or department.`;
+            setFieldsVisible(false);
+            return;
+          }
+
+          setTone(data.institutionRemaining <= 1 ? "warning" : "success");
+          statusHeading.textContent = "You can continue with the application.";
+          statusMessage.textContent =
+            `${data.institutionLabel} can still use ${data.institutionRemaining} of ${data.institutionLimit} institution slot(s) in ${data.departmentLabel}.`;
+          setFieldsVisible(true);
+        } catch (error) {
+          if (error.name === "AbortError") {
+            return;
+          }
+
+          setTone("warning");
+          statusHeading.textContent = "Availability check unavailable.";
+          statusMessage.textContent =
+            "The institution slot check is temporarily unavailable. Reload the page and try again.";
+          setFieldsVisible(false);
+          statusMetrics.innerHTML = "";
         }
-        return;
       }
 
-      if (event.key === "Escape") {
-        clearSuggestions();
-      }
-    });
-    departmentSelect.addEventListener("change", queueFetch);
-
-    document.addEventListener("click", (event) => {
-      if (!event.target.closest(".institution-field")) {
-        clearSuggestions();
-      }
-    });
-
-    queueFetch();
-  })();
-</script>
-<%- include("partials/layout-close") %>
-
+      departmentSelect.addEventListener("change", refreshAvailability);
+      institutionInput.addEventListener("input", refreshAvailability);
+      institutionInput.addEventListener("change", refreshAvailability);
+      refreshAvailability();
+    })();
+  </script>
+<% } %>
