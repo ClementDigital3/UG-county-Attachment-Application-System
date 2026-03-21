@@ -1,22 +1,22 @@
-<%- include("partials/layout-open", { pageTitle: "Department Access", activePortal: "admin" }) %>
+<%- include("partials/layout-open", { pageTitle: "Department Review Access", activePortal: "hr" }) %>
 <main class="container wide">
       <section class="card">
         <div class="row-between">
-          <h1>Department Access</h1>
+          <h1>Department Review Access</h1>
           <div class="actions tight">
-            <a class="btn secondary" href="/admin/applications">Applications</a>
-            <a class="btn secondary" href="/admin/periods">Periods and Slots</a>
-            <form action="/admin/logout" method="post">
+            <a class="btn secondary" href="/hr/applications">HR Queue</a>
+            <a class="btn secondary" href="/hr/reports">Reports</a>
+            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+            <form action="/hr/logout" method="post">
               <button class="btn secondary" type="submit">Logout</button>
             </form>
           </div>
         </div>
 
-        <% if (adminScopeDepartmentLabel) { %>
-          <p><strong>Department Access:</strong> <%= adminScopeDepartmentLabel %></p>
-        <% } else { %>
-          <p>Select a department to view applications and place students accordingly.</p>
-        <% } %>
+        <p>
+          HR authorizes department review. Open any department below to review applications, request
+          corrections, verify records, or export that department's records.
+        </p>
 
         <section class="portal-grid">
           <% departmentSummaries.forEach((department) => { %>
@@ -28,7 +28,8 @@
                 <p><strong>Pending:</strong> <%= department.pendingCount %></p>
               </div>
               <div class="actions">
-                <a class="btn" href="/admin/applications?status=All&department=<%= department.key %>">Open Department</a>
+                <a class="btn" href="/hr/departments/<%= department.key %>/open">Open Department Review</a>
+                <a class="btn secondary" href="/hr/reports/export.csv?status=All&period=All&department=<%= department.key %>">Export Department Records</a>
               </div>
             </article>
           <% }) %>
@@ -36,4 +37,3 @@
       </section>
     </main>
 <%- include("partials/layout-close") %>
-

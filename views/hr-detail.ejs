@@ -4,6 +4,7 @@
         <div class="row-between">
           <h1>HR Review Application</h1>
           <div class="actions tight">
+            <a class="btn secondary" href="/hr/departments">Department Review</a>
             <a class="btn secondary" href="/hr/reports">Reports</a>
             <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
             <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
@@ -22,6 +23,13 @@
           <div class="notice"><%= notice %></div>
         <% } %>
 
+        <% if (application.isFrozen) { %>
+          <div class="alert">
+            This application record is frozen under department review. Restore it there before
+            continuing the HR workflow.
+          </div>
+        <% } %>
+
         <div class="summary">
           <p><strong>ID:</strong> <%= application.id %></p>
           <p><strong>Tracking / Placement Number:</strong> <%= application.placementNumber || application.id %></p>
@@ -35,6 +43,7 @@
           <p><strong>Period:</strong> <%= application.period ? getPeriodLabel(application.period) : 'Not set' %></p>
           <p><strong>Requested Dates:</strong> <%= application.startDate %> to <%= application.endDate %></p>
           <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
+          <p><strong>Record State:</strong> <%= application.isFrozen ? 'Frozen' : 'Active' %></p>
           <p><strong>Submitted:</strong> <%= formatDate(application.submittedAt) %></p>
           <p><strong>Last Updated:</strong> <%= formatDate(application.updatedAt) %></p>
           <p><strong>NITA Workflow:</strong> <%= application.nitaWorkflow.status %></p>

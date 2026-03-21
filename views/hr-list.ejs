@@ -4,6 +4,7 @@
         <div class="row-between">
           <h1>HR Applications Queue</h1>
           <div class="actions tight">
+            <a class="btn secondary" href="/hr/departments">Department Review</a>
             <a class="btn secondary" href="/hr/reports">Reports</a>
             <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
             <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
@@ -42,6 +43,17 @@
               <option value="All" <%= statusFilter === 'All' ? 'selected' : '' %>>All</option>
             </select>
           </label>
+          <label>
+            Filter by department
+            <select name="department">
+              <option value="All" <%= departmentFilter === 'All' ? 'selected' : '' %>>All departments</option>
+              <% departmentOptions.forEach((department) => { %>
+                <option value="<%= department.key %>" <%= departmentFilter === department.key ? 'selected' : '' %>>
+                  <%= department.label %>
+                </option>
+              <% }) %>
+            </select>
+          </label>
           <button class="btn" type="submit">Apply Filter</button>
         </form>
         <p class="muted-note">Only department-verified applications enter this HR queue.</p>
@@ -50,35 +62,74 @@
           <table>
             <thead>
               <tr>
-                <th>ID</th>
+                <th class="table-number-cell">ID</th>
                 <th>Tracking Number</th>
                 <th>Name</th>
                 <th>Email</th>
                 <th>Department</th>
                 <th>Period</th>
-                <th>Status</th>
-                <th>Submitted</th>
-                <th>Action</th>
+                <th class="table-status-cell">Status</th>
+                <th class="table-date-cell">Submitted</th>
+                <th class="table-action-cell">Action</th>
               </tr>
             </thead>
             <tbody>
               <% if (!applications.length) { %>
                 <tr>
-                  <td colspan="9">No applications found for this filter.</td>
+                  <td class="table-empty-state" colspan="9"><strong>No applications found.</strong> Adjust the selected filter and try again.</td>
                 </tr>
               <% } %>
 
               <% applications.forEach((application) => { %>
                 <tr>
-                  <td><%= application.id %></td>
+                  <td class="table-number-cell"><%= application.id %></td>
                   <td><%= application.placementNumber || application.id %></td>
                   <td><%= application.fullName %></td>
                   <td><%= application.email %></td>
                   <td><%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></td>
                   <td><%= application.period ? getPeriodLabel(application.period) : 'Not set' %></td>
-                  <td><span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></td>
-                  <td><%= formatDate(application.submittedAt) %></td>
-                  <td><a href="/hr/applications/<%= application.id %>">Review</a></td>
+                  <td class="table-status-cell"><span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></td>
+                  <td class="table-date-cell"><%= formatDate(application.submittedAt) %></td>
+                  <td class="table-action-cell"><a href="/hr/applications/<%= application.id %>">Review</a></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+
+        <h2>Department Review Access</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Department</th>
+                <th class="table-count-cell">Capacity</th>
+                <th class="table-count-cell">Applications</th>
+                <th class="table-count-cell">Verified</th>
+                <th class="table-count-cell">Approved</th>
+                <th class="table-count-cell">Pending</th>
+                <th class="table-count-cell">Remaining</th>
+                <th class="table-action-cell">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% departmentSummaries.forEach((department) => { %>
+                <tr>
+                  <td>
+                    <a href="/hr/departments/<%= department.key %>/open"><%= department.label %></a>
+                  </td>
+                  <td class="table-count-cell"><%= department.capacity %></td>
+                  <td class="table-count-cell"><%= department.applications %></td>
+                  <td class="table-count-cell"><%= department.verified %></td>
+                  <td class="table-count-cell"><%= department.approved %></td>
+                  <td class="table-count-cell"><%= department.pending %></td>
+                  <td class="table-count-cell"><%= department.remaining %></td>
+                  <td class="table-action-cell">
+                    <div class="table-actions">
+                      <a href="/hr/departments/<%= department.key %>/open">Review</a>
+                      <a href="/hr/reports/export.csv?status=All&period=All&department=<%= department.key %>">Export</a>
+                    </div>
+                  </td>
                 </tr>
               <% }) %>
             </tbody>

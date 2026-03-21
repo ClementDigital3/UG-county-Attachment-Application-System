@@ -1,18 +1,19 @@
-<%- include("partials/layout-open", { pageTitle: "Review Application", activePortal: "admin" }) %>
+<%- include("partials/layout-open", { pageTitle: "Department Review Application", activePortal: "hr" }) %>
 <main class="container">
       <section class="card">
         <div class="row-between">
-          <h1>Review Application</h1>
+          <h1>Department Review Application</h1>
           <div class="actions tight">
-            <a class="btn secondary" href="/admin/reports">Reports</a>
-            <a class="btn secondary" href="/admin/departments">Departments</a>
-            <a class="btn secondary" href="/admin/periods">Periods and Slots</a>
+            <a class="btn secondary" href="/hr/applications">HR Queue</a>
+            <a class="btn secondary" href="/admin/departments">Department Access</a>
+            <a class="btn secondary" href="/admin/reports">Department Report</a>
+            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
             <a class="btn secondary" href="/admin/applications">Back to List</a>
           </div>
         </div>
 
         <% if (adminScopeDepartmentLabel) { %>
-          <p><strong>Department Access:</strong> <%= adminScopeDepartmentLabel %></p>
+          <p><strong>HR Department Review Scope:</strong> <%= adminScopeDepartmentLabel %></p>
         <% } %>
 
         <% if (error) { %>
@@ -21,6 +22,13 @@
 
         <% if (notice) { %>
           <div class="notice"><%= notice %></div>
+        <% } %>
+
+        <% if (application.isFrozen) { %>
+          <div class="alert">
+            This application record is frozen. Restore it before changing applicant information,
+            document review, placement, or status.
+          </div>
         <% } %>
 
         <div class="summary">
@@ -37,6 +45,7 @@
           <p><strong>Period:</strong> <%= application.period ? getPeriodLabel(application.period) : 'Not set' %></p>
           <p><strong>Requested Dates:</strong> <%= application.startDate %> to <%= application.endDate %></p>
           <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
+          <p><strong>Record State:</strong> <%= application.isFrozen ? 'Frozen' : 'Active' %></p>
           <p><strong>Submitted:</strong> <%= formatDate(application.submittedAt) %></p>
           <p><strong>Cover Note:</strong> <%= application.coverNote || 'No cover note.' %></p>
         </div>
@@ -123,7 +132,7 @@
           </label>
 
           <div class="actions full-width">
-            <button class="btn" type="submit">Save Applicant Changes</button>
+            <button class="btn" type="submit" <%= application.isFrozen ? 'disabled' : '' %>>Save Applicant Changes</button>
           </div>
         </form>
 
@@ -142,7 +151,7 @@
             </select>
           </label>
           <div class="actions full-width">
-            <button class="btn" type="submit">Save Placement</button>
+            <button class="btn" type="submit" <%= application.isFrozen ? 'disabled' : '' %>>Save Placement</button>
           </div>
         </form>
 
@@ -232,7 +241,7 @@
           <% } %>
 
           <div class="actions full-width">
-            <button class="btn" type="submit">Save Document Review</button>
+            <button class="btn" type="submit" <%= application.isFrozen ? 'disabled' : '' %>>Save Document Review</button>
           </div>
         </form>
 
@@ -257,14 +266,23 @@
           </label>
 
           <div class="actions full-width">
-            <button class="btn" type="submit">Save Application Status</button>
+            <button class="btn" type="submit" <%= application.isFrozen ? 'disabled' : '' %>>Save Application Status</button>
           </div>
         </form>
 
-        <h2>Danger Zone</h2>
-        <form action="/admin/applications/<%= application.id %>/delete" method="post" onsubmit="return confirm('Delete this applicant and all uploaded documents? This cannot be undone.');">
-          <button class="btn danger" type="submit">Delete Applicant</button>
-        </form>
+        <h2>Record Control</h2>
+        <p>Freezing keeps the record in the system but blocks further edits until HR restores it.</p>
+        <div class="actions">
+          <% if (application.isFrozen) { %>
+            <form action="/admin/applications/<%= application.id %>/unfreeze" method="post">
+              <button class="btn secondary" type="submit">Restore Record</button>
+            </form>
+          <% } else { %>
+            <form action="/admin/applications/<%= application.id %>/freeze" method="post" onsubmit="return confirm('Freeze this application record?');">
+              <button class="btn danger" type="submit">Freeze Record</button>
+            </form>
+          <% } %>
+        </div>
       </section>
     </main>
 <%- include("partials/layout-close") %>

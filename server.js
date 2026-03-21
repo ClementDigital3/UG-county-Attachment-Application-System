@@ -615,7 +615,11 @@ function ensureApplicationDefaults(application) {
     countySignedNitaDocument: normalizeStoredFileEntry(application.countySignedNitaDocument),
     nitaResubmittedDocument: normalizeStoredFileEntry(application.nitaResubmittedDocument),
     nitaWorkflow: normalizeNitaWorkflow(application.nitaWorkflow),
-    joiningLetter: normalizeStoredFileEntry(application.joiningLetter)
+    joiningLetter: normalizeStoredFileEntry(application.joiningLetter),
+    isFrozen: Boolean(application.isFrozen),
+    frozenAt: application.frozenAt || null,
+    frozenByRole: (application.frozenByRole || "").toString(),
+    frozenReason: (application.frozenReason || "").toString().trim()
   };
 }
 
@@ -867,14 +871,11 @@ function createDepartmentAdminAccount({ username, password, department, displayN
     return { error: validation.error };
   }
 
-  if (!validation.value.password) {
-    return { error: "Password is required for a new admin account." };
-  }
-
   const timestamp = new Date().toISOString();
   const admins = readDepartmentAdmins();
   admins.push({
     ...validation.value,
+    password: validation.value.password || DEFAULT_DEPARTMENT_ADMIN_PASSWORD,
     role: "department_admin",
     isActive: true,
     createdAt: timestamp,
@@ -2224,15 +2225,11 @@ function getViewNitaDocumentDefinition() {
 }
 
 function ensureDepartmentAdmin(req, res, next) {
-  if (req.session?.isAdmin && req.session.adminRole === "department_admin") {
+  if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
     return next();
   }
 
-  if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
-    return res.redirect("/hr/applications");
-  }
-
-  return res.redirect(ADMIN_PORTAL_PATH);
+  return res.redirect(HR_PORTAL_PATH);
 }
 
 function ensureHrAdmin(req, res, next) {
@@ -2245,6 +2242,44 @@ function ensureHrAdmin(req, res, next) {
   }
 
   return res.redirect(HR_PORTAL_PATH);
+}
+
+function setHrDepartmentScope(req, departmentKey) {
+  if (!req.session?.isAdmin || req.session.adminRole !== "hr_admin") {
+    return;
+  }
+
+  req.session.adminScopeDepartment = isValidDepartment(departmentKey) ? departmentKey : null;
+}
+
+function clearHrDepartmentScope(req) {
+  setHrDepartmentScope(req, null);
+}
+
+function isApplicationFrozen(application) {
+  return Boolean(application?.isFrozen);
+}
+
+function freezeApplicationRecord(application, byRole, reason = "") {
+  return {
+    ...application,
+    isFrozen: true,
+    frozenAt: new Date().toISOString(),
+    frozenByRole: (byRole || "").toString(),
+    frozenReason: (reason || "").toString().trim(),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function unfreezeApplicationRecord(application) {
+  return {
+    ...application,
+    isFrozen: false,
+    frozenAt: null,
+    frozenByRole: "",
+    frozenReason: "",
+    updatedAt: new Date().toISOString()
+  };
 }
 
 function formatDate(dateStr) {
@@ -2422,6 +2457,7 @@ app.use((req, res, next) => {
     ? getDepartmentLabel(adminScopeDepartment)
     : null;
   res.locals.currentAdminUsername = req.session?.adminUsername || "";
+  res.locals.homePath = isHrAdmin ? "/hr/home" : "/";
   res.locals.fileStorageProvider = fileStorage.provider;
   res.locals.fileStorageWarning = fileStorage.getProviderWarning();
   next();
@@ -3303,101 +3339,19 @@ app.get("/application/:id/county-signed-nita", (req, res) => {
 });
 
 app.get("/admin/login", (_req, res) => {
-  return res.redirect(ADMIN_PORTAL_PATH);
+  return res.redirect(HR_PORTAL_PATH);
 });
 
 app.post("/admin/login", (_req, res) => {
-  return res.redirect(307, ADMIN_PORTAL_PATH);
+  return res.redirect(307, HR_PORTAL_PATH);
 });
 
-app.get(ADMIN_PORTAL_PATH, (req, res) => {
-  if (req.session?.isAdmin && req.session.adminRole === "department_admin") {
-    return res.redirect("/admin/applications");
-  }
-
-  if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
-    return res.redirect("/hr/applications");
-  }
-
-  return res.render("admin-login", {
-    error: null,
-    departmentOptions: DEPARTMENTS
-  });
+app.get(ADMIN_PORTAL_PATH, (_req, res) => {
+  return res.redirect(HR_PORTAL_PATH);
 });
 
-app.post(ADMIN_PORTAL_PATH, (req, res) => {
-  const username = (req.body.username || "").toString();
-  const password = (req.body.password || "").toString();
-  const selectedDepartmentRaw = (req.body.department || "").toString().trim();
-  const selectedDepartment =
-    selectedDepartmentRaw && selectedDepartmentRaw !== "ALL" ? selectedDepartmentRaw : null;
-
-  if (!selectedDepartmentRaw) {
-    return res.status(400).render("admin-login", {
-      error: "Please choose your department portal.",
-      departmentOptions: DEPARTMENTS
-    });
-  }
-
-  if (selectedDepartment && !isValidDepartment(selectedDepartment)) {
-    return res.status(400).render("admin-login", {
-      error: "Please select a valid department.",
-      departmentOptions: DEPARTMENTS
-    });
-  }
-
-  if (isPresentationLogin(username, password)) {
-    req.session.isAdmin = true;
-    req.session.adminUsername = normalizeAdminUsername(username);
-    req.session.adminRole = "department_admin";
-    req.session.adminDepartment = selectedDepartment;
-    req.session.adminScopeDepartment = selectedDepartment;
-    return res.redirect("/admin/applications");
-  }
-
-  const adminUser = findAdminUserByCredentials(username, password);
-
-  if (adminUser) {
-    if (adminUser.role === "hr_admin") {
-      return res.status(401).render("admin-login", {
-        error: "HR credentials are not valid on this portal. Use the HR portal login.",
-        departmentOptions: DEPARTMENTS
-      });
-    }
-
-    if (adminUser.role === "department_admin" && selectedDepartmentRaw === "ALL") {
-      return res.status(401).render("admin-login", {
-        error: "Department admin accounts must select their own department.",
-        departmentOptions: DEPARTMENTS
-      });
-    }
-
-    if (
-      adminUser.role === "department_admin" &&
-      selectedDepartment &&
-      selectedDepartment !== adminUser.department
-    ) {
-      return res.status(401).render("admin-login", {
-        error: "Selected department does not match your admin account.",
-        departmentOptions: DEPARTMENTS
-      });
-    }
-
-    const scopedDepartment =
-      adminUser.role === "department_admin" ? adminUser.department : selectedDepartment;
-
-    req.session.isAdmin = true;
-    req.session.adminUsername = adminUser.username;
-    req.session.adminRole = "department_admin";
-    req.session.adminDepartment = adminUser.department;
-    req.session.adminScopeDepartment = scopedDepartment || adminUser.department;
-    return res.redirect("/admin/applications");
-  }
-
-  return res.status(401).render("admin-login", {
-    error: "Invalid login credentials.",
-    departmentOptions: DEPARTMENTS
-  });
+app.post(ADMIN_PORTAL_PATH, (_req, res) => {
+  return res.redirect(307, HR_PORTAL_PATH);
 });
 
 app.get("/hr/login", (_req, res) => {
@@ -3411,10 +3365,6 @@ app.post("/hr/login", (_req, res) => {
 app.get(HR_PORTAL_PATH, (req, res) => {
   if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
     return res.redirect("/hr/applications");
-  }
-
-  if (req.session?.isAdmin && req.session.adminRole === "department_admin") {
-    return res.redirect("/admin/applications");
   }
 
   return res.render("hr-login", {
@@ -3453,7 +3403,7 @@ app.post(HR_PORTAL_PATH, (req, res) => {
 
 app.post("/admin/logout", ensureDepartmentAdmin, (req, res) => {
   req.session.destroy(() => {
-    res.redirect(ADMIN_PORTAL_PATH);
+    res.redirect(HR_PORTAL_PATH);
   });
 });
 
@@ -3463,7 +3413,18 @@ app.post("/hr/logout", ensureHrAdmin, (req, res) => {
   });
 });
 
+app.get("/hr/home", (req, res) => {
+  if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
+    return req.session.destroy(() => {
+      res.redirect("/");
+    });
+  }
+
+  return res.redirect("/");
+});
+
 app.get("/hr/periods", ensureHrAdmin, (req, res) => {
+  clearHrDepartmentScope(req);
   const settings = readSettings();
   return res.render("admin-periods", {
     periodOptions: getPeriodOptions(settings),
@@ -3482,6 +3443,7 @@ app.get("/hr/periods", ensureHrAdmin, (req, res) => {
 });
 
 app.post("/hr/periods", ensureHrAdmin, (req, res) => {
+  clearHrDepartmentScope(req);
   const settings = readSettings();
   const updated = {
     ...settings,
@@ -3594,18 +3556,41 @@ function renderAdminAccountsPage(res, {
   });
 }
 
+function buildDepartmentAccessSummaries(applications) {
+  return DEPARTMENTS.map((department) => {
+    const applied = applications.filter((item) => item.appliedDepartment === department.key);
+    const assigned = applications.filter((item) => item.assignedDepartment === department.key);
+
+    return {
+      ...department,
+      appliedCount: applied.length,
+      assignedCount: assigned.length,
+      pendingCount: applied.filter(
+        (item) => item.status === "Pending" || item.status === "Needs Correction"
+      ).length
+    };
+  });
+}
+
+function renderDepartmentAccessPage(res, departmentSummaries) {
+  return res.render("admin-departments", {
+    departmentSummaries
+  });
+}
+
 app.get("/hr/admin-accounts", ensureHrAdmin, (req, res) => {
+  clearHrDepartmentScope(req);
   let notice = null;
   if (req.query.created === "1") {
-    notice = "Department admin account created.";
+    notice = "Department access record created.";
   } else if (req.query.updated === "1") {
-    notice = "Department admin account updated.";
+    notice = "Department access record updated.";
   } else if (req.query.passwordReset === "1") {
-    notice = "Department admin password updated.";
+    notice = "Department record password updated.";
   } else if (req.query.toggled === "1") {
-    notice = "Department admin status updated.";
+    notice = "Department record freeze status updated.";
   } else if (req.query.deleted === "1") {
-    notice = "Department admin account deleted.";
+    notice = "Delete is disabled. Freeze a department record instead.";
   }
 
   return renderAdminAccountsPage(res, { notice });
@@ -3614,7 +3599,7 @@ app.get("/hr/admin-accounts", ensureHrAdmin, (req, res) => {
 app.post("/hr/admin-accounts/create", ensureHrAdmin, (req, res) => {
   const result = createDepartmentAdminAccount({
     username: req.body.username,
-    password: req.body.password,
+    password: req.body.password || DEFAULT_DEPARTMENT_ADMIN_PASSWORD,
     department: req.body.department,
     displayName: req.body.displayName
   });
@@ -3674,15 +3659,6 @@ app.post("/hr/admin-accounts/:username/toggle", ensureHrAdmin, (req, res) => {
 });
 
 app.post("/hr/admin-accounts/:username/delete", ensureHrAdmin, (req, res) => {
-  const result = deleteDepartmentAdminAccount(req.params.username);
-
-  if (result.error) {
-    return renderAdminAccountsPage(res, {
-      statusCode: 400,
-      error: result.error
-    });
-  }
-
   return res.redirect("/hr/admin-accounts?deleted=1");
 });
 
@@ -3717,6 +3693,7 @@ function renderReportsPage(res, {
 }
 
 app.get("/hr/reports", ensureHrAdmin, (req, res) => {
+  clearHrDepartmentScope(req);
   const settings = readSettings();
   const filters = getReportFilterState({
     query: req.query,
@@ -3736,6 +3713,7 @@ app.get("/hr/reports", ensureHrAdmin, (req, res) => {
 });
 
 app.get("/hr/reports/export.csv", ensureHrAdmin, (req, res) => {
+  clearHrDepartmentScope(req);
   const filters = getReportFilterState({
     query: req.query,
     allowDepartmentFilter: true
@@ -3748,9 +3726,29 @@ app.get("/hr/reports/export.csv", ensureHrAdmin, (req, res) => {
   return res.send(csv);
 });
 
+app.get("/hr/departments", ensureHrAdmin, (req, res) => {
+  clearHrDepartmentScope(req);
+  const applications = readApplications();
+  const departmentSummaries = buildDepartmentAccessSummaries(applications);
+  return renderDepartmentAccessPage(res, departmentSummaries);
+});
+
+app.get("/hr/departments/:department/open", ensureHrAdmin, (req, res) => {
+  const departmentKey = (req.params.department || "").toString().trim();
+  if (!isValidDepartment(departmentKey)) {
+    return res.status(404).render("not-found");
+  }
+
+  setHrDepartmentScope(req, departmentKey);
+  return res.redirect(`/admin/applications?status=All&department=${encodeURIComponent(departmentKey)}`);
+});
+
 app.get("/admin/periods", ensureDepartmentAdmin, (req, res) => {
   const settings = readSettings();
   const adminScopeDepartment = getAdminScopeDepartment(req);
+  if (!adminScopeDepartment) {
+    return res.redirect("/hr/periods");
+  }
   const editableDepartments = adminScopeDepartment
     ? DEPARTMENTS.filter((department) => department.key === adminScopeDepartment)
     : DEPARTMENTS;
@@ -3774,6 +3772,9 @@ app.get("/admin/periods", ensureDepartmentAdmin, (req, res) => {
 app.post("/admin/periods", ensureDepartmentAdmin, (req, res) => {
   const settings = readSettings();
   const adminScopeDepartment = getAdminScopeDepartment(req);
+  if (!adminScopeDepartment) {
+    return res.redirect("/hr/periods");
+  }
   const editableDepartments = adminScopeDepartment
     ? DEPARTMENTS.filter((department) => department.key === adminScopeDepartment)
     : DEPARTMENTS;
@@ -3848,6 +3849,9 @@ app.post("/admin/periods", ensureDepartmentAdmin, (req, res) => {
 
 app.get("/admin/reports", ensureDepartmentAdmin, (req, res) => {
   const scopedDepartment = getAdminScopeDepartment(req);
+  if (!scopedDepartment) {
+    return res.redirect("/hr/reports");
+  }
   const filters = getReportFilterState({
     query: req.query,
     allowDepartmentFilter: false,
@@ -3871,6 +3875,9 @@ app.get("/admin/reports", ensureDepartmentAdmin, (req, res) => {
 
 app.get("/admin/reports/export.csv", ensureDepartmentAdmin, (req, res) => {
   const scopedDepartment = getAdminScopeDepartment(req);
+  if (!scopedDepartment) {
+    return res.redirect("/hr/reports");
+  }
   const filters = getReportFilterState({
     query: req.query,
     allowDepartmentFilter: false,
@@ -3885,7 +3892,7 @@ app.get("/admin/reports/export.csv", ensureDepartmentAdmin, (req, res) => {
 });
 
 app.get("/admin/applications", ensureDepartmentAdmin, (req, res) => {
-  const adminScopeDepartment = getAdminScopeDepartment(req);
+  let adminScopeDepartment = getAdminScopeDepartment(req);
   const statusFilterRaw = (req.query.status || "All").toString();
   const allowedFilters = new Set(["All", ...STATUS_OPTIONS]);
   const statusFilter = allowedFilters.has(statusFilterRaw) ? statusFilterRaw : "All";
@@ -3894,6 +3901,16 @@ app.get("/admin/applications", ensureDepartmentAdmin, (req, res) => {
     departmentFilterRaw === "All" || isValidDepartment(departmentFilterRaw)
       ? departmentFilterRaw
       : "All";
+
+  if (!adminScopeDepartment && requestedDepartmentFilter !== "All") {
+    setHrDepartmentScope(req, requestedDepartmentFilter);
+    adminScopeDepartment = getAdminScopeDepartment(req);
+  }
+
+  if (!adminScopeDepartment) {
+    return res.redirect("/hr/departments");
+  }
+
   const departmentFilter = adminScopeDepartment || requestedDepartmentFilter;
 
   const allApplications = filterApplicationsForAdmin(req, readApplications()).sort(
@@ -3936,27 +3953,9 @@ app.get("/admin/applications", ensureDepartmentAdmin, (req, res) => {
 });
 
 app.get("/admin/departments", ensureDepartmentAdmin, (_req, res) => {
-  const applications = filterApplicationsForAdmin(_req, readApplications());
-  const adminScopeDepartment = getAdminScopeDepartment(_req);
-  const availableDepartments = adminScopeDepartment
-    ? DEPARTMENTS.filter((department) => department.key === adminScopeDepartment)
-    : DEPARTMENTS;
-
-  const departmentSummaries = availableDepartments.map((department) => {
-    const applied = applications.filter((item) => item.appliedDepartment === department.key);
-    const assigned = applications.filter((item) => item.assignedDepartment === department.key);
-
-    return {
-      ...department,
-      appliedCount: applied.length,
-      assignedCount: assigned.length,
-      pendingCount: applied.filter((item) => item.status === "Pending").length
-    };
-  });
-
-  return res.render("admin-departments", {
-    departmentSummaries
-  });
+  const applications = readApplications();
+  const departmentSummaries = buildDepartmentAccessSummaries(applications);
+  return renderDepartmentAccessPage(res, departmentSummaries);
 });
 
 app.get("/admin/applications/:id", ensureDepartmentAdmin, (req, res) => {
@@ -3978,6 +3977,10 @@ app.get("/admin/applications/:id", ensureDepartmentAdmin, (req, res) => {
     notice = "Joining letter uploaded successfully.";
   } else if (req.query.placementSaved === "1") {
     notice = "Department placement updated successfully.";
+  } else if (req.query.frozen === "1") {
+    notice = "Application record frozen successfully.";
+  } else if (req.query.unfrozen === "1") {
+    notice = "Application record restored successfully.";
   }
 
   return renderAdminDetailPage(res, {
@@ -4000,6 +4003,14 @@ app.post("/admin/applications/:id/placement", ensureDepartmentAdmin, (req, res) 
 
   if (!canAdminAccessApplication(req, application)) {
     return res.status(403).send("Access denied for this department.");
+  }
+
+  if (isApplicationFrozen(application)) {
+    return renderAdminDetailPage(res, {
+      statusCode: 400,
+      application,
+      error: "This application record is frozen. Unfreeze it before updating placement."
+    });
   }
 
   if (!isValidDepartment(assignedDepartment)) {
@@ -4039,6 +4050,14 @@ app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, (req
 
   if (!canAdminAccessApplication(req, application)) {
     return res.status(403).send("Access denied for this department.");
+  }
+
+  if (isApplicationFrozen(application)) {
+    return renderAdminDetailPage(res, {
+      statusCode: 400,
+      application,
+      error: "This application record is frozen. Unfreeze it before updating document review."
+    });
   }
 
   let hasRejected = false;
@@ -4192,6 +4211,14 @@ app.post("/admin/applications/:id/status", ensureDepartmentAdmin, (req, res) => 
     return res.status(403).send("Access denied for this department.");
   }
 
+  if (isApplicationFrozen(application)) {
+    return renderAdminDetailPage(res, {
+      statusCode: 400,
+      application,
+      error: "This application record is frozen. Unfreeze it before updating the application status."
+    });
+  }
+
   if (status === "Approved") {
     return renderAdminDetailPage(res, {
       statusCode: 400,
@@ -4245,6 +4272,14 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, (req, res) => {
   const existingApplication = ensureApplicationDefaults(applications[index]);
   if (!canAdminAccessApplication(req, existingApplication)) {
     return res.status(403).send("Access denied for this department.");
+  }
+
+  if (isApplicationFrozen(existingApplication)) {
+    return renderAdminDetailPage(res, {
+      statusCode: 400,
+      application: existingApplication,
+      error: "This application record is frozen. Unfreeze it before editing applicant information."
+    });
   }
 
   const requiredText = [
@@ -4369,7 +4404,7 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, (req, res) => {
   return res.redirect(`/admin/applications/${req.params.id}`);
 });
 
-app.post("/admin/applications/:id/delete", ensureDepartmentAdmin, (req, res) => {
+app.post("/admin/applications/:id/freeze", ensureDepartmentAdmin, (req, res) => {
   const applications = readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
@@ -4382,17 +4417,45 @@ app.post("/admin/applications/:id/delete", ensureDepartmentAdmin, (req, res) => 
     return res.status(403).send("Access denied for this department.");
   }
 
-  const [removed] = applications.splice(index, 1);
+  applications[index] = freezeApplicationRecord(
+    application,
+    req.session?.adminRole || "hr_admin",
+    "Record frozen by HR-managed department review."
+  );
   writeApplications(applications);
-  cleanupApplicationDocuments(removed);
 
-  return res.redirect("/admin/applications");
+  return res.redirect(`/admin/applications/${req.params.id}?frozen=1`);
+});
+
+app.post("/admin/applications/:id/unfreeze", ensureDepartmentAdmin, (req, res) => {
+  const applications = readApplications();
+  const index = applications.findIndex((item) => item.id === req.params.id);
+
+  if (index === -1) {
+    return res.status(404).render("not-found");
+  }
+
+  const application = ensureApplicationDefaults(applications[index]);
+  if (!canAdminAccessApplication(req, application)) {
+    return res.status(403).send("Access denied for this department.");
+  }
+
+  applications[index] = unfreezeApplicationRecord(application);
+  writeApplications(applications);
+
+  return res.redirect(`/admin/applications/${req.params.id}?unfrozen=1`);
 });
 
 app.get("/hr/applications", ensureHrAdmin, (req, res) => {
+  clearHrDepartmentScope(req);
   const statusFilterRaw = (req.query.status || "Verified").toString();
   const allowedFilters = new Set(["All", ...HR_VISIBLE_STATUSES]);
   const statusFilter = allowedFilters.has(statusFilterRaw) ? statusFilterRaw : "Verified";
+  const departmentFilterRaw = (req.query.department || "All").toString().trim();
+  const departmentFilter =
+    departmentFilterRaw === "All" || isValidDepartment(departmentFilterRaw)
+      ? departmentFilterRaw
+      : "All";
 
   const allApplications = readApplications()
     .filter((application) => HR_VISIBLE_STATUSES.has(application.status))
@@ -4400,10 +4463,17 @@ app.get("/hr/applications", ensureHrAdmin, (req, res) => {
     (a, b) => new Date(b.submittedAt) - new Date(a.submittedAt)
   );
 
-  const applications =
+  let applications =
     statusFilter === "All"
       ? allApplications
       : allApplications.filter((item) => item.status === statusFilter);
+
+  if (departmentFilter !== "All") {
+    applications = applications.filter((item) => item.appliedDepartment === departmentFilter);
+  }
+
+  const settings = readSettings();
+  const departmentSummaries = buildDepartmentReportRows(readApplications(), settings, null);
 
   const stats = {
     total: allApplications.length,
@@ -4416,6 +4486,9 @@ app.get("/hr/applications", ensureHrAdmin, (req, res) => {
     applications,
     stats,
     statusFilter,
+    departmentFilter,
+    departmentOptions: DEPARTMENTS,
+    departmentSummaries,
     formatDate,
     getPeriodLabel,
     getDepartmentLabel,
@@ -4464,6 +4537,14 @@ app.post("/hr/applications/:id/nita-county-signed", ensureHrAdmin, (req, res) =>
 
   if (!HR_VISIBLE_STATUSES.has(application.status)) {
     return res.status(400).send("Application is not yet in HR review queue.");
+  }
+
+  if (isApplicationFrozen(application)) {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "This application record is frozen. Unfreeze it from department review before continuing the HR workflow."
+    });
   }
 
   if (application.status === "Rejected") {
@@ -4556,6 +4637,14 @@ app.post("/hr/applications/:id/nita-complete", ensureHrAdmin, (req, res) => {
     return res.status(400).send("Application is not yet in HR review queue.");
   }
 
+  if (isApplicationFrozen(application)) {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "This application record is frozen. Unfreeze it from department review before continuing the HR workflow."
+    });
+  }
+
   if (application.status === "Rejected") {
     return renderHrDetailPage(res, {
       application,
@@ -4608,6 +4697,14 @@ app.post("/hr/applications/:id/status", ensureHrAdmin, (req, res) => {
     return res.status(400).send("Application is not yet in HR review queue.");
   }
 
+  if (isApplicationFrozen(application)) {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "This application record is frozen. Unfreeze it from department review before continuing the HR workflow."
+    });
+  }
+
   if (status === "Approved" && !["Verified", "Approved"].includes(application.status)) {
     return renderHrDetailPage(res, {
       application,
@@ -4655,6 +4752,14 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, (req, res) => {
 
   if (!HR_VISIBLE_STATUSES.has(application.status)) {
     return res.status(400).send("Application is not yet in HR review queue.");
+  }
+
+  if (isApplicationFrozen(application)) {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "This application record is frozen. Unfreeze it from department review before continuing the HR workflow."
+    });
   }
 
   if (application.status !== "Approved") {

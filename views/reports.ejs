@@ -5,6 +5,7 @@
           <h1><%= pageTitle %></h1>
           <div class="actions tight">
             <% if (isHrAdmin) { %>
+              <a class="btn secondary" href="/hr/departments">Department Review</a>
               <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
               <a class="btn secondary" href="/hr/applications">HR Queue</a>
             <% } else { %>
@@ -100,31 +101,31 @@
             <thead>
               <tr>
                 <th>Department</th>
-                <th>Capacity</th>
-                <th>Applications</th>
-                <th>Verified</th>
-                <th>Approved</th>
-                <th>Pending</th>
-                <th>Remaining</th>
-                <th>Fill Rate</th>
+                <th class="table-count-cell">Capacity</th>
+                <th class="table-count-cell">Applications</th>
+                <th class="table-count-cell">Verified</th>
+                <th class="table-count-cell">Approved</th>
+                <th class="table-count-cell">Pending</th>
+                <th class="table-count-cell">Remaining</th>
+                <th class="table-count-cell">Fill Rate</th>
               </tr>
             </thead>
             <tbody>
               <% if (!analytics.departmentSummary.length) { %>
                 <tr>
-                  <td colspan="8">No department data available for this filter.</td>
+                  <td class="table-empty-state" colspan="8"><strong>No department data available.</strong> Change the selected filter to see matching records.</td>
                 </tr>
               <% } %>
               <% analytics.departmentSummary.forEach((row) => { %>
                 <tr>
                   <td><%= row.label %></td>
-                  <td><%= row.capacity %></td>
-                  <td><%= row.applications %></td>
-                  <td><%= row.verified %></td>
-                  <td><%= row.approved %></td>
-                  <td><%= row.pending %></td>
-                  <td><%= row.remaining %></td>
-                  <td><%= row.fillRate %>%</td>
+                  <td class="table-count-cell"><%= row.capacity %></td>
+                  <td class="table-count-cell"><%= row.applications %></td>
+                  <td class="table-count-cell"><%= row.verified %></td>
+                  <td class="table-count-cell"><%= row.approved %></td>
+                  <td class="table-count-cell"><%= row.pending %></td>
+                  <td class="table-count-cell"><%= row.remaining %></td>
+                  <td class="table-count-cell"><%= row.fillRate %>%</td>
                 </tr>
               <% }) %>
             </tbody>
@@ -151,23 +152,23 @@
             <thead>
               <tr>
                 <th>Institution</th>
-                <th>Total</th>
-                <th>Verified</th>
-                <th>Approved</th>
+                <th class="table-count-cell">Total</th>
+                <th class="table-count-cell">Verified</th>
+                <th class="table-count-cell">Approved</th>
               </tr>
             </thead>
             <tbody>
               <% if (!analytics.institutionSummary.length) { %>
                 <tr>
-                  <td colspan="4">No institution data available for this filter.</td>
+                  <td class="table-empty-state" colspan="4"><strong>No institution data available.</strong> Change the selected filter to see matching records.</td>
                 </tr>
               <% } %>
               <% analytics.institutionSummary.forEach((row) => { %>
                 <tr>
                   <td><%= row.institution %></td>
-                  <td><%= row.total %></td>
-                  <td><%= row.verified %></td>
-                  <td><%= row.approved %></td>
+                  <td class="table-count-cell"><%= row.total %></td>
+                  <td class="table-count-cell"><%= row.verified %></td>
+                  <td class="table-count-cell"><%= row.approved %></td>
                 </tr>
               <% }) %>
             </tbody>
@@ -184,14 +185,14 @@
                 <th>Tracking Number</th>
                 <th>Name</th>
                 <th>Department</th>
-                <th>Status</th>
-                <th>Updated</th>
+                <th class="table-status-cell">Status</th>
+                <th class="table-date-cell">Updated</th>
               </tr>
             </thead>
             <tbody>
               <% if (!analytics.recentApplications.length) { %>
                 <tr>
-                  <td colspan="5">No recent applications available.</td>
+                  <td class="table-empty-state" colspan="5"><strong>No recent applications available.</strong> New activity will appear here when records are updated.</td>
                 </tr>
               <% } %>
               <% analytics.recentApplications.forEach((application) => { %>
@@ -199,8 +200,8 @@
                   <td><%= application.placementNumber || application.id %></td>
                   <td><%= application.fullName %></td>
                   <td><%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></td>
-                  <td><span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></td>
-                  <td><%= formatDate(application.updatedAt || application.submittedAt) %></td>
+                  <td class="table-status-cell"><span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></td>
+                  <td class="table-date-cell"><%= formatDate(application.updatedAt || application.submittedAt) %></td>
                 </tr>
               <% }) %>
             </tbody>
