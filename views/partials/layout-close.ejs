@@ -1,33 +1,46 @@
       <footer class="site-footer">
         <div class="site-footer-inner">
-          <div class="site-footer-grid">
-            <section class="site-footer-panel site-footer-brand-panel">
-              <p class="site-footer-kicker">County Government of Uasin Gishu</p>
-              <h2 class="site-footer-title">Attachment Application Portal</h2>
-              <p class="site-footer-copy">
-                Practical placement intake, departmental review, HR clearance, and student follow-up
-                in one county portal.
-              </p>
-            </section>
+          <div class="site-footer-main">
+            <a class="site-footer-brand" href="/">
+              <span class="site-footer-logo-wrap">
+                <img
+                  class="site-footer-logo"
+                  src="/uasin-gishu-logo.jpg"
+                  alt="County Government of Uasin Gishu logo"
+                  onerror="this.onerror=null;this.src='/uasin-gishu-logo.svg';"
+                />
+              </span>
+              <span class="site-footer-brand-copy">
+                <span class="site-footer-kicker">County Government of Uasin Gishu</span>
+                <strong class="site-footer-title">Attachment Application Portal</strong>
+                <span class="site-footer-copy">
+                  Student attachment intake, departmental review, HR clearance, and final follow-up in
+                  one county system.
+                </span>
+              </span>
+            </a>
 
-            <section class="site-footer-panel">
-              <h3 class="site-footer-heading">Quick Access</h3>
-              <div class="site-footer-links">
+            <div class="site-footer-side">
+              <div class="site-footer-motto">The Champions</div>
+              <nav class="site-footer-links" aria-label="Footer quick links">
                 <a href="/">Home</a>
                 <a href="/apply">Apply</a>
                 <a href="/track">Track Application</a>
                 <a href="<%= adminPortalPath || '/staff-portal' %>">Admin Portal</a>
                 <a href="<%= hrPortalPath || '/hr-portal' %>">HR Portal</a>
+              </nav>
+              <div class="site-footer-meta">
+                <span>Eldoret, Kenya</span>
+                <a
+                  href="https://mail.google.com/mail/?view=cm&fs=1&to=info@uasingishu.go.ke&su=County%20Attachment%20Portal%20Inquiry"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  info@uasingishu.go.ke
+                </a>
+                <span>05320160000</span>
               </div>
-            </section>
-
-            <section class="site-footer-panel site-footer-contact-panel">
-              <h3 class="site-footer-heading">Managed by DevClaud</h3>
-              <p class="site-footer-copy">
-                DevClaud manages system support, updates, technical maintenance, and direct follow-up
-                for the county attachment portal.
-              </p>
-            </section>
+            </div>
           </div>
 
           <div class="site-footer-bottom">
