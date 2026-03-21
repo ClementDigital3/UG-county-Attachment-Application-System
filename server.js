@@ -955,20 +955,6 @@ function setDepartmentAdminActiveState(existingUsername, isActive) {
   return { success: true };
 }
 
-function deleteDepartmentAdminAccount(existingUsername) {
-  const admins = readDepartmentAdmins();
-  const nextAdmins = admins.filter(
-    (admin) => admin.username !== normalizeAdminUsername(existingUsername)
-  );
-
-  if (nextAdmins.length === admins.length) {
-    return { error: "Department admin account not found." };
-  }
-
-  saveDepartmentAdmins(nextAdmins);
-  return { success: true };
-}
-
 function isSuperAdminSession(req) {
   if (!req.session?.isAdmin) {
     return false;
@@ -2436,7 +2422,6 @@ function renderHrDetailPage(res, {
   });
 }
 
-app.locals.adminPortalPath = ADMIN_PORTAL_PATH;
 app.locals.hrPortalPath = HR_PORTAL_PATH;
 app.locals.documentDefinitions = getViewDocumentDefinitions();
 app.locals.getStatusClass = getStatusClass;
@@ -3589,8 +3574,6 @@ app.get("/hr/admin-accounts", ensureHrAdmin, (req, res) => {
     notice = "Department record password updated.";
   } else if (req.query.toggled === "1") {
     notice = "Department record freeze status updated.";
-  } else if (req.query.deleted === "1") {
-    notice = "Delete is disabled. Freeze a department record instead.";
   }
 
   return renderAdminAccountsPage(res, { notice });
@@ -3656,10 +3639,6 @@ app.post("/hr/admin-accounts/:username/toggle", ensureHrAdmin, (req, res) => {
   }
 
   return res.redirect("/hr/admin-accounts?toggled=1");
-});
-
-app.post("/hr/admin-accounts/:username/delete", ensureHrAdmin, (req, res) => {
-  return res.redirect("/hr/admin-accounts?deleted=1");
 });
 
 function renderReportsPage(res, {
@@ -4505,7 +4484,7 @@ app.get("/hr/applications/:id", ensureHrAdmin, (req, res) => {
   }
 
   if (!HR_VISIBLE_STATUSES.has(application.status)) {
-    return res.status(403).send("This application is not yet verified by department admin.");
+    return res.status(403).send("This application is not yet verified through department review.");
   }
 
   const notice =
@@ -4861,7 +4840,7 @@ app.use((_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Attachment application system running on http://localhost:${PORT}`);
-  console.log(`Department admin portal: http://localhost:${PORT}${ADMIN_PORTAL_PATH}`);
+  console.log(`Department review redirect: http://localhost:${PORT}${ADMIN_PORTAL_PATH} -> ${HR_PORTAL_PATH}`);
   console.log(`HR portal entry: http://localhost:${PORT}${HR_PORTAL_PATH}`);
   console.log(`Storage root: ${STORAGE_ROOT}`);
   console.log(`Database file: ${DATABASE_FILE}`);

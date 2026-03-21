@@ -9,7 +9,7 @@ This project is a digital attachment application portal for the County Governmen
 It was designed to solve the manual attachment application process by:
 
 - allowing students to apply online
-- allowing department admins to verify applications in their own departments
+- allowing HR-controlled department review for applications in each department
 - allowing HR to approve verified applications centrally
 - allowing students to track application progress and download joining letters
 
@@ -26,7 +26,7 @@ You can present the system in this order:
    - this portal allows online application, department-level verification, and HR final approval
 3. Main users:
    - student
-   - department admin
+   - department reviewer under HR control
    - HR
 4. Main benefit:
    - easier application
@@ -45,7 +45,7 @@ You can explain it like this:
 - SQLite stores:
   - student applications
   - portal settings
-  - department admin accounts
+  - department access records
 - SQLite was chosen because it is lightweight, easy to deploy, and suitable for the current project stage
 
 If asked how the application connects to the database, explain:
@@ -66,9 +66,9 @@ You can use this short script:
 1. Open the landing page and explain the system purpose.
 2. Open `Apply` and show how a student submits an attachment application.
 3. Mention that the student must choose a department and can later track the application.
-4. Open the Department Admin Portal and show that each department reviews only its own applicants.
-5. Verify one application and explain that verified applications move to HR.
-6. Open the HR Portal and show final approval.
+4. Open the HR Portal and show Department Review Access for each department.
+5. Verify one application and explain that verified applications move to the HR queue.
+6. Continue in the HR Portal and show final approval.
 7. Upload the joining letter and return to the student tracking page.
 8. Show that the student can see the status and download the joining letter.
 
@@ -79,10 +79,10 @@ This project currently covers:
 - Public landing page with county branding, shared navigation, and footer.
 - Student application portal.
 - Student self-service dashboard for tracking, correction follow-up, NITA workflow follow-up, and joining letter download.
-- Department admin portal with department-scoped access.
+- Department review workflow with department-scoped access controlled from the HR portal.
 - HR portal for final approval and joining letter upload.
-- HR admin account management UI for department admins.
-- Reports and analytics pages for HR and department admins.
+- HR management UI for department review records.
+- Reports and analytics pages for HR and department review scope.
 - Period control, department slot control, and institution fairness control.
 - SQLite database storage for applications, settings, department accounts, and login sessions.
 - File storage abstraction with local storage by default and optional Cloudinary cloud storage.
@@ -94,9 +94,9 @@ This project currently covers:
 3. System generates:
    - `id`
    - `placementNumber`
-4. Department admin logs in through the Admin Portal.
-5. Department admin reviews only applications for that department.
-6. Department admin can:
+4. HR opens Department Review Access for a specific department.
+5. Department review only sees applications for that department under HR authorization.
+6. Department review can:
    - edit applicant details
    - review documents
    - request corrections
@@ -125,7 +125,6 @@ The shared top navigation currently provides:
 
 - `Home` -> landing page `/`
 - `Apply` -> student application page `/apply`
-- `Admin Portal` -> department admin login path from `ADMIN_PORTAL_PATH`
 - `HR Portal` -> HR login path from `HR_PORTAL_PATH`
 
 The interface now includes:
@@ -133,7 +132,7 @@ The interface now includes:
 - County Government of Uasin Gishu branding in the header
 - Local county logo image with SVG fallback
 - Shared footer across pages
-- Consistent layout and form spacing across public, admin, and HR pages
+- Consistent layout and form spacing across public, department review, and HR pages
 
 ## Student Portal
 
@@ -187,11 +186,11 @@ From the student dashboard, a student can:
 - re-submit the stamped NITA document to HR
 - download the joining letter when available
 
-## Department Admin Portal
+## Department Review Access
 
-Department admins log in through the admin portal and are scoped to their own department.
+Department review is opened from the HR portal and stays scoped to the selected department.
 
-Department admin capabilities:
+Department review capabilities:
 
 - view department applications
 - filter applications
@@ -199,10 +198,10 @@ Department admin capabilities:
 - assign placement department
 - review uploaded documents
 - request corrections
-- delete an applicant
+- freeze an applicant record
 - mark an application as `Verified`
 
-Department admins cannot:
+Department review cannot:
 
 - give final approval
 - upload joining letters
@@ -344,15 +343,15 @@ Completed UI work:
 
 ## Credentials Model
 
-### Department admin accounts
+### Department access records
 
-Department admin accounts are stored in the SQLite database.
+Department access records are stored in the SQLite database.
 
 Default first-run pattern:
 
 - username format: `<department>_admin`
 - password: value from `DEFAULT_DEPARTMENT_ADMIN_PASSWORD`
-- HR can now create, edit, activate, deactivate, delete, and reset department admin accounts from the portal.
+- HR can now create, edit, activate, deactivate, and reset department access records from the portal.
 
 ### HR account
 
@@ -363,7 +362,7 @@ HR account uses:
 
 ### Presentation shortcut
 
-For demos, the same credentials can be used on both Admin and HR portals through:
+For demos, the same credentials can be used on both the legacy staff redirect and the HR portal through:
 
 - `PRESENTATION_LOGIN_USERNAME`
 - `PRESENTATION_LOGIN_PASSWORD`
@@ -387,7 +386,7 @@ Do not store real production credentials in `README.md`.
 
 Main project data files:
 
-- `data/attachment-application-system.db` -> SQLite database for applications, settings, department admin accounts, and login sessions
+- `data/attachment-application-system.db` -> SQLite database for applications, settings, department access records, and login sessions
 - `uploads/` -> uploaded documents and joining letters when local file storage is active
 
 ## Environment Configuration
@@ -406,7 +405,7 @@ Current important keys:
 - `CLOUDINARY_API_KEY`
 - `CLOUDINARY_API_SECRET`
 - `CLOUDINARY_FOLDER`
-- `ADMIN_PORTAL_PATH`
+- `ADMIN_PORTAL_PATH` for the legacy staff redirect
 - `HR_PORTAL_PATH`
 - `HR_USERNAME`
 - `HR_PASSWORD`
@@ -440,7 +439,7 @@ Current important keys:
 
 ### Session storage
 
-- Admin and HR login sessions are stored in the SQLite database instead of Express MemoryStore.
+- HR and department review sessions are stored in the SQLite database instead of Express MemoryStore.
 - This removes the default session warning and makes session handling consistent with the rest of the system.
 - Session lifetime is controlled by:
   - `SESSION_COOKIE_MAX_AGE_HOURS`
@@ -466,8 +465,8 @@ npm start
 - Home: `http://localhost:3000`
 - Apply: `http://localhost:3000/apply`
 - Track: `http://localhost:3000/track`
-- Admin Portal: `http://localhost:3000/staff-portal`
 - HR Portal: `http://localhost:3000/hr-portal`
+- Legacy staff redirect: `http://localhost:3000/staff-portal`
 
 ## Render Deployment
 
@@ -514,7 +513,7 @@ The application writes the SQLite database file and, when local storage is activ
 
 - applications
 - portal settings
-- department admin bootstrap data
+- department access bootstrap data
 - login sessions
 - uploaded combined documents
 - uploaded joining letters
