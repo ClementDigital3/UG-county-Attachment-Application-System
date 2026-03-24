@@ -10,3 +10,7 @@ temp_test/
 .DS_Store
 Thumbs.db
 npm-debug.log*
+temp_*.log
+temp_*.png
+temp_*.pdf
+*-county-endorsed-nita.pdf

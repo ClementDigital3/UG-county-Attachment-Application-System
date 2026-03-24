@@ -273,10 +273,10 @@ function drawPartCSignatureStamp(page, {
   const logoInset = logoImage ? 10 : 0;
 
   if (logoImage) {
-    const scaled = logoImage.scaleToFit(10, 10);
+    const scaled = logoImage.scaleToFit(11.5, 11.5);
     page.drawImage(logoImage, {
       x: x + 4,
-      y: y + 3,
+      y: y + 3.5,
       width: scaled.width,
       height: scaled.height
     });
@@ -285,22 +285,22 @@ function drawPartCSignatureStamp(page, {
   const textX = x + 4 + logoInset;
   page.drawText("UG COUNTY HR", {
     x: textX,
-    y: y + height - 7,
-    size: 5.1,
+    y: y + height - 7.5,
+    size: 5.7,
     font: fonts.bold,
     color: rgb(0.08, 0.18, 0.12)
   });
   page.drawText("ENDORSED", {
     x: textX,
     y: y + 4,
-    size: 4.8,
+    size: 5.2,
     font: fonts.bold,
     color: rgb(0.14, 0.36, 0.22)
   });
   page.drawText(stampDateShort || "", {
-    x: x + width - 27,
+    x: x + width - 31,
     y: y + 4,
-    size: 4.6,
+    size: 4.9,
     font: fonts.regular,
     color: rgb(0.24, 0.31, 0.28)
   });
@@ -325,8 +325,8 @@ function drawPartCOverlay(page, {
   const signedAndStamped = anchors.signedAndStamped;
   const scaleX = pageSize.width / NITA_TEMPLATE_PAGE_SIZE.width;
   const scaleY = pageSize.height / NITA_TEMPLATE_PAGE_SIZE.height;
-  const fontColor = rgb(0.07, 0.17, 0.11);
-  const mutedColor = rgb(0.24, 0.31, 0.28);
+  const fontColor = rgb(0.07, 0.39, 0.2);
+  const mutedColor = rgb(0.48, 0.35, 0.08);
 
   drawFieldEntry(page, {
     x: provider.x + (134 * scaleX),
@@ -449,9 +449,9 @@ function drawPartCOverlay(page, {
 
   drawPartCSignatureStamp(page, {
     x: signedAndStamped.x + (132 * scaleX),
-    y: signedAndStamped.y - (2 * scaleY),
-    width: 78 * scaleX,
-    height: 17 * scaleY,
+    y: signedAndStamped.y - (3 * scaleY),
+    width: 90 * scaleX,
+    height: 20 * scaleY,
     fonts,
     logoImage,
     stampDateShort
