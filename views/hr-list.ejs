@@ -25,7 +25,7 @@
           </div>
           <div>
             <strong><%= stats.approved %></strong>
-            <span>Approved</span>
+            <span>Admitted</span>
           </div>
           <div>
             <strong><%= stats.rejected %></strong>
@@ -38,7 +38,7 @@
             Filter by status
             <select name="status">
               <option value="Verified" <%= statusFilter === 'Verified' ? 'selected' : '' %>>Verified</option>
-              <option value="Approved" <%= statusFilter === 'Approved' ? 'selected' : '' %>>Approved</option>
+              <option value="Admitted" <%= statusFilter === 'Admitted' ? 'selected' : '' %>>Admitted</option>
               <option value="Rejected" <%= statusFilter === 'Rejected' ? 'selected' : '' %>>Rejected</option>
               <option value="All" <%= statusFilter === 'All' ? 'selected' : '' %>>All</option>
             </select>
@@ -106,7 +106,7 @@
                 <th class="table-count-cell">Capacity</th>
                 <th class="table-count-cell">Applications</th>
                 <th class="table-count-cell">Verified</th>
-                <th class="table-count-cell">Approved</th>
+                <th class="table-count-cell">Admitted</th>
                 <th class="table-count-cell">Pending</th>
                 <th class="table-count-cell">Remaining</th>
                 <th class="table-action-cell">Actions</th>

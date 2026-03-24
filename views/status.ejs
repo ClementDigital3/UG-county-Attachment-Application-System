@@ -6,7 +6,6 @@
 
         <div class="summary">
           <p><strong>Tracking / Placement Number:</strong> <%= application.placementNumber || application.id %></p>
-          <p><strong>Application ID:</strong> <%= application.id %></p>
           <p><strong>Name:</strong> <%= application.fullName %></p>
           <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
           <p><strong>Assigned Department:</strong> <%= application.assignedDepartment ? getDepartmentLabel(application.assignedDepartment) : 'Not assigned yet' %></p>
@@ -15,12 +14,12 @@
           <p><strong>Submitted:</strong> <%= formatDate(application.submittedAt) %></p>
           <p><strong>Last Updated:</strong> <%= formatDate(application.updatedAt) %></p>
           <p><strong>Reviewer Comment:</strong> <%= application.reviewerComment || 'No comment yet.' %></p>
-          <p><strong>Next Step:</strong> Your application is received. Department review comes first, then HR handles the NITA workflow before final approval.</p>
-          <p><strong>NITA Workflow:</strong> Track the county-signed NITA form, download it when HR uploads it, return the stamped copy, and later download your joining letter from the student dashboard.</p>
+          <p><strong>Next Step:</strong> Your application is received. Department review comes first, then HR handles the NITA workflow before the final admission decision.</p>
+          <p><strong>NITA Workflow:</strong> Track the county-endorsed NITA form, download it when it appears in the dashboard, return the stamped copy, and later download your joining letter from the student dashboard.</p>
         </div>
 
         <div class="actions">
-          <a class="btn" href="/track?trackingNumber=<%= encodeURIComponent(application.placementNumber || application.id) %>&email=<%= encodeURIComponent(application.email) %>">Open Student Dashboard</a>
+          <a class="btn" href="/track?idNumber=<%= encodeURIComponent(application.idNumber || '') %>&email=<%= encodeURIComponent(application.email) %>">Open Student Dashboard</a>
           <a class="btn" href="/apply">Submit Another Application</a>
           <a class="btn secondary" href="/">Back to Home</a>
         </div>

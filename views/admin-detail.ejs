@@ -27,7 +27,7 @@
         <% if (application.isFrozen) { %>
           <div class="alert">
             This application record is frozen. Restore it before changing applicant information,
-            document review, placement, or status.
+            document review, or status.
           </div>
         <% } %>
 
@@ -41,7 +41,6 @@
           <p><strong>Institution:</strong> <%= application.institution %></p>
           <p><strong>Course:</strong> <%= application.course %></p>
           <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
-          <p><strong>Assigned Department:</strong> <%= application.assignedDepartment ? getDepartmentLabel(application.assignedDepartment) : 'Not assigned' %></p>
           <p><strong>Period:</strong> <%= application.period ? getPeriodLabel(application.period) : 'Not set' %></p>
           <p><strong>Requested Dates:</strong> <%= application.startDate %> to <%= application.endDate %></p>
           <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
@@ -136,25 +135,6 @@
           </div>
         </form>
 
-        <h2>Department Placement</h2>
-        <p>Assign the department where this student will be placed for attachment.</p>
-        <form action="/admin/applications/<%= application.id %>/placement" method="post" class="form-grid">
-          <label class="full-width">
-            Assigned Department *
-            <select name="assignedDepartment" required>
-              <option value="">Select department</option>
-              <% departmentOptions.forEach((department) => { %>
-                <option value="<%= department.key %>" <%= application.assignedDepartment === department.key ? 'selected' : '' %>>
-                  <%= department.label %>
-                </option>
-              <% }) %>
-            </select>
-          </label>
-          <div class="actions full-width">
-            <button class="btn" type="submit" <%= application.isFrozen ? 'disabled' : '' %>>Save Placement</button>
-          </div>
-        </form>
-
         <h2>Submitted Documents</h2>
         <% if (application.combinedDocument && application.combinedDocument.filename) { %>
           <ul>
@@ -246,10 +226,10 @@
         </form>
 
         <h2>Attachment Joining Letter</h2>
-        <p>Joining letters are uploaded by HR after final approval in the HR portal.</p>
+        <p>Joining letters are uploaded by HR after the final admission decision in the HR portal.</p>
 
         <h2>Update Application Status</h2>
-        <p>When documents are correct, set status to <strong>Verified</strong> so HR can review final approval.</p>
+        <p>When documents are correct, set status to <strong>Verified</strong> so HR can review the final admission decision.</p>
         <form action="/admin/applications/<%= application.id %>/status" method="post" class="form-grid">
           <label>
             Status

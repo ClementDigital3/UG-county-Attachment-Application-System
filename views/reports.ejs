@@ -16,7 +16,7 @@
           </div>
         </div>
 
-        <p>Use this dashboard to monitor application volume, approvals, institutional spread, and remaining capacity.</p>
+        <p>Use this dashboard to monitor application volume, admissions, institutional spread, and remaining capacity.</p>
 
         <form method="get" action="<%= actionPath %>" class="filter-row">
           <label>
@@ -61,7 +61,7 @@
           </div>
           <div>
             <strong><%= analytics.totals.approved %></strong>
-            <span>Approved</span>
+            <span>Admitted</span>
           </div>
           <div>
             <strong><%= analytics.totals.verified %></strong>
@@ -73,7 +73,7 @@
           </div>
           <div>
             <strong><%= analytics.totals.approvalRate %>%</strong>
-            <span>Approval rate</span>
+            <span>Admission rate</span>
           </div>
           <div>
             <strong><%= analytics.totals.averageProcessingHours %>h</strong>
@@ -104,7 +104,7 @@
                 <th class="table-count-cell">Capacity</th>
                 <th class="table-count-cell">Applications</th>
                 <th class="table-count-cell">Verified</th>
-                <th class="table-count-cell">Approved</th>
+                <th class="table-count-cell">Admitted</th>
                 <th class="table-count-cell">Pending</th>
                 <th class="table-count-cell">Remaining</th>
                 <th class="table-count-cell">Fill Rate</th>
@@ -154,7 +154,7 @@
                 <th>Institution</th>
                 <th class="table-count-cell">Total</th>
                 <th class="table-count-cell">Verified</th>
-                <th class="table-count-cell">Approved</th>
+                <th class="table-count-cell">Admitted</th>
               </tr>
             </thead>
             <tbody>

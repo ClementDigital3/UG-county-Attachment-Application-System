@@ -8,6 +8,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { createDatabase } = require("./database");
 const { createFileStorage } = require("./file-storage");
+const { createCountyEndorsedNitaPdf } = require("./county-nita-pdf");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,6 +22,7 @@ const UPLOAD_DIR = path.join(STORAGE_ROOT, "uploads");
 const PUBLIC_DIR = path.join(APP_ROOT, "public");
 const VIEWS_DIR = path.join(APP_ROOT, "views");
 const KENYA_INSTITUTIONS_FILE = path.join(APP_ROOT, "data", "kenya-institutions.json");
+const COUNTY_LOGO_JPG_FILE = path.join(PUBLIC_DIR, "uasin-gishu-logo.jpg");
 
 const FILE_TYPE_HEADERS = {
   pdf: Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d]), // %PDF-
@@ -31,8 +33,9 @@ const FILE_TYPE_HEADERS = {
 
 const EICAR_SIGNATURE =
   "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
-const STATUS_OPTIONS = ["Pending", "Needs Correction", "Verified", "Approved", "Rejected"];
-const HR_VISIBLE_STATUSES = new Set(["Verified", "Approved", "Rejected"]);
+const STATUS_OPTIONS = ["Pending", "Needs Correction", "Verified", "Admitted", "Rejected"];
+const FINAL_DECISION_STATUSES = new Set(["Admitted", "Rejected"]);
+const HR_VISIBLE_STATUSES = new Set(["Verified", "Admitted", "Rejected"]);
 const DEFAULT_INSTITUTION_MAX_SHARE_PERCENT = 40;
 const DATABASE_FILE = process.env.DATABASE_FILE
   ? path.resolve(process.env.DATABASE_FILE)
@@ -130,7 +133,7 @@ const NITA_DOCUMENT_DEFINITION = {
 const COUNTY_SIGNED_NITA_FIELD = "countySignedNitaDocument";
 const COUNTY_SIGNED_NITA_DEFINITION = {
   key: COUNTY_SIGNED_NITA_FIELD,
-  label: "County-Signed NITA Document",
+  label: "County-Endorsed NITA Document",
   accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
   allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
   allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
@@ -187,6 +190,31 @@ const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "";
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || "";
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || "";
 const CLOUDINARY_FOLDER = process.env.CLOUDINARY_FOLDER || "attachment-application-system";
+const COUNTY_ATTACHMENT_PROVIDER_NAME =
+  process.env.COUNTY_ATTACHMENT_PROVIDER_NAME || "County Government of Uasin Gishu";
+const COUNTY_ATTACHMENT_PROVIDER_POSTAL_ADDRESS =
+  process.env.COUNTY_ATTACHMENT_PROVIDER_POSTAL_ADDRESS || "P.O. Box 40";
+const COUNTY_ATTACHMENT_PROVIDER_POSTAL_CODE =
+  process.env.COUNTY_ATTACHMENT_PROVIDER_POSTAL_CODE || "30100";
+const COUNTY_ATTACHMENT_PROVIDER_TOWN =
+  process.env.COUNTY_ATTACHMENT_PROVIDER_TOWN || "Eldoret";
+const COUNTY_ATTACHMENT_PROVIDER_PHYSICAL_ADDRESS =
+  process.env.COUNTY_ATTACHMENT_PROVIDER_PHYSICAL_ADDRESS || "County Headquarters";
+const COUNTY_ATTACHMENT_PROVIDER_REGION =
+  process.env.COUNTY_ATTACHMENT_PROVIDER_REGION || "Uasin Gishu";
+const COUNTY_ATTACHMENT_PROVIDER_TELEPHONE =
+  process.env.COUNTY_ATTACHMENT_PROVIDER_TELEPHONE || "05320160000";
+const COUNTY_ATTACHMENT_PROVIDER_EMAIL =
+  process.env.COUNTY_ATTACHMENT_PROVIDER_EMAIL || "info@uasingishu.go.ke";
+const COUNTY_ATTACHMENT_PROVIDER_FAX = process.env.COUNTY_ATTACHMENT_PROVIDER_FAX || "N/A";
+const COUNTY_ATTACHMENT_OFFICER_IN_CHARGE =
+  process.env.COUNTY_ATTACHMENT_OFFICER_IN_CHARGE || "Director, Human Resource Management";
+const COUNTY_ATTACHMENT_OFFICER_TELEPHONE =
+  process.env.COUNTY_ATTACHMENT_OFFICER_TELEPHONE || COUNTY_ATTACHMENT_PROVIDER_TELEPHONE;
+const COUNTY_ATTACHMENT_SIGNATORY_NAME =
+  process.env.COUNTY_ATTACHMENT_SIGNATORY_NAME || COUNTY_ATTACHMENT_OFFICER_IN_CHARGE;
+const COUNTY_ATTACHMENT_SIGNATORY_DESIGNATION =
+  process.env.COUNTY_ATTACHMENT_SIGNATORY_DESIGNATION || "Authorized County HR Signatory";
 const OTHER_INSTITUTION_VALUE = "__OTHER__";
 
 const APPLICATION_REQUIREMENTS = [
@@ -403,7 +431,6 @@ const studentDocumentsUploadMiddleware = upload.fields(
 );
 
 const joiningLetterUploadMiddleware = upload.single(JOINING_LETTER_FIELD);
-const countySignedNitaUploadMiddleware = upload.single(COUNTY_SIGNED_NITA_FIELD);
 const nitaResubmissionUploadMiddleware = upload.single(NITA_RESUBMISSION_FIELD);
 
 app.set("view engine", "ejs");
@@ -457,6 +484,28 @@ function createDefaultNitaWorkflow() {
     status: "Pending County Signature",
     comment: "",
     updatedAt: null
+  };
+}
+
+function normalizeApplicationStatus(status) {
+  const rawStatus = (status || "").toString().trim();
+  if (rawStatus === "Approved") {
+    return "Admitted";
+  }
+
+  return STATUS_OPTIONS.includes(rawStatus) ? rawStatus : "Pending";
+}
+
+function isAdmittedStatus(status) {
+  return normalizeApplicationStatus(status) === "Admitted";
+}
+
+function createAutomaticCountySignedNitaSecurity(sourceSecurity, generatedFile) {
+  return {
+    generatedBySystem: true,
+    generatedFrom: sourceSecurity?.detectedType || "nita-upload",
+    detectedType: "pdf",
+    size: Number(generatedFile?.size || 0)
   };
 }
 
@@ -601,6 +650,7 @@ function ensureApplicationDefaults(application) {
 
   return {
     ...application,
+    status: normalizeApplicationStatus(application.status),
     placementNumber: application.placementNumber || application.id || "",
     idNumber: (application.idNumber || "").toString(),
     appliedDepartment,
@@ -1359,7 +1409,7 @@ function buildDepartmentReportRows(applications, settings, scopedDepartment = nu
       (application) => application.appliedDepartment === department.key
     );
     const capacity = Number(settings.departmentCapacities?.[department.key] || 0);
-    const approved = departmentApplications.filter((application) => application.status === "Approved").length;
+    const approved = departmentApplications.filter((application) => isAdmittedStatus(application.status)).length;
     const verified = departmentApplications.filter((application) => application.status === "Verified").length;
     const pending = departmentApplications.filter(
       (application) => application.status === "Pending" || application.status === "Needs Correction"
@@ -1402,7 +1452,7 @@ function buildInstitutionReportRows(applications, scopedDepartment = null, limit
 
     const current = buckets.get(key);
     current.total += 1;
-    if (application.status === "Approved") {
+    if (isAdmittedStatus(application.status)) {
       current.approved += 1;
     }
     if (application.status === "Verified") {
@@ -1419,7 +1469,7 @@ function buildAnalyticsSummary(applications, settings, scopedDepartment = null) 
   const filtered = scopedDepartment
     ? applications.filter((application) => application.appliedDepartment === scopedDepartment)
     : applications.slice();
-  const approvedCount = filtered.filter((application) => application.status === "Approved").length;
+  const approvedCount = filtered.filter((application) => isAdmittedStatus(application.status)).length;
   const verifiedCount = filtered.filter((application) => application.status === "Verified").length;
   const pendingCount = filtered.filter(
     (application) => application.status === "Pending" || application.status === "Needs Correction"
@@ -1505,11 +1555,13 @@ function getReportFilterState({ query = {}, allowDepartmentFilter = false, force
   const requestedStatus = (query.status || "All").toString().trim();
   const requestedPeriod = (query.period || "All").toString().trim();
   const requestedDepartment = (query.department || "All").toString().trim();
+  const normalizedRequestedStatus =
+    requestedStatus === "All" ? "All" : normalizeApplicationStatus(requestedStatus);
   const validStatuses = new Set(["All", ...STATUS_OPTIONS]);
   const validPeriods = new Set(["All", ...PERIODS.map((period) => period.key)]);
 
   return {
-    status: validStatuses.has(requestedStatus) ? requestedStatus : "All",
+    status: validStatuses.has(normalizedRequestedStatus) ? normalizedRequestedStatus : "All",
     period: validPeriods.has(requestedPeriod) ? requestedPeriod : "All",
     department:
       forcedDepartment ||
@@ -1588,11 +1640,16 @@ function getCoverNoteError(coverNote) {
 }
 
 function getStatusClass(status) {
-  return (status || "").toLowerCase().replace(/\s+/g, "-");
+  const normalized = normalizeApplicationStatus(status);
+  if (normalized === "Admitted") {
+    return "approved";
+  }
+
+  return normalized.toLowerCase().replace(/\s+/g, "-");
 }
 
 function getStudentDashboardStatus(application, rejectedDocuments) {
-  const status = (application?.status || "").toString();
+  const status = normalizeApplicationStatus(application?.status);
   const nitaWorkflow = normalizeNitaWorkflow(application?.nitaWorkflow);
 
   switch (status) {
@@ -1612,12 +1669,12 @@ function getStudentDashboardStatus(application, rejectedDocuments) {
       if (nitaWorkflow.status === "Pending County Signature") {
         return {
           tone: "muted",
-          heading: "Waiting For County-Signed NITA Form",
+          heading: "Waiting For County-Endorsed NITA Form",
           summary:
-            "Department verification is complete. HR will upload the county-signed NITA document for you to download next.",
+            "Department verification is complete. The county-endorsed NITA document will appear here once it is generated.",
           nextActionTitle: "Next step",
           nextActionText:
-            "No action is needed now. Check this dashboard for the county-signed NITA form."
+            "No action is needed now. Check this dashboard for the county-endorsed NITA form."
         };
       }
 
@@ -1626,10 +1683,10 @@ function getStudentDashboardStatus(application, rejectedDocuments) {
           tone: "warning",
           heading: "Download And Return The NITA Form",
           summary:
-            "HR uploaded the county-signed NITA document. Download it, take it to the NITA office for stamping, then re-submit the stamped copy here.",
+            "Your county-endorsed NITA document is ready. Download it, take it to the NITA office for stamping, then re-submit the stamped copy here.",
           nextActionTitle: "Student action required",
           nextActionText:
-            "Download the county-signed NITA document and upload the stamped version from the NITA workflow section below."
+            "Download the county-endorsed NITA document and upload the stamped version from the NITA workflow section below."
         };
       }
 
@@ -1641,7 +1698,7 @@ function getStudentDashboardStatus(application, rejectedDocuments) {
             "Your stamped NITA document has been sent back to HR and is now under review.",
           nextActionTitle: "Next step",
           nextActionText:
-            "Wait for HR to confirm the NITA stage, then the application can move to final approval."
+            "Wait for HR to confirm the NITA stage, then the application can move to the final admission decision."
         };
       }
 
@@ -1650,7 +1707,7 @@ function getStudentDashboardStatus(application, rejectedDocuments) {
           tone: "success",
           heading: "NITA Stage Completed",
           summary:
-            "Your NITA document workflow is complete and the application is now waiting for HR final approval.",
+            "Your NITA document workflow is complete and the application is now waiting for the final HR admission decision.",
           nextActionTitle: "Next step",
           nextActionText: "No action is needed now unless HR adds a further comment."
         };
@@ -1662,15 +1719,15 @@ function getStudentDashboardStatus(application, rejectedDocuments) {
         summary:
           "Your application passed department verification and is now waiting for HR final review.",
         nextActionTitle: "Next step",
-        nextActionText: "No action is needed now. Wait for HR approval or rejection."
+        nextActionText: "No action is needed now. Wait for HR admission or rejection."
       };
-    case "Approved":
+    case "Admitted":
       return {
         tone: "success",
-        heading: "Approved",
+        heading: "Admitted",
         summary: application?.joiningLetter?.filename
-          ? "HR approved your application and your joining letter is ready."
-          : "HR approved your application. Your joining letter will appear here once uploaded.",
+          ? "HR admitted your application and your joining letter is ready."
+          : "HR admitted your application. Your joining letter will appear here once uploaded.",
         nextActionTitle: application?.joiningLetter?.filename ? "Next step" : "Current status",
         nextActionText: application?.joiningLetter?.filename
           ? "Download your joining letter and keep the tracking number for reference."
@@ -1687,6 +1744,18 @@ function getStudentDashboardStatus(application, rejectedDocuments) {
       };
     case "Pending":
     default:
+      if (nitaWorkflow.status === "Awaiting Student NITA Resubmission") {
+        return {
+          tone: "warning",
+          heading: "Application Received",
+          summary:
+            "Your application is in the department queue, and the county-endorsed NITA document is already ready for download.",
+          nextActionTitle: "Student action available",
+          nextActionText:
+            "Download the county-endorsed NITA document, get it stamped by NITA, and upload the stamped copy while the rest of the application continues through review."
+        };
+      }
+
       return {
         tone: "muted",
         heading: "Application Received",
@@ -1699,26 +1768,26 @@ function getStudentDashboardStatus(application, rejectedDocuments) {
 }
 
 function buildStudentTimeline(application) {
-  const status = (application?.status || "").toString();
+  const status = normalizeApplicationStatus(application?.status);
   const updatedAt = application?.updatedAt || application?.submittedAt || null;
   const nitaWorkflow = normalizeNitaWorkflow(application?.nitaWorkflow);
 
   const departmentState =
     status === "Pending"
       ? "current"
-      : ["Needs Correction", "Verified", "Approved", "Rejected"].includes(status)
+      : ["Needs Correction", "Verified", "Admitted", "Rejected"].includes(status)
         ? "complete"
         : "upcoming";
   const hrState =
     status === "Verified"
       ? "current"
-      : ["Approved", "Rejected"].includes(status)
+      : ["Admitted", "Rejected"].includes(status)
         ? "complete"
         : "upcoming";
   const nitaState =
-    ["Approved", "Rejected"].includes(status) || nitaWorkflow.status === "Completed"
+    FINAL_DECISION_STATUSES.has(status) || nitaWorkflow.status === "Completed"
       ? "complete"
-      : status === "Verified" &&
+      : ["Pending", "Verified"].includes(status) &&
           [
             "Pending County Signature",
             "Awaiting Student NITA Resubmission",
@@ -1726,7 +1795,7 @@ function buildStudentTimeline(application) {
           ].includes(nitaWorkflow.status)
         ? "current"
         : "upcoming";
-  const finalDecisionState = ["Approved", "Rejected"].includes(status) ? "current" : "upcoming";
+  const finalDecisionState = FINAL_DECISION_STATUSES.has(status) ? "current" : "upcoming";
 
   return [
     {
@@ -1756,7 +1825,7 @@ function buildStudentTimeline(application) {
       note:
         status === "Verified"
           ? "Your application is waiting for HR final review."
-          : ["Approved", "Rejected"].includes(status)
+          : FINAL_DECISION_STATUSES.has(status)
             ? "HR review completed."
             : "This stage starts after department verification."
     },
@@ -1767,14 +1836,14 @@ function buildStudentTimeline(application) {
       date: nitaState === "complete" || nitaState === "current" ? nitaWorkflow.updatedAt : null,
       note:
         nitaWorkflow.status === "Pending County Signature"
-          ? "HR will upload the county-signed NITA document for student download."
+          ? "County endorsement is pending for the NITA document."
           : nitaWorkflow.status === "Awaiting Student NITA Resubmission"
-            ? "Student should download the county-signed NITA document, get it stamped, and re-submit it."
+            ? "Student should download the county-endorsed NITA document, get it stamped, and re-submit it."
             : nitaWorkflow.status === "Under HR NITA Review"
               ? "HR is reviewing the stamped NITA document sent back by the student."
               : nitaWorkflow.status === "Completed"
                 ? "NITA workflow completed."
-                : "This stage starts after department verification."
+                : "This stage starts once the NITA document is available."
     },
     {
       key: "final_decision",
@@ -1782,10 +1851,10 @@ function buildStudentTimeline(application) {
       state: finalDecisionState,
       date: finalDecisionState === "current" ? updatedAt : null,
       note:
-        status === "Approved"
+        status === "Admitted"
           ? application?.joiningLetter?.filename
-            ? "Approved and joining letter uploaded."
-            : "Approved. Joining letter upload is pending."
+            ? "Admitted and joining letter uploaded."
+            : "Admitted. Joining letter upload is pending."
           : status === "Rejected"
             ? "Final decision recorded."
             : "Final HR decision not reached yet."
@@ -1822,6 +1891,10 @@ function getTrackingNumber(application) {
   return (application?.placementNumber || application?.id || "").toString().trim();
 }
 
+function normalizeIdNumber(idNumber) {
+  return (idNumber || "").toString().trim().toLowerCase();
+}
+
 function matchesTrackingNumber(application, trackingNumber) {
   const probe = (trackingNumber || "").toString().trim().toLowerCase();
   if (!probe) {
@@ -1845,6 +1918,35 @@ function findApplicationIndexByTrackingAndEmail(applications, trackingNumber, em
       matchesTrackingNumber(item, trackingNumber) &&
       (item.email || "").toString().trim().toLowerCase() === normalizedEmail
   );
+}
+
+function findApplicationIndexByIdNumberAndEmail(applications, idNumber, email) {
+  const normalizedEmail = (email || "").toString().trim().toLowerCase();
+  const normalizedIdNumber = normalizeIdNumber(idNumber);
+
+  return applications.findIndex(
+    (item) =>
+      normalizeIdNumber(item.idNumber) === normalizedIdNumber &&
+      (item.email || "").toString().trim().toLowerCase() === normalizedEmail
+  );
+}
+
+function findApplicationIndexForStudentDashboard(applications, {
+  idNumber,
+  trackingNumber,
+  email
+} = {}) {
+  const normalizedIdNumber = normalizeIdNumber(idNumber);
+  if (normalizedIdNumber) {
+    const idMatchIndex = findApplicationIndexByIdNumberAndEmail(applications, normalizedIdNumber, email);
+    if (idMatchIndex !== -1) {
+      return idMatchIndex;
+    }
+
+    return findApplicationIndexByTrackingAndEmail(applications, normalizedIdNumber, email);
+  }
+
+  return findApplicationIndexByTrackingAndEmail(applications, trackingNumber, email);
 }
 
 function removeStoredFile(filename) {
@@ -2140,6 +2242,49 @@ async function persistUploadedApplicationFile(file, { folder, uploadedAt, securi
   };
 }
 
+async function generateCountySignedNitaDocument(sourceFile, {
+  applicantName,
+  placementNumber,
+  uploadedAt,
+  sourceSecurity
+} = {}) {
+  const generatedFile = await createCountyEndorsedNitaPdf({
+    sourceFile,
+    uploadDir: UPLOAD_DIR,
+    applicantName,
+    placementNumber,
+    generatedAt: uploadedAt,
+    timeZone: DISPLAY_TIMEZONE,
+    logoPath: COUNTY_LOGO_JPG_FILE,
+    countyPartCDetails: {
+      providerName: COUNTY_ATTACHMENT_PROVIDER_NAME,
+      postalAddress: COUNTY_ATTACHMENT_PROVIDER_POSTAL_ADDRESS,
+      postalCode: COUNTY_ATTACHMENT_PROVIDER_POSTAL_CODE,
+      town: COUNTY_ATTACHMENT_PROVIDER_TOWN,
+      physicalAddress: COUNTY_ATTACHMENT_PROVIDER_PHYSICAL_ADDRESS,
+      region: COUNTY_ATTACHMENT_PROVIDER_REGION,
+      telephone: COUNTY_ATTACHMENT_PROVIDER_TELEPHONE,
+      email: COUNTY_ATTACHMENT_PROVIDER_EMAIL,
+      fax: COUNTY_ATTACHMENT_PROVIDER_FAX,
+      officerInCharge: COUNTY_ATTACHMENT_OFFICER_IN_CHARGE,
+      officerTelephone: COUNTY_ATTACHMENT_OFFICER_TELEPHONE,
+      signatoryName: COUNTY_ATTACHMENT_SIGNATORY_NAME,
+      designation: COUNTY_ATTACHMENT_SIGNATORY_DESIGNATION
+    }
+  });
+
+  try {
+    return await persistUploadedApplicationFile(generatedFile, {
+      folder: "applications/nita-county-signed",
+      uploadedAt,
+      security: createAutomaticCountySignedNitaSecurity(sourceSecurity, generatedFile)
+    });
+  } catch (error) {
+    fileStorage.removeTemporaryFile(generatedFile);
+    throw error;
+  }
+}
+
 function getRejectedDocuments(application) {
   const normalized = ensureApplicationDefaults(application);
   const acceptAll = ALLOW_ANY_TEST_UPLOADS ? "*/*" : undefined;
@@ -2335,9 +2480,7 @@ function renderTrackPage(res, {
 } = {}) {
   const safeResult = result ? ensureApplicationDefaults(result) : null;
   const safeFormData = {
-    trackingNumber:
-      formData.trackingNumber ||
-      (safeResult ? safeResult.placementNumber || safeResult.id : ""),
+    idNumber: formData.idNumber || (safeResult ? safeResult.idNumber || "" : ""),
     email: formData.email || (safeResult ? safeResult.email || "" : "")
   };
   const rejectedDocuments = safeResult ? getRejectedDocuments(safeResult) : [];
@@ -2381,7 +2524,7 @@ function renderAdminDetailPage(res, {
   const departmentOptions = scopedDepartment
     ? DEPARTMENTS.filter((department) => department.key === scopedDepartment)
     : DEPARTMENTS;
-  const statusOptions = STATUS_OPTIONS.filter((status) => status !== "Approved");
+  const statusOptions = STATUS_OPTIONS.filter((status) => status !== "Admitted");
 
   return res.status(statusCode).render("admin-detail", {
     application: normalized,
@@ -2414,7 +2557,7 @@ function renderHrDetailPage(res, {
     getPeriodLabel,
     getDepartmentLabel,
     getStatusClass,
-    hrStatusOptions: ["Verified", "Approved", "Rejected"],
+    hrStatusOptions: ["Verified", "Admitted", "Rejected"],
     combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION,
     nitaDocumentDefinition: NITA_DOCUMENT_DEFINITION,
     countySignedNitaDefinition: COUNTY_SIGNED_NITA_DEFINITION,
@@ -2741,6 +2884,12 @@ app.post("/apply", (req, res) => {
         uploadedAt: storedAt,
         security: documentSecurity[COMBINED_DOCUMENT_FIELD] || null
       });
+      const countySignedNitaDocument = await generateCountySignedNitaDocument(nitaUpload, {
+        applicantName: finalFullName,
+        placementNumber,
+        uploadedAt: storedAt,
+        sourceSecurity: documentSecurity[NITA_DOCUMENT_FIELD] || null
+      });
       const nitaDocument = await persistUploadedApplicationFile(nitaUpload, {
         folder: "applications/nita-initial",
         uploadedAt: storedAt,
@@ -2772,9 +2921,14 @@ app.post("/apply", (req, res) => {
         combinedDocumentReview: createDefaultCombinedDocumentReview(),
         nitaDocument,
         nitaDocumentReview: createDefaultNitaReview(),
-        countySignedNitaDocument: null,
+        countySignedNitaDocument,
         nitaResubmittedDocument: null,
-        nitaWorkflow: createDefaultNitaWorkflow(),
+        nitaWorkflow: {
+          status: "Awaiting Student NITA Resubmission",
+          comment:
+            "County-endorsed NITA document generated automatically. Download it, take it to the NITA office for stamping, then re-submit it through the student dashboard.",
+          updatedAt: storedAt
+        },
         joiningLetter: null,
         status: "Pending",
         reviewerComment: "",
@@ -2798,20 +2952,25 @@ app.post("/apply", (req, res) => {
 });
 
 app.get("/track", (req, res) => {
+  const idNumber = (req.query.idNumber || "").toString().trim();
   const trackingNumber = (req.query.trackingNumber || "").toString().trim();
   const email = (req.query.email || "").toString().trim().toLowerCase();
 
-  if (!trackingNumber || !email) {
+  if ((!idNumber && !trackingNumber) || !email) {
     return renderTrackPage(res, {
       formData: {
-        trackingNumber,
+        idNumber,
         email
       }
     });
   }
 
   const applications = readApplications();
-  const resultIndex = findApplicationIndexByTrackingAndEmail(applications, trackingNumber, email);
+  const resultIndex = findApplicationIndexForStudentDashboard(applications, {
+    idNumber,
+    trackingNumber,
+    email
+  });
   const result = resultIndex >= 0 ? applications[resultIndex] : null;
 
   if (!result) {
@@ -2819,7 +2978,7 @@ app.get("/track", (req, res) => {
       statusCode: 404,
       error: "No application found with the provided details.",
       formData: {
-        trackingNumber,
+        idNumber,
         email
       }
     });
@@ -2828,29 +2987,34 @@ app.get("/track", (req, res) => {
   return renderTrackPage(res, {
     result,
     formData: {
-      trackingNumber,
+      idNumber: result.idNumber || idNumber,
       email
     }
   });
 });
 
 app.post("/track", (req, res) => {
+  const idNumber = (req.body.idNumber || "").trim();
   const trackingNumber = (req.body.trackingNumber || req.body.applicationId || "").trim();
   const email = (req.body.email || "").trim().toLowerCase();
 
-  if (!trackingNumber || !email) {
+  if ((!idNumber && !trackingNumber) || !email) {
     return renderTrackPage(res, {
       statusCode: 400,
-      error: "Enter both tracking number and email.",
+      error: "Enter both ID number and email.",
       formData: {
-        trackingNumber,
+        idNumber,
         email
       }
     });
   }
 
   const applications = readApplications();
-  const resultIndex = findApplicationIndexByTrackingAndEmail(applications, trackingNumber, email);
+  const resultIndex = findApplicationIndexForStudentDashboard(applications, {
+    idNumber,
+    trackingNumber,
+    email
+  });
   const result = resultIndex >= 0 ? applications[resultIndex] : null;
 
   if (!result) {
@@ -2858,7 +3022,7 @@ app.post("/track", (req, res) => {
       statusCode: 404,
       error: "No application found with the provided details.",
       formData: {
-        trackingNumber,
+        idNumber,
         email
       }
     });
@@ -2867,7 +3031,7 @@ app.post("/track", (req, res) => {
   return renderTrackPage(res, {
     result,
     formData: {
-      trackingNumber,
+      idNumber: result.idNumber || idNumber,
       email
     }
   });
@@ -2876,11 +3040,16 @@ app.post("/track", (req, res) => {
 app.post("/track/resubmit", (req, res) => {
   studentDocumentsUploadMiddleware(req, res, (uploadError) => {
     const files = req.files || {};
+    const idNumber = (req.body.idNumber || "").trim();
     const trackingNumber = (req.body.trackingNumber || req.body.applicationId || "").trim();
     const email = (req.body.email || "").trim().toLowerCase();
 
     const applications = readApplications();
-    const index = findApplicationIndexByTrackingAndEmail(applications, trackingNumber, email);
+    const index = findApplicationIndexForStudentDashboard(applications, {
+      idNumber,
+      trackingNumber,
+      email
+    });
 
     const currentApplication = index >= 0 ? ensureApplicationDefaults(applications[index]) : null;
 
@@ -2891,20 +3060,20 @@ app.post("/track/resubmit", (req, res) => {
         error: getUploadErrorMessage(uploadError),
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
     }
 
-    if (!trackingNumber || !email) {
+    if ((!idNumber && !trackingNumber) || !email) {
       cleanupUploadedFiles(files);
       return renderTrackPage(res, {
         statusCode: 400,
-        error: "Tracking number and email are required for re-upload.",
+        error: "ID number and email are required for re-upload.",
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -2916,7 +3085,7 @@ app.post("/track/resubmit", (req, res) => {
         statusCode: 404,
         error: "No application found with the provided details.",
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -2930,7 +3099,7 @@ app.post("/track/resubmit", (req, res) => {
         error: "No documents are currently marked for correction.",
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -2950,7 +3119,7 @@ app.post("/track/resubmit", (req, res) => {
         error: "Upload only the documents marked for correction by admin.",
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -2969,7 +3138,7 @@ app.post("/track/resubmit", (req, res) => {
           .join(", ")}.`,
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -2985,7 +3154,7 @@ app.post("/track/resubmit", (req, res) => {
         error: scanError.message || "File security scan failed.",
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -3028,6 +3197,15 @@ app.post("/track/resubmit", (req, res) => {
         if (fieldName === NITA_DOCUMENT_FIELD) {
           const uploadedNita = files[fieldName][0];
           const previousNitaDocument = currentApplication.nitaDocument;
+          const previousCountySignedNita = currentApplication.countySignedNitaDocument;
+          const previousResubmittedDocument = currentApplication.nitaResubmittedDocument;
+
+          const regeneratedCountySignedNita = await generateCountySignedNitaDocument(uploadedNita, {
+            applicantName: currentApplication.fullName,
+            placementNumber: currentApplication.placementNumber || currentApplication.id,
+            uploadedAt: reuploadedAt,
+            sourceSecurity: scannedSecurity[fieldName] || null
+          });
 
           currentApplication.nitaDocument = await persistUploadedApplicationFile(uploadedNita, {
             folder: "applications/nita-initial",
@@ -3035,15 +3213,20 @@ app.post("/track/resubmit", (req, res) => {
             security: scannedSecurity[fieldName] || null
           });
           Promise.resolve(fileStorage.removeStoredFile(previousNitaDocument)).catch(() => {});
+          Promise.resolve(fileStorage.removeStoredFile(previousCountySignedNita)).catch(() => {});
+          Promise.resolve(fileStorage.removeStoredFile(previousResubmittedDocument)).catch(() => {});
           currentApplication.documentSecurity[fieldName] = scannedSecurity[fieldName];
           currentApplication.nitaDocumentReview = {
             status: "Pending",
             comment: "Re-uploaded by student. Awaiting admin review."
           };
+          currentApplication.countySignedNitaDocument = regeneratedCountySignedNita;
+          currentApplication.nitaResubmittedDocument = null;
           currentApplication.nitaWorkflow = {
             ...normalizeNitaWorkflow(currentApplication.nitaWorkflow),
-            status: "Pending County Signature",
-            comment: "",
+            status: "Awaiting Student NITA Resubmission",
+            comment:
+              "County-endorsed NITA document refreshed automatically. Download the updated version, take it to the NITA office for stamping, then re-submit it.",
             updatedAt: reuploadedAt
           };
           continue;
@@ -3077,10 +3260,13 @@ app.post("/track/resubmit", (req, res) => {
       writeApplications(applications);
 
       return renderTrackPage(res, {
-        message: "Documents re-uploaded successfully. Please wait for admin verification.",
+        message:
+          rejectedFieldNames.includes(NITA_DOCUMENT_FIELD)
+            ? "Documents re-uploaded successfully. A fresh county-endorsed NITA document is now ready in your dashboard."
+            : "Documents re-uploaded successfully. Please wait for department verification.",
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber: currentApplication.idNumber || idNumber,
           email
         }
       });
@@ -3091,7 +3277,7 @@ app.post("/track/resubmit", (req, res) => {
         error: storageError.message || "Failed to store re-uploaded documents.",
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -3101,12 +3287,17 @@ app.post("/track/resubmit", (req, res) => {
 
 app.post("/track/nita-resubmit", (req, res) => {
   nitaResubmissionUploadMiddleware(req, res, (uploadError) => {
+    const idNumber = (req.body.idNumber || "").trim();
     const trackingNumber = (req.body.trackingNumber || req.body.applicationId || "").trim();
     const email = (req.body.email || "").trim().toLowerCase();
     const uploadedFile = req.file || null;
 
     const applications = readApplications();
-    const index = findApplicationIndexByTrackingAndEmail(applications, trackingNumber, email);
+    const index = findApplicationIndexForStudentDashboard(applications, {
+      idNumber,
+      trackingNumber,
+      email
+    });
     const currentApplication = index >= 0 ? ensureApplicationDefaults(applications[index]) : null;
 
     if (uploadError) {
@@ -3116,20 +3307,20 @@ app.post("/track/nita-resubmit", (req, res) => {
         error: getUploadErrorMessage(uploadError),
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
     }
 
-    if (!trackingNumber || !email) {
+    if ((!idNumber && !trackingNumber) || !email) {
       cleanupUploadedFiles({ [NITA_RESUBMISSION_FIELD]: uploadedFile ? [uploadedFile] : [] });
       return renderTrackPage(res, {
         statusCode: 400,
-        error: "Tracking number and email are required to submit the stamped NITA document.",
+        error: "ID number and email are required to submit the stamped NITA document.",
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -3141,7 +3332,7 @@ app.post("/track/nita-resubmit", (req, res) => {
         statusCode: 404,
         error: "No application found with the provided details.",
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -3153,7 +3344,7 @@ app.post("/track/nita-resubmit", (req, res) => {
         error: "Please upload the stamped NITA document before submitting.",
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -3163,10 +3354,10 @@ app.post("/track/nita-resubmit", (req, res) => {
       cleanupUploadedFiles({ [NITA_RESUBMISSION_FIELD]: [uploadedFile] });
       return renderTrackPage(res, {
         statusCode: 400,
-        error: "HR has not uploaded the county-signed NITA document yet.",
+        error: "The county-endorsed NITA document is not ready yet.",
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -3179,7 +3370,7 @@ app.post("/track/nita-resubmit", (req, res) => {
         error: "The NITA workflow is already complete for this application.",
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -3195,7 +3386,7 @@ app.post("/track/nita-resubmit", (req, res) => {
         error: scanError.message || "Stamped NITA document security scan failed.",
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -3224,10 +3415,10 @@ app.post("/track/nita-resubmit", (req, res) => {
       Promise.resolve(fileStorage.removeStoredFile(previousResubmittedDocument)).catch(() => {});
 
       return renderTrackPage(res, {
-        message: "Stamped NITA document submitted successfully. HR will review it before final approval.",
+        message: "Stamped NITA document submitted successfully. HR will review it before the final admission decision.",
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber: currentApplication.idNumber || idNumber,
           email
         }
       });
@@ -3238,7 +3429,7 @@ app.post("/track/nita-resubmit", (req, res) => {
         error: storageError.message || "Failed to store the stamped NITA document.",
         result: currentApplication,
         formData: {
-          trackingNumber,
+          idNumber,
           email
         }
       });
@@ -3296,7 +3487,7 @@ app.get("/application/:id/county-signed-nita", (req, res) => {
   const email = (req.query.email || "").toString().trim().toLowerCase();
 
   if (!email) {
-    return res.status(400).send("Email is required to download the county-signed NITA document.");
+    return res.status(400).send("Email is required to download the county-endorsed NITA document.");
   }
 
   const applications = readApplications();
@@ -3310,13 +3501,13 @@ app.get("/application/:id/county-signed-nita", (req, res) => {
 
   const countySignedNitaDocument = application.countySignedNitaDocument;
   if (!countySignedNitaDocument || !countySignedNitaDocument.filename) {
-    return res.status(404).send("County-signed NITA document is not available yet.");
+    return res.status(404).send("County-endorsed NITA document is not available yet.");
   }
 
   const extension =
     path.extname(countySignedNitaDocument.originalName || countySignedNitaDocument.filename) ||
     ".pdf";
-  const downloadName = `County-Signed-NITA-${application.id}${extension}`;
+  const downloadName = `County-Endorsed-NITA-${application.id}${extension}`;
 
   return fileStorage.sendStoredFile(res, countySignedNitaDocument, {
     downloadName
@@ -3873,8 +4064,10 @@ app.get("/admin/reports/export.csv", ensureDepartmentAdmin, (req, res) => {
 app.get("/admin/applications", ensureDepartmentAdmin, (req, res) => {
   let adminScopeDepartment = getAdminScopeDepartment(req);
   const statusFilterRaw = (req.query.status || "All").toString();
+  const normalizedStatusFilter =
+    statusFilterRaw === "All" ? "All" : normalizeApplicationStatus(statusFilterRaw);
   const allowedFilters = new Set(["All", ...STATUS_OPTIONS]);
-  const statusFilter = allowedFilters.has(statusFilterRaw) ? statusFilterRaw : "All";
+  const statusFilter = allowedFilters.has(normalizedStatusFilter) ? normalizedStatusFilter : "All";
   const departmentFilterRaw = (req.query.department || "All").toString().trim();
   const requestedDepartmentFilter =
     departmentFilterRaw === "All" || isValidDepartment(departmentFilterRaw)
@@ -3912,7 +4105,7 @@ app.get("/admin/applications", ensureDepartmentAdmin, (req, res) => {
       (application) => application.status === "Needs Correction"
     ).length,
     verified: allApplications.filter((application) => application.status === "Verified").length,
-    approved: allApplications.filter((application) => application.status === "Approved").length,
+    approved: allApplications.filter((application) => isAdmittedStatus(application.status)).length,
     rejected: allApplications.filter((application) => application.status === "Rejected").length
   };
 
@@ -4149,7 +4342,7 @@ app.post("/admin/applications/:id/joining-letter", ensureDepartmentAdmin, (req, 
   return renderAdminDetailPage(res, {
     statusCode: 403,
     application,
-    error: "Joining letter upload is done by HR after final approval."
+      error: "Joining letter upload is done by HR after the final admission decision."
   });
 });
 
@@ -4198,11 +4391,11 @@ app.post("/admin/applications/:id/status", ensureDepartmentAdmin, (req, res) => 
     });
   }
 
-  if (status === "Approved") {
+  if (status === "Admitted") {
     return renderAdminDetailPage(res, {
       statusCode: 400,
       application,
-      error: "Department admin cannot set final approval. Send verified applications to HR."
+      error: "Department review cannot set the final admission decision. Send verified applications to HR."
     });
   }
 
@@ -4428,8 +4621,10 @@ app.post("/admin/applications/:id/unfreeze", ensureDepartmentAdmin, (req, res) =
 app.get("/hr/applications", ensureHrAdmin, (req, res) => {
   clearHrDepartmentScope(req);
   const statusFilterRaw = (req.query.status || "Verified").toString();
+  const normalizedStatusFilter =
+    statusFilterRaw === "All" ? "All" : normalizeApplicationStatus(statusFilterRaw);
   const allowedFilters = new Set(["All", ...HR_VISIBLE_STATUSES]);
-  const statusFilter = allowedFilters.has(statusFilterRaw) ? statusFilterRaw : "Verified";
+  const statusFilter = allowedFilters.has(normalizedStatusFilter) ? normalizedStatusFilter : "Verified";
   const departmentFilterRaw = (req.query.department || "All").toString().trim();
   const departmentFilter =
     departmentFilterRaw === "All" || isValidDepartment(departmentFilterRaw)
@@ -4457,7 +4652,7 @@ app.get("/hr/applications", ensureHrAdmin, (req, res) => {
   const stats = {
     total: allApplications.length,
     verified: allApplications.filter((application) => application.status === "Verified").length,
-    approved: allApplications.filter((application) => application.status === "Approved").length,
+    approved: allApplications.filter((application) => isAdmittedStatus(application.status)).length,
     rejected: allApplications.filter((application) => application.status === "Rejected").length
   };
 
@@ -4488,117 +4683,17 @@ app.get("/hr/applications/:id", ensureHrAdmin, (req, res) => {
   }
 
   const notice =
-    req.query.nitaSaved === "1"
-      ? "County-signed NITA document uploaded successfully."
-      : req.query.nitaCompleted === "1"
+    req.query.nitaCompleted === "1"
         ? "HR confirmed the stamped NITA document."
         : req.query.joiningSaved === "1"
       ? "Joining letter uploaded successfully."
-      : req.query.statusSaved === "1"
-        ? "HR status updated successfully."
+        : req.query.statusSaved === "1"
+      ? "HR status updated successfully."
         : null;
 
   return renderHrDetailPage(res, {
     application,
     notice
-  });
-});
-
-app.post("/hr/applications/:id/nita-county-signed", ensureHrAdmin, (req, res) => {
-  const applications = readApplications();
-  const index = applications.findIndex((item) => item.id === req.params.id);
-
-  if (index === -1) {
-    return res.status(404).render("not-found");
-  }
-
-  const application = ensureApplicationDefaults(applications[index]);
-
-  if (!HR_VISIBLE_STATUSES.has(application.status)) {
-    return res.status(400).send("Application is not yet in HR review queue.");
-  }
-
-  if (isApplicationFrozen(application)) {
-    return renderHrDetailPage(res, {
-      application,
-      statusCode: 400,
-      error: "This application record is frozen. Unfreeze it from department review before continuing the HR workflow."
-    });
-  }
-
-  if (application.status === "Rejected") {
-    return renderHrDetailPage(res, {
-      application,
-      statusCode: 400,
-      error: "Cannot continue the NITA workflow after the application has been rejected."
-    });
-  }
-
-  return countySignedNitaUploadMiddleware(req, res, (uploadError) => {
-    const uploadedFile = req.file || null;
-
-    if (uploadError) {
-      cleanupUploadedFiles({
-        [COUNTY_SIGNED_NITA_FIELD]: uploadedFile ? [uploadedFile] : []
-      });
-      return renderHrDetailPage(res, {
-        application,
-        statusCode: 400,
-        error: getUploadErrorMessage(uploadError)
-      });
-    }
-
-    if (!uploadedFile) {
-      return renderHrDetailPage(res, {
-        application,
-        statusCode: 400,
-        error: "Please upload the county-signed NITA document."
-      });
-    }
-
-    let nitaSecurity;
-    try {
-      nitaSecurity = scanUploadedFile(uploadedFile);
-    } catch (scanError) {
-      cleanupUploadedFiles({ [COUNTY_SIGNED_NITA_FIELD]: [uploadedFile] });
-      return renderHrDetailPage(res, {
-        application,
-        statusCode: 400,
-        error: scanError.message || "County-signed NITA document security scan failed."
-      });
-    }
-
-    return (async () => {
-      const storedAt = new Date().toISOString();
-      const oldCountySignedNita = application.countySignedNitaDocument;
-
-      application.countySignedNitaDocument = await persistUploadedApplicationFile(uploadedFile, {
-        folder: "applications/nita-county-signed",
-        uploadedAt: storedAt,
-        security: nitaSecurity
-      });
-      application.documentSecurity[COUNTY_SIGNED_NITA_FIELD] = nitaSecurity;
-      application.nitaWorkflow = {
-        ...normalizeNitaWorkflow(application.nitaWorkflow),
-        status: "Awaiting Student NITA Resubmission",
-        comment: "County-signed NITA document uploaded. Student should download it, get it stamped, and re-submit it.",
-        updatedAt: storedAt
-      };
-      application.updatedAt = storedAt;
-
-      applications[index] = application;
-      writeApplications(applications);
-      Promise.resolve(fileStorage.removeStoredFile(oldCountySignedNita)).catch(() => {});
-
-      return res.redirect(`/hr/applications/${req.params.id}?nitaSaved=1`);
-    })().catch((storageError) => {
-      cleanupUploadedFiles({ [COUNTY_SIGNED_NITA_FIELD]: [uploadedFile] });
-      return renderHrDetailPage(res, {
-        application,
-        statusCode: 500,
-        error: storageError.message || "Failed to store the county-signed NITA document."
-      });
-    });
   });
 });
 
@@ -4684,28 +4779,28 @@ app.post("/hr/applications/:id/status", ensureHrAdmin, (req, res) => {
     });
   }
 
-  if (status === "Approved" && !["Verified", "Approved"].includes(application.status)) {
+  if (status === "Admitted" && !["Verified", "Admitted"].includes(application.status)) {
     return renderHrDetailPage(res, {
       application,
       statusCode: 400,
-      error: "Only department-verified applications can be approved by HR."
+      error: "Only department-verified applications can be admitted by HR."
     });
   }
 
-  if (status === "Approved" && hasAnyRejectedDocuments(application)) {
+  if (status === "Admitted" && hasAnyRejectedDocuments(application)) {
     return renderHrDetailPage(res, {
       application,
       statusCode: 400,
-      error: "Cannot approve while some documents are still rejected."
+      error: "Cannot admit while some documents are still rejected."
     });
   }
 
-  if (status === "Approved" && normalizeNitaWorkflow(application.nitaWorkflow).status !== "Completed") {
+  if (status === "Admitted" && normalizeNitaWorkflow(application.nitaWorkflow).status !== "Completed") {
     return renderHrDetailPage(res, {
       application,
       statusCode: 400,
       error:
-        "Complete the NITA workflow first. HR must upload the county-signed NITA document, the student must re-submit the stamped copy, and HR must confirm it before final approval."
+        "Complete the NITA workflow first. The student must re-submit the stamped NITA copy and HR must confirm it before the final admission decision."
     });
   }
 
@@ -4741,11 +4836,11 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, (req, res) => {
     });
   }
 
-  if (application.status !== "Approved") {
+  if (!isAdmittedStatus(application.status)) {
     return renderHrDetailPage(res, {
       application,
       statusCode: 400,
-      error: "Approve the application first before uploading a joining letter."
+      error: "Admit the application first before uploading a joining letter."
     });
   }
 

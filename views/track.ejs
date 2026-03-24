@@ -2,7 +2,7 @@
 <main class="container <%= result ? 'wide' : 'small' %>">
       <section class="card">
         <h1>Track Application Status</h1>
-        <p>Enter your tracking/placement number and the email used during submission to open your student dashboard.</p>
+        <p>Enter the ID number used during application and the same email address to open your student dashboard.</p>
 
         <% if (error) { %>
           <div class="alert"><%= error %></div>
@@ -14,12 +14,12 @@
 
         <form action="/track" method="post" class="form-grid <%= result ? '' : 'auth-form' %>">
           <label class="full-width">
-            Tracking / Placement Number
+            ID Number / School ID Number
             <input
               type="text"
-              name="trackingNumber"
-              placeholder="UG-ATT-2026-123456 or ATT-..."
-              value="<%= formData.trackingNumber || '' %>"
+              name="idNumber"
+              placeholder="12345678 or SC/ICT/2024/015"
+              value="<%= formData.idNumber || '' %>"
               required
             />
           </label>
@@ -52,7 +52,6 @@
           <div class="dashboard-quick-grid">
             <div class="summary">
               <p><strong>Tracking / Placement Number:</strong> <%= result.placementNumber || result.id %></p>
-              <p><strong>Application ID:</strong> <%= result.id %></p>
               <p><strong>Name:</strong> <%= result.fullName %></p>
               <p><strong>Email:</strong> <%= result.email %></p>
             </div>
@@ -136,7 +135,7 @@
               <p><strong>Initial NITA document:</strong>
                 <%= result.nitaDocument && result.nitaDocument.filename ? 'Submitted' : 'Not uploaded' %>
               </p>
-              <p><strong>County-signed NITA document:</strong>
+              <p><strong>County-endorsed NITA document:</strong>
                 <%= result.countySignedNitaDocument && result.countySignedNitaDocument.filename ? 'Ready to download' : 'Not available yet' %>
               </p>
               <p><strong>Stamped NITA re-submission:</strong>
@@ -149,20 +148,20 @@
             <% if (result.countySignedNitaDocument && result.countySignedNitaDocument.filename) { %>
               <div class="actions tight">
                 <a class="btn secondary" href="/application/<%= result.id %>/county-signed-nita?email=<%= encodeURIComponent(result.email) %>">
-                  Download County-Signed NITA
+                  Download County-Endorsed NITA
                 </a>
               </div>
             <% } %>
 
             <% if (result.nitaWorkflow.status === 'Awaiting Student NITA Resubmission' && result.countySignedNitaDocument && result.countySignedNitaDocument.filename) { %>
               <form action="/track/nita-resubmit" method="post" enctype="multipart/form-data" class="form-grid">
-                <input type="hidden" name="trackingNumber" value="<%= result.placementNumber || result.id %>" />
+                <input type="hidden" name="idNumber" value="<%= result.idNumber || '' %>" />
                 <input type="hidden" name="email" value="<%= result.email %>" />
 
                 <label class="full-width">
                   <%= nitaResubmissionDefinition.label %> *
                   <span class="field-hint">
-                    Upload the same county-signed NITA document after it has been stamped at the NITA office.
+                    Upload the same county-endorsed NITA document after it has been stamped at the NITA office.
                   </span>
                   <input type="file" name="<%= nitaResubmissionDefinition.key %>" accept="<%= nitaResubmissionDefinition.accept %>" required />
                 </label>
@@ -212,7 +211,7 @@
             </div>
 
             <form action="/track/resubmit" method="post" enctype="multipart/form-data" class="form-grid">
-              <input type="hidden" name="trackingNumber" value="<%= result.placementNumber || result.id %>" />
+              <input type="hidden" name="idNumber" value="<%= result.idNumber || '' %>" />
               <input type="hidden" name="email" value="<%= result.email %>" />
 
               <% rejectedDocuments.forEach((document) => { %>

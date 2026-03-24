@@ -37,7 +37,7 @@
           </div>
           <div>
             <strong><%= stats.approved %></strong>
-            <span>Approved</span>
+            <span>Admitted</span>
           </div>
           <div>
             <strong><%= stats.rejected %></strong>
@@ -53,7 +53,7 @@
               <option value="Pending" <%= statusFilter === 'Pending' ? 'selected' : '' %>>Pending</option>
               <option value="Needs Correction" <%= statusFilter === 'Needs Correction' ? 'selected' : '' %>>Needs Correction</option>
               <option value="Verified" <%= statusFilter === 'Verified' ? 'selected' : '' %>>Verified</option>
-              <option value="Approved" <%= statusFilter === 'Approved' ? 'selected' : '' %>>Approved</option>
+              <option value="Admitted" <%= statusFilter === 'Admitted' ? 'selected' : '' %>>Admitted</option>
               <option value="Rejected" <%= statusFilter === 'Rejected' ? 'selected' : '' %>>Rejected</option>
             </select>
           </label>
@@ -71,7 +71,6 @@
                 <th>Email</th>
                 <th>Institution</th>
                 <th>Applied Department</th>
-                <th>Assigned Department</th>
                 <th>Period</th>
                 <th class="table-status-cell">Status</th>
                 <th class="table-date-cell">Submitted</th>
@@ -81,7 +80,7 @@
             <tbody>
               <% if (!applications.length) { %>
                 <tr>
-                  <td class="table-empty-state" colspan="11"><strong>No applications found.</strong> Adjust the selected filter and try again.</td>
+                  <td class="table-empty-state" colspan="10"><strong>No applications found.</strong> Adjust the selected filter and try again.</td>
                 </tr>
               <% } %>
 
@@ -93,7 +92,6 @@
                   <td><%= application.email %></td>
                   <td><%= application.institution %></td>
                   <td><%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></td>
-                  <td><%= application.assignedDepartment ? getDepartmentLabel(application.assignedDepartment) : 'Not assigned' %></td>
                   <td><%= application.period ? getPeriodLabel(application.period) : 'Not set' %></td>
                   <td class="table-status-cell">
                     <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span>

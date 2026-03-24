@@ -83,14 +83,14 @@
         <% } %>
 
         <h2>NITA Workflow</h2>
-        <p>HR should upload the county-signed NITA document, wait for the student to return the stamped version, then confirm the NITA stage before final approval.</p>
+        <p>The system generates the county-endorsed NITA document automatically after the student uploads the initial NITA file. HR only waits for the stamped return copy, then confirms the NITA stage before the final admission decision.</p>
 
         <div class="summary">
           <p><strong>Initial NITA document:</strong>
             <%= application.nitaDocument && application.nitaDocument.filename ? 'Submitted' : 'Not uploaded' %>
           </p>
-          <p><strong>County-signed NITA document:</strong>
-            <%= application.countySignedNitaDocument && application.countySignedNitaDocument.filename ? 'Uploaded' : 'Not uploaded yet' %>
+          <p><strong>County-endorsed NITA document:</strong>
+            <%= application.countySignedNitaDocument && application.countySignedNitaDocument.filename ? 'Generated automatically' : 'Not generated yet' %>
           </p>
           <p><strong>Stamped NITA re-submission:</strong>
             <%= application.nitaResubmittedDocument && application.nitaResubmittedDocument.filename ? 'Received from student' : 'Not received yet' %>
@@ -98,22 +98,9 @@
           <p><strong>Workflow note:</strong> <%= application.nitaWorkflow.comment || 'No NITA workflow note yet.' %></p>
         </div>
 
-        <form action="/hr/applications/<%= application.id %>/nita-county-signed" method="post" enctype="multipart/form-data" class="form-grid">
-          <label class="full-width">
-            <%= countySignedNitaDefinition.label %> *
-            <span class="field-hint">
-              Upload the county-signed NITA document that the student will download, take for NITA stamping, and return to HR.
-            </span>
-            <input type="file" name="<%= countySignedNitaDefinition.key %>" accept="<%= countySignedNitaDefinition.accept %>" required />
-          </label>
-          <div class="actions full-width">
-            <button class="btn" type="submit">Upload County-Signed NITA</button>
-          </div>
-        </form>
-
         <% if (application.countySignedNitaDocument && application.countySignedNitaDocument.filename) { %>
           <div class="actions tight">
-            <a class="btn secondary" href="/hr/files/<%= application.countySignedNitaDocument.filename %>" target="_blank">Download County-Signed NITA</a>
+            <a class="btn secondary" href="/hr/files/<%= application.countySignedNitaDocument.filename %>" target="_blank">Download County-Endorsed NITA</a>
           </div>
         <% } %>
 
@@ -135,18 +122,18 @@
         <% } %>
 
         <h2>HR Final Decision</h2>
-        <p>Department review happens first. HR can only give final approval after the NITA workflow is completed.</p>
+        <p>Department review happens first. HR can only make the final admission decision after the NITA workflow is completed.</p>
         <form action="/hr/applications/<%= application.id %>/status" method="post" class="form-grid">
           <label>
             HR Status
             <select name="status" required>
               <% hrStatusOptions.forEach((status) => { %>
-                <% const approvalLocked = status === 'Approved' && application.nitaWorkflow.status !== 'Completed' && application.status !== 'Approved'; %>
+                <% const approvalLocked = status === 'Admitted' && application.nitaWorkflow.status !== 'Completed' && application.status !== 'Admitted'; %>
                 <option value="<%= status %>" <%= application.status === status ? 'selected' : '' %> <%= approvalLocked ? 'disabled' : '' %>><%= status %></option>
               <% }) %>
             </select>
             <% if (application.nitaWorkflow.status !== 'Completed') { %>
-              <span class="field-hint">Final approval stays locked until HR confirms the stamped NITA document.</span>
+              <span class="field-hint">Final admission stays locked until HR confirms the stamped NITA document.</span>
             <% } %>
           </label>
 
@@ -161,7 +148,7 @@
         </form>
 
         <h2>Joining Letter Upload (HR Only)</h2>
-        <p>Complete the NITA workflow and set status to <strong>Approved</strong> first, then upload the joining letter.</p>
+        <p>Complete the NITA workflow and set status to <strong>Admitted</strong> first, then upload the joining letter.</p>
         <form action="/hr/applications/<%= application.id %>/joining-letter" method="post" enctype="multipart/form-data" class="form-grid">
           <label class="full-width">
             Joining Letter (PDF only)
