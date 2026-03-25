@@ -266,14 +266,14 @@ function drawPartCSignatureStamp(page, {
     height,
     color: rgb(1, 1, 1),
     borderColor: rgb(0.15, 0.43, 0.24),
-    borderWidth: 0.8,
+    borderWidth: 0.9,
     opacity: 0.9
   });
 
   const logoInset = logoImage ? 10 : 0;
 
   if (logoImage) {
-    const scaled = logoImage.scaleToFit(11.5, 11.5);
+    const scaled = logoImage.scaleToFit(12.5, 12.5);
     page.drawImage(logoImage, {
       x: x + 4,
       y: y + 3.5,
@@ -285,22 +285,22 @@ function drawPartCSignatureStamp(page, {
   const textX = x + 4 + logoInset;
   page.drawText("UG COUNTY HR", {
     x: textX,
-    y: y + height - 7.5,
-    size: 5.7,
+    y: y + height - 8,
+    size: 6.1,
     font: fonts.bold,
     color: rgb(0.08, 0.18, 0.12)
   });
   page.drawText("ENDORSED", {
     x: textX,
     y: y + 4,
-    size: 5.2,
+    size: 5.5,
     font: fonts.bold,
     color: rgb(0.14, 0.36, 0.22)
   });
   page.drawText(stampDateShort || "", {
-    x: x + width - 31,
+    x: x + width - 34,
     y: y + 4,
-    size: 4.9,
+    size: 5.1,
     font: fonts.regular,
     color: rgb(0.24, 0.31, 0.28)
   });
@@ -341,7 +341,7 @@ function drawPartCOverlay(page, {
     x: postal.x + (86 * scaleX),
     y: postal.y + (1.5 * scaleY),
     text: countyDetails.postalAddress,
-    font: fonts.regular,
+    font: fonts.bold,
     size: 7.4 * scaleY,
     color: fontColor
   });
@@ -349,7 +349,7 @@ function drawPartCOverlay(page, {
     x: postal.x + (190 * scaleX),
     y: postal.y + (1.5 * scaleY),
     text: countyDetails.postalCode,
-    font: fonts.regular,
+    font: fonts.bold,
     size: 7.2 * scaleY,
     color: fontColor
   });
@@ -357,7 +357,7 @@ function drawPartCOverlay(page, {
     x: postal.x + (264 * scaleX),
     y: postal.y + (1.5 * scaleY),
     text: countyDetails.town,
-    font: fonts.regular,
+    font: fonts.bold,
     size: 7.4 * scaleY,
     color: fontColor
   });
@@ -366,7 +366,7 @@ function drawPartCOverlay(page, {
     x: physical.x + (166 * scaleX),
     y: physical.y + (1.5 * scaleY),
     text: countyDetails.physicalAddress,
-    font: fonts.regular,
+    font: fonts.bold,
     size: 7.1 * scaleY,
     color: fontColor
   });
@@ -374,7 +374,7 @@ function drawPartCOverlay(page, {
     x: physical.x + (292 * scaleX),
     y: physical.y + (1.5 * scaleY),
     text: countyDetails.region,
-    font: fonts.regular,
+    font: fonts.bold,
     size: 7.1 * scaleY,
     color: fontColor
   });
@@ -383,7 +383,7 @@ function drawPartCOverlay(page, {
     x: telephone.x + (68 * scaleX),
     y: telephone.y + (1.5 * scaleY),
     text: countyDetails.telephone,
-    font: fonts.regular,
+    font: fonts.bold,
     size: 7.1 * scaleY,
     color: fontColor
   });
@@ -391,7 +391,7 @@ function drawPartCOverlay(page, {
     x: telephone.x + (168 * scaleX),
     y: telephone.y + (1.5 * scaleY),
     text: countyDetails.email,
-    font: fonts.regular,
+    font: fonts.bold,
     size: 6.8 * scaleY,
     color: fontColor
   });
@@ -399,7 +399,7 @@ function drawPartCOverlay(page, {
     x: telephone.x + (295 * scaleX),
     y: telephone.y + (1.5 * scaleY),
     text: countyDetails.fax,
-    font: fonts.regular,
+    font: fonts.bold,
     size: 7.1 * scaleY,
     color: fontColor
   });
@@ -408,7 +408,7 @@ function drawPartCOverlay(page, {
     x: officer.x + (166 * scaleX),
     y: officer.y + (1.5 * scaleY),
     text: countyDetails.officerInCharge,
-    font: fonts.regular,
+    font: fonts.bold,
     size: 6.7 * scaleY,
     color: fontColor
   });
@@ -416,7 +416,7 @@ function drawPartCOverlay(page, {
     x: officer.x + (293 * scaleX),
     y: officer.y + (1.5 * scaleY),
     text: countyDetails.officerTelephone,
-    font: fonts.regular,
+    font: fonts.bold,
     size: 7.1 * scaleY,
     color: fontColor
   });
@@ -433,7 +433,7 @@ function drawPartCOverlay(page, {
     x: signedBy.x + (255 * scaleX),
     y: signedBy.y + (1.5 * scaleY),
     text: countyDetails.designation,
-    font: fonts.regular,
+    font: fonts.bold,
     size: 5.9 * scaleY,
     color: mutedColor
   });
@@ -442,7 +442,7 @@ function drawPartCOverlay(page, {
     x: signedAndStamped.x + (255 * scaleX),
     y: signedAndStamped.y + (1.5 * scaleY),
     text: stampDateShort || stampDate,
-    font: fonts.regular,
+    font: fonts.bold,
     size: 6.4 * scaleY,
     color: mutedColor
   });
@@ -450,8 +450,8 @@ function drawPartCOverlay(page, {
   drawPartCSignatureStamp(page, {
     x: signedAndStamped.x + (132 * scaleX),
     y: signedAndStamped.y - (3 * scaleY),
-    width: 90 * scaleX,
-    height: 20 * scaleY,
+    width: 96 * scaleX,
+    height: 22 * scaleY,
     fonts,
     logoImage,
     stampDateShort
