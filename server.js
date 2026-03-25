@@ -17,7 +17,6 @@ const APP_ROOT = __dirname;
 const STORAGE_ROOT = process.env.STORAGE_ROOT
   ? path.resolve(process.env.STORAGE_ROOT)
   : APP_ROOT;
-const DATA_DIR = path.join(STORAGE_ROOT, "data");
 const UPLOAD_DIR = path.join(STORAGE_ROOT, "uploads");
 const PUBLIC_DIR = path.join(APP_ROOT, "public");
 const VIEWS_DIR = path.join(APP_ROOT, "views");
@@ -37,9 +36,8 @@ const STATUS_OPTIONS = ["Pending", "Needs Correction", "Verified", "Admitted", "
 const FINAL_DECISION_STATUSES = new Set(["Admitted", "Rejected"]);
 const HR_VISIBLE_STATUSES = new Set(["Verified", "Admitted", "Rejected"]);
 const DEFAULT_INSTITUTION_MAX_SHARE_PERCENT = 40;
-const DATABASE_FILE = process.env.DATABASE_FILE
-  ? path.resolve(process.env.DATABASE_FILE)
-  : path.join(DATA_DIR, "attachment-application-system.db");
+const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI || "";
+const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || "attachment_application_system";
 
 const PERIODS = [
   { key: "JAN_MAR", label: "January - March", shortLabel: "Jan - Mar" },
@@ -274,7 +272,6 @@ function ensureDirectoryExists(dirPath) {
   }
 }
 
-ensureDirectoryExists(DATA_DIR);
 ensureDirectoryExists(UPLOAD_DIR);
 
 function createDefaultDepartmentCapacities(defaultCapacity = 10) {
@@ -312,9 +309,7 @@ function createDefaultDepartmentAdmins() {
   }));
 }
 
-const database = createDatabase({
-  dataDir: DATA_DIR,
-  databaseFile: DATABASE_FILE,
+const databasePromise = createDatabase({
   createDefaultSettings,
   createDefaultDepartmentAdmins
 });
@@ -328,50 +323,42 @@ const fileStorage = createFileStorage({
   cloudinaryFolder: CLOUDINARY_FOLDER
 });
 
-class SqliteSessionStore extends session.Store {
-  constructor(db) {
+class MongoSessionStore extends session.Store {
+  constructor(dbPromise) {
     super();
-    this.db = db;
+    this.dbPromise = dbPromise;
   }
 
   get(sid, callback) {
-    try {
-      const sessionData = this.db.readSession(sid);
-      callback(null, sessionData);
-    } catch (error) {
-      callback(error);
-    }
+    Promise.resolve(this.dbPromise)
+      .then((db) => db.readSession(sid))
+      .then((sessionData) => callback(null, sessionData))
+      .catch((error) => callback(error));
   }
 
   set(sid, sessionData, callback) {
-    try {
-      this.db.writeSession(sid, sessionData);
-      callback?.(null);
-    } catch (error) {
-      callback?.(error);
-    }
+    Promise.resolve(this.dbPromise)
+      .then((db) => db.writeSession(sid, sessionData))
+      .then(() => callback?.(null))
+      .catch((error) => callback?.(error));
   }
 
   destroy(sid, callback) {
-    try {
-      this.db.deleteSession(sid);
-      callback?.(null);
-    } catch (error) {
-      callback?.(error);
-    }
+    Promise.resolve(this.dbPromise)
+      .then((db) => db.deleteSession(sid))
+      .then(() => callback?.(null))
+      .catch((error) => callback?.(error));
   }
 
   touch(sid, sessionData, callback) {
-    try {
-      this.db.writeSession(sid, sessionData);
-      callback?.(null);
-    } catch (error) {
-      callback?.(error);
-    }
+    Promise.resolve(this.dbPromise)
+      .then((db) => db.writeSession(sid, sessionData))
+      .then(() => callback?.(null))
+      .catch((error) => callback?.(error));
   }
 }
 
-const sessionStore = new SqliteSessionStore(database);
+const sessionStore = new MongoSessionStore(databasePromise);
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -673,16 +660,19 @@ function ensureApplicationDefaults(application) {
   };
 }
 
-function readApplications() {
-  return database.readApplications().map((application) => ensureApplicationDefaults(application));
+async function readApplications() {
+  const database = await databasePromise;
+  return (await database.readApplications()).map((application) => ensureApplicationDefaults(application));
 }
 
-function writeApplications(applications) {
-  database.writeApplications(applications);
+async function writeApplications(applications) {
+  const database = await databasePromise;
+  await database.writeApplications(applications);
 }
 
-function readSettings() {
-  const parsed = database.readSettings();
+async function readSettings() {
+  const database = await databasePromise;
+  const parsed = await database.readSettings();
   const normalized = createDefaultSettings();
 
   PERIODS.forEach((period) => {
@@ -715,8 +705,9 @@ function readSettings() {
   return normalized;
 }
 
-function writeSettings(settings) {
-  database.writeSettings(settings);
+async function writeSettings(settings) {
+  const database = await databasePromise;
+  await database.writeSettings(settings);
 }
 
 function getCapacitySummary(settings, applications) {
@@ -804,9 +795,9 @@ function normalizeDepartmentAdminUser(user) {
   };
 }
 
-function readDepartmentAdmins() {
-  const normalized = database
-    .readDepartmentAdmins()
+async function readDepartmentAdmins() {
+  const database = await databasePromise;
+  const normalized = (await database.readDepartmentAdmins())
     .map((item) => normalizeDepartmentAdminUser(item))
     .filter(Boolean);
 
@@ -815,11 +806,11 @@ function readDepartmentAdmins() {
   }
 
   const defaults = createDefaultDepartmentAdmins();
-  database.writeDepartmentAdmins(defaults);
+  await database.writeDepartmentAdmins(defaults);
   return defaults.map((item) => normalizeDepartmentAdminUser(item)).filter(Boolean);
 }
 
-function findAdminUserByCredentials(usernameInput, passwordInput) {
+async function findAdminUserByCredentials(usernameInput, passwordInput) {
   const username = normalizeAdminUsername(usernameInput);
   const password = (passwordInput || "").toString();
 
@@ -836,14 +827,14 @@ function findAdminUserByCredentials(usernameInput, passwordInput) {
     };
   }
 
-  const departmentAdmin = readDepartmentAdmins().find(
+  const departmentAdmin = (await readDepartmentAdmins()).find(
     (item) => item.username === username && item.password === password && item.isActive
   );
 
   return departmentAdmin || null;
 }
 
-function validateDepartmentAdminInput({
+async function validateDepartmentAdminInput({
   username,
   password,
   department,
@@ -884,7 +875,7 @@ function validateDepartmentAdminInput({
     return { error: "This username is reserved and cannot be used for a department admin." };
   }
 
-  const existingAdmins = readDepartmentAdmins();
+  const existingAdmins = await readDepartmentAdmins();
   const usernameTaken = existingAdmins.some(
     (admin) => admin.username === normalizedUsername && admin.username !== existingUsername
   );
@@ -902,15 +893,16 @@ function validateDepartmentAdminInput({
   };
 }
 
-function saveDepartmentAdmins(admins) {
+async function saveDepartmentAdmins(admins) {
   const normalized = (admins || [])
     .map((admin) => normalizeDepartmentAdminUser(admin))
     .filter(Boolean);
-  database.writeDepartmentAdmins(normalized);
+  const database = await databasePromise;
+  await database.writeDepartmentAdmins(normalized);
 }
 
-function createDepartmentAdminAccount({ username, password, department, displayName }) {
-  const validation = validateDepartmentAdminInput({
+async function createDepartmentAdminAccount({ username, password, department, displayName }) {
+  const validation = await validateDepartmentAdminInput({
     username,
     password,
     department,
@@ -922,7 +914,7 @@ function createDepartmentAdminAccount({ username, password, department, displayN
   }
 
   const timestamp = new Date().toISOString();
-  const admins = readDepartmentAdmins();
+  const admins = await readDepartmentAdmins();
   admins.push({
     ...validation.value,
     password: validation.value.password || DEFAULT_DEPARTMENT_ADMIN_PASSWORD,
@@ -931,12 +923,12 @@ function createDepartmentAdminAccount({ username, password, department, displayN
     createdAt: timestamp,
     updatedAt: timestamp
   });
-  saveDepartmentAdmins(admins);
+  await saveDepartmentAdmins(admins);
   return { success: true };
 }
 
-function updateDepartmentAdminAccount(existingUsername, { department, displayName, username }) {
-  const admins = readDepartmentAdmins();
+async function updateDepartmentAdminAccount(existingUsername, { department, displayName, username }) {
+  const admins = await readDepartmentAdmins();
   const index = admins.findIndex((admin) => admin.username === normalizeAdminUsername(existingUsername));
 
   if (index === -1) {
@@ -944,7 +936,7 @@ function updateDepartmentAdminAccount(existingUsername, { department, displayNam
   }
 
   const existing = admins[index];
-  const validation = validateDepartmentAdminInput({
+  const validation = await validateDepartmentAdminInput({
     username: username || existing.username,
     password: existing.password,
     department,
@@ -963,12 +955,12 @@ function updateDepartmentAdminAccount(existingUsername, { department, displayNam
     displayName: validation.value.displayName,
     updatedAt: new Date().toISOString()
   };
-  saveDepartmentAdmins(admins);
+  await saveDepartmentAdmins(admins);
   return { success: true };
 }
 
-function setDepartmentAdminPassword(existingUsername, password) {
-  const admins = readDepartmentAdmins();
+async function setDepartmentAdminPassword(existingUsername, password) {
+  const admins = await readDepartmentAdmins();
   const index = admins.findIndex((admin) => admin.username === normalizeAdminUsername(existingUsername));
 
   if (index === -1) {
@@ -984,12 +976,12 @@ function setDepartmentAdminPassword(existingUsername, password) {
     password: password.toString(),
     updatedAt: new Date().toISOString()
   };
-  saveDepartmentAdmins(admins);
+  await saveDepartmentAdmins(admins);
   return { success: true };
 }
 
-function setDepartmentAdminActiveState(existingUsername, isActive) {
-  const admins = readDepartmentAdmins();
+async function setDepartmentAdminActiveState(existingUsername, isActive) {
+  const admins = await readDepartmentAdmins();
   const index = admins.findIndex((admin) => admin.username === normalizeAdminUsername(existingUsername));
 
   if (index === -1) {
@@ -1001,7 +993,7 @@ function setDepartmentAdminActiveState(existingUsername, isActive) {
     isActive: Boolean(isActive),
     updatedAt: new Date().toISOString()
   };
-  saveDepartmentAdmins(admins);
+  await saveDepartmentAdmins(admins);
   return { success: true };
 }
 
@@ -2431,11 +2423,11 @@ function formatDate(dateStr) {
   });
 }
 
-function renderApplyPage(res, { error = null, formData = {}, statusCode = 200 } = {}) {
-  const settings = readSettings();
+async function renderApplyPage(res, { error = null, formData = {}, statusCode = 200 } = {}) {
+  const settings = await readSettings();
   const periodOptions = getPeriodOptions(settings);
   const hasOpenPeriods = periodOptions.some((period) => period.isOpen);
-  const applications = readApplications();
+  const applications = await readApplications();
   const capacitySummary = getCapacitySummary(settings, applications);
   const maxApplicants = capacitySummary.totalCapacity;
   const remainingApplicants = capacitySummary.totalRemaining;
@@ -2511,13 +2503,13 @@ function renderTrackPage(res, {
   });
 }
 
-function renderAdminDetailPage(res, {
+async function renderAdminDetailPage(res, {
   application,
   error = null,
   notice = null,
   statusCode = 200
 }) {
-  const settings = readSettings();
+  const settings = await readSettings();
   const periodOptions = getPeriodOptions(settings);
   const normalized = ensureApplicationDefaults(application);
   const scopedDepartment = res.locals.adminScopeDepartment;
@@ -2591,10 +2583,10 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get("/", (_req, res) => {
-  const applications = readApplications();
+app.get("/", async (_req, res) => {
+  const applications = await readApplications();
   const pending = applications.filter((application) => application.status === "Pending").length;
-  const settings = readSettings();
+  const settings = await readSettings();
   const periodOptions = getPeriodOptions(settings);
   const capacitySummary = getCapacitySummary(settings, applications);
   const landingRunner = buildLandingRunner(settings);
@@ -2619,11 +2611,11 @@ app.get("/", (_req, res) => {
   });
 });
 
-app.get("/apply", (_req, res) => {
+app.get("/apply", async (_req, res) => {
   return renderApplyPage(res);
 });
 
-app.get("/api/institution-availability", (req, res) => {
+app.get("/api/institution-availability", async (req, res) => {
   const departmentKey = (req.query.department || "").toString().trim();
   const institutionName = (req.query.institution || "").toString().trim();
   const otherInstitution = (req.query.otherInstitution || "").toString().trim();
@@ -2647,8 +2639,8 @@ app.get("/api/institution-availability", (req, res) => {
     });
   }
 
-  const settings = readSettings();
-  const applications = readApplications();
+  const settings = await readSettings();
+  const applications = await readApplications();
   const availability = getInstitutionAvailability(
     settings,
     applications,
@@ -2661,7 +2653,7 @@ app.get("/api/institution-availability", (req, res) => {
   return res.json(availability);
 });
 
-app.get("/api/institution-suggestions", (req, res) => {
+app.get("/api/institution-suggestions", async (req, res) => {
   const departmentKey = (req.query.department || "").toString().trim();
   const query = (req.query.q || "").toString().trim().slice(0, 120);
 
@@ -2675,8 +2667,8 @@ app.get("/api/institution-suggestions", (req, res) => {
     });
   }
 
-  const applications = readApplications();
-  const settings = readSettings();
+  const applications = await readApplications();
+  const settings = await readSettings();
   const suggestions = getInstitutionSuggestions(applications, settings, departmentKey, query, 8);
 
   return res.json({
@@ -2688,8 +2680,8 @@ app.get("/api/institution-suggestions", (req, res) => {
   });
 });
 
-app.post("/apply", (req, res) => {
-  studentDocumentsUploadMiddleware(req, res, (uploadError) => {
+app.post("/apply", async (req, res) => {
+  studentDocumentsUploadMiddleware(req, res, async (uploadError) => {
     const files = req.files || {};
     const formData = req.body || {};
 
@@ -2716,7 +2708,7 @@ app.post("/apply", (req, res) => {
       coverNote
     } = formData;
 
-    const settings = readSettings();
+    const settings = await readSettings();
     const periodOptions = getPeriodOptions(settings);
 
     let finalFullName = (fullName || "").trim();
@@ -2810,7 +2802,7 @@ app.post("/apply", (req, res) => {
     }
     finalInstitution = resolvedInstitution.institution;
 
-    const applications = readApplications();
+    const applications = await readApplications();
     const capacitySummary = getCapacitySummary(settings, applications);
     const selectedDepartmentCapacity = Number(
       capacitySummary.departmentCapacities[finalAppliedDepartment] || 0
@@ -2937,7 +2929,7 @@ app.post("/apply", (req, res) => {
       });
 
       applications.push(newApplication);
-      writeApplications(applications);
+      await writeApplications(applications);
 
       return res.redirect(`/application/${newApplication.id}`);
     })().catch((storageError) => {
@@ -2951,7 +2943,7 @@ app.post("/apply", (req, res) => {
   });
 });
 
-app.get("/track", (req, res) => {
+app.get("/track", async (req, res) => {
   const idNumber = (req.query.idNumber || "").toString().trim();
   const trackingNumber = (req.query.trackingNumber || "").toString().trim();
   const email = (req.query.email || "").toString().trim().toLowerCase();
@@ -2965,7 +2957,7 @@ app.get("/track", (req, res) => {
     });
   }
 
-  const applications = readApplications();
+  const applications = await readApplications();
   const resultIndex = findApplicationIndexForStudentDashboard(applications, {
     idNumber,
     trackingNumber,
@@ -2993,7 +2985,7 @@ app.get("/track", (req, res) => {
   });
 });
 
-app.post("/track", (req, res) => {
+app.post("/track", async (req, res) => {
   const idNumber = (req.body.idNumber || "").trim();
   const trackingNumber = (req.body.trackingNumber || req.body.applicationId || "").trim();
   const email = (req.body.email || "").trim().toLowerCase();
@@ -3009,7 +3001,7 @@ app.post("/track", (req, res) => {
     });
   }
 
-  const applications = readApplications();
+  const applications = await readApplications();
   const resultIndex = findApplicationIndexForStudentDashboard(applications, {
     idNumber,
     trackingNumber,
@@ -3037,14 +3029,14 @@ app.post("/track", (req, res) => {
   });
 });
 
-app.post("/track/resubmit", (req, res) => {
-  studentDocumentsUploadMiddleware(req, res, (uploadError) => {
+app.post("/track/resubmit", async (req, res) => {
+  studentDocumentsUploadMiddleware(req, res, async (uploadError) => {
     const files = req.files || {};
     const idNumber = (req.body.idNumber || "").trim();
     const trackingNumber = (req.body.trackingNumber || req.body.applicationId || "").trim();
     const email = (req.body.email || "").trim().toLowerCase();
 
-    const applications = readApplications();
+    const applications = await readApplications();
     const index = findApplicationIndexForStudentDashboard(applications, {
       idNumber,
       trackingNumber,
@@ -3257,7 +3249,7 @@ app.post("/track/resubmit", (req, res) => {
 
       currentApplication.updatedAt = new Date().toISOString();
       applications[index] = currentApplication;
-      writeApplications(applications);
+      await writeApplications(applications);
 
       return renderTrackPage(res, {
         message:
@@ -3285,14 +3277,14 @@ app.post("/track/resubmit", (req, res) => {
   });
 });
 
-app.post("/track/nita-resubmit", (req, res) => {
-  nitaResubmissionUploadMiddleware(req, res, (uploadError) => {
+app.post("/track/nita-resubmit", async (req, res) => {
+  nitaResubmissionUploadMiddleware(req, res, async (uploadError) => {
     const idNumber = (req.body.idNumber || "").trim();
     const trackingNumber = (req.body.trackingNumber || req.body.applicationId || "").trim();
     const email = (req.body.email || "").trim().toLowerCase();
     const uploadedFile = req.file || null;
 
-    const applications = readApplications();
+    const applications = await readApplications();
     const index = findApplicationIndexForStudentDashboard(applications, {
       idNumber,
       trackingNumber,
@@ -3411,7 +3403,7 @@ app.post("/track/nita-resubmit", (req, res) => {
       currentApplication.updatedAt = submittedAt;
 
       applications[index] = currentApplication;
-      writeApplications(applications);
+      await writeApplications(applications);
       Promise.resolve(fileStorage.removeStoredFile(previousResubmittedDocument)).catch(() => {});
 
       return renderTrackPage(res, {
@@ -3437,8 +3429,8 @@ app.post("/track/nita-resubmit", (req, res) => {
   });
 });
 
-app.get("/application/:id", (req, res) => {
-  const applications = readApplications();
+app.get("/application/:id", async (req, res) => {
+  const applications = await readApplications();
   const application = applications.find((item) => item.id === req.params.id);
 
   if (!application) {
@@ -3454,14 +3446,14 @@ app.get("/application/:id", (req, res) => {
   });
 });
 
-app.get("/application/:id/joining-letter", (req, res) => {
+app.get("/application/:id/joining-letter", async (req, res) => {
   const email = (req.query.email || "").toString().trim().toLowerCase();
 
   if (!email) {
     return res.status(400).send("Email is required to download the joining letter.");
   }
 
-  const applications = readApplications();
+  const applications = await readApplications();
   const application = applications.find(
     (item) => item.id === req.params.id && item.email === email
   );
@@ -3483,14 +3475,14 @@ app.get("/application/:id/joining-letter", (req, res) => {
   });
 });
 
-app.get("/application/:id/county-signed-nita", (req, res) => {
+app.get("/application/:id/county-signed-nita", async (req, res) => {
   const email = (req.query.email || "").toString().trim().toLowerCase();
 
   if (!email) {
     return res.status(400).send("Email is required to download the county-endorsed NITA document.");
   }
 
-  const applications = readApplications();
+  const applications = await readApplications();
   const application = applications.find(
     (item) => item.id === req.params.id && item.email === email
   );
@@ -3514,31 +3506,31 @@ app.get("/application/:id/county-signed-nita", (req, res) => {
   });
 });
 
-app.get("/admin/login", (_req, res) => {
+app.get("/admin/login", async (_req, res) => {
   return res.redirect(HR_PORTAL_PATH);
 });
 
-app.post("/admin/login", (_req, res) => {
+app.post("/admin/login", async (_req, res) => {
   return res.redirect(307, HR_PORTAL_PATH);
 });
 
-app.get(ADMIN_PORTAL_PATH, (_req, res) => {
+app.get(ADMIN_PORTAL_PATH, async (_req, res) => {
   return res.redirect(HR_PORTAL_PATH);
 });
 
-app.post(ADMIN_PORTAL_PATH, (_req, res) => {
+app.post(ADMIN_PORTAL_PATH, async (_req, res) => {
   return res.redirect(307, HR_PORTAL_PATH);
 });
 
-app.get("/hr/login", (_req, res) => {
+app.get("/hr/login", async (_req, res) => {
   return res.redirect(HR_PORTAL_PATH);
 });
 
-app.post("/hr/login", (_req, res) => {
+app.post("/hr/login", async (_req, res) => {
   return res.redirect(307, HR_PORTAL_PATH);
 });
 
-app.get(HR_PORTAL_PATH, (req, res) => {
+app.get(HR_PORTAL_PATH, async (req, res) => {
   if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
     return res.redirect("/hr/applications");
   }
@@ -3548,7 +3540,7 @@ app.get(HR_PORTAL_PATH, (req, res) => {
   });
 });
 
-app.post(HR_PORTAL_PATH, (req, res) => {
+app.post(HR_PORTAL_PATH, async (req, res) => {
   const username = (req.body.username || "").toString();
   const password = (req.body.password || "").toString();
 
@@ -3561,7 +3553,7 @@ app.post(HR_PORTAL_PATH, (req, res) => {
     return res.redirect("/hr/applications");
   }
 
-  const adminUser = findAdminUserByCredentials(username, password);
+  const adminUser = await findAdminUserByCredentials(username, password);
 
   if (!adminUser || adminUser.role !== "hr_admin") {
     return res.status(401).render("hr-login", {
@@ -3577,19 +3569,19 @@ app.post(HR_PORTAL_PATH, (req, res) => {
   return res.redirect("/hr/applications");
 });
 
-app.post("/admin/logout", ensureDepartmentAdmin, (req, res) => {
+app.post("/admin/logout", ensureDepartmentAdmin, async (req, res) => {
   req.session.destroy(() => {
     res.redirect(HR_PORTAL_PATH);
   });
 });
 
-app.post("/hr/logout", ensureHrAdmin, (req, res) => {
+app.post("/hr/logout", ensureHrAdmin, async (req, res) => {
   req.session.destroy(() => {
     res.redirect(HR_PORTAL_PATH);
   });
 });
 
-app.get("/hr/home", (req, res) => {
+app.get("/hr/home", async (req, res) => {
   if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
     return req.session.destroy(() => {
       res.redirect("/");
@@ -3599,9 +3591,9 @@ app.get("/hr/home", (req, res) => {
   return res.redirect("/");
 });
 
-app.get("/hr/periods", ensureHrAdmin, (req, res) => {
+app.get("/hr/periods", ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
-  const settings = readSettings();
+  const settings = await readSettings();
   return res.render("admin-periods", {
     periodOptions: getPeriodOptions(settings),
     departmentCapacities: settings.departmentCapacities || createDefaultDepartmentCapacities(0),
@@ -3618,9 +3610,9 @@ app.get("/hr/periods", ensureHrAdmin, (req, res) => {
   });
 });
 
-app.post("/hr/periods", ensureHrAdmin, (req, res) => {
+app.post("/hr/periods", ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
-  const settings = readSettings();
+  const settings = await readSettings();
   const updated = {
     ...settings,
     openPeriods: {
@@ -3707,16 +3699,16 @@ app.post("/hr/periods", ensureHrAdmin, (req, res) => {
 
   updated.updatedAt = new Date().toISOString();
 
-  writeSettings(updated);
+  await writeSettings(updated);
   return res.redirect("/hr/periods?saved=1");
 });
 
-function renderAdminAccountsPage(res, {
+async function renderAdminAccountsPage(res, {
   statusCode = 200,
   error = null,
   notice = null
 } = {}) {
-  const adminAccounts = readDepartmentAdmins().sort(
+  const adminAccounts = (await readDepartmentAdmins()).sort(
     (a, b) =>
       Number(b.isActive) - Number(a.isActive) ||
       getDepartmentLabel(a.department).localeCompare(getDepartmentLabel(b.department)) ||
@@ -3754,7 +3746,7 @@ function renderDepartmentAccessPage(res, departmentSummaries) {
   });
 }
 
-app.get("/hr/admin-accounts", ensureHrAdmin, (req, res) => {
+app.get("/hr/admin-accounts", ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
   let notice = null;
   if (req.query.created === "1") {
@@ -3770,8 +3762,8 @@ app.get("/hr/admin-accounts", ensureHrAdmin, (req, res) => {
   return renderAdminAccountsPage(res, { notice });
 });
 
-app.post("/hr/admin-accounts/create", ensureHrAdmin, (req, res) => {
-  const result = createDepartmentAdminAccount({
+app.post("/hr/admin-accounts/create", ensureHrAdmin, async (req, res) => {
+  const result = await createDepartmentAdminAccount({
     username: req.body.username,
     password: req.body.password || DEFAULT_DEPARTMENT_ADMIN_PASSWORD,
     department: req.body.department,
@@ -3788,8 +3780,8 @@ app.post("/hr/admin-accounts/create", ensureHrAdmin, (req, res) => {
   return res.redirect("/hr/admin-accounts?created=1");
 });
 
-app.post("/hr/admin-accounts/:username/update", ensureHrAdmin, (req, res) => {
-  const result = updateDepartmentAdminAccount(req.params.username, {
+app.post("/hr/admin-accounts/:username/update", ensureHrAdmin, async (req, res) => {
+  const result = await updateDepartmentAdminAccount(req.params.username, {
     username: req.body.username,
     department: req.body.department,
     displayName: req.body.displayName
@@ -3805,8 +3797,8 @@ app.post("/hr/admin-accounts/:username/update", ensureHrAdmin, (req, res) => {
   return res.redirect("/hr/admin-accounts?updated=1");
 });
 
-app.post("/hr/admin-accounts/:username/password", ensureHrAdmin, (req, res) => {
-  const result = setDepartmentAdminPassword(req.params.username, req.body.password);
+app.post("/hr/admin-accounts/:username/password", ensureHrAdmin, async (req, res) => {
+  const result = await setDepartmentAdminPassword(req.params.username, req.body.password);
 
   if (result.error) {
     return renderAdminAccountsPage(res, {
@@ -3818,9 +3810,9 @@ app.post("/hr/admin-accounts/:username/password", ensureHrAdmin, (req, res) => {
   return res.redirect("/hr/admin-accounts?passwordReset=1");
 });
 
-app.post("/hr/admin-accounts/:username/toggle", ensureHrAdmin, (req, res) => {
+app.post("/hr/admin-accounts/:username/toggle", ensureHrAdmin, async (req, res) => {
   const nextState = (req.body.isActive || "").toString() === "1";
-  const result = setDepartmentAdminActiveState(req.params.username, nextState);
+  const result = await setDepartmentAdminActiveState(req.params.username, nextState);
 
   if (result.error) {
     return renderAdminAccountsPage(res, {
@@ -3862,14 +3854,14 @@ function renderReportsPage(res, {
   });
 }
 
-app.get("/hr/reports", ensureHrAdmin, (req, res) => {
+app.get("/hr/reports", ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
-  const settings = readSettings();
+  const settings = await readSettings();
   const filters = getReportFilterState({
     query: req.query,
     allowDepartmentFilter: true
   });
-  const applications = filterApplicationsForReports(readApplications(), filters);
+  const applications = filterApplicationsForReports(await readApplications(), filters);
 
   return renderReportsPage(res, {
     title: "HR Reports and Analytics",
@@ -3882,13 +3874,13 @@ app.get("/hr/reports", ensureHrAdmin, (req, res) => {
   });
 });
 
-app.get("/hr/reports/export.csv", ensureHrAdmin, (req, res) => {
+app.get("/hr/reports/export.csv", ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
   const filters = getReportFilterState({
     query: req.query,
     allowDepartmentFilter: true
   });
-  const applications = filterApplicationsForReports(readApplications(), filters);
+  const applications = filterApplicationsForReports(await readApplications(), filters);
   const csv = convertApplicationsToCsv(applications);
 
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -3896,14 +3888,14 @@ app.get("/hr/reports/export.csv", ensureHrAdmin, (req, res) => {
   return res.send(csv);
 });
 
-app.get("/hr/departments", ensureHrAdmin, (req, res) => {
+app.get("/hr/departments", ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
-  const applications = readApplications();
+  const applications = await readApplications();
   const departmentSummaries = buildDepartmentAccessSummaries(applications);
   return renderDepartmentAccessPage(res, departmentSummaries);
 });
 
-app.get("/hr/departments/:department/open", ensureHrAdmin, (req, res) => {
+app.get("/hr/departments/:department/open", ensureHrAdmin, async (req, res) => {
   const departmentKey = (req.params.department || "").toString().trim();
   if (!isValidDepartment(departmentKey)) {
     return res.status(404).render("not-found");
@@ -3913,8 +3905,8 @@ app.get("/hr/departments/:department/open", ensureHrAdmin, (req, res) => {
   return res.redirect(`/admin/applications?status=All&department=${encodeURIComponent(departmentKey)}`);
 });
 
-app.get("/admin/periods", ensureDepartmentAdmin, (req, res) => {
-  const settings = readSettings();
+app.get("/admin/periods", ensureDepartmentAdmin, async (req, res) => {
+  const settings = await readSettings();
   const adminScopeDepartment = getAdminScopeDepartment(req);
   if (!adminScopeDepartment) {
     return res.redirect("/hr/periods");
@@ -3939,8 +3931,8 @@ app.get("/admin/periods", ensureDepartmentAdmin, (req, res) => {
   });
 });
 
-app.post("/admin/periods", ensureDepartmentAdmin, (req, res) => {
-  const settings = readSettings();
+app.post("/admin/periods", ensureDepartmentAdmin, async (req, res) => {
+  const settings = await readSettings();
   const adminScopeDepartment = getAdminScopeDepartment(req);
   if (!adminScopeDepartment) {
     return res.redirect("/hr/periods");
@@ -4013,11 +4005,11 @@ app.post("/admin/periods", ensureDepartmentAdmin, (req, res) => {
   updated.maxApplicants = totalCapacity;
   updated.updatedAt = new Date().toISOString();
 
-  writeSettings(updated);
+  await writeSettings(updated);
   return res.redirect("/admin/periods?saved=1");
 });
 
-app.get("/admin/reports", ensureDepartmentAdmin, (req, res) => {
+app.get("/admin/reports", ensureDepartmentAdmin, async (req, res) => {
   const scopedDepartment = getAdminScopeDepartment(req);
   if (!scopedDepartment) {
     return res.redirect("/hr/reports");
@@ -4027,8 +4019,8 @@ app.get("/admin/reports", ensureDepartmentAdmin, (req, res) => {
     allowDepartmentFilter: false,
     forcedDepartment: scopedDepartment || "All"
   });
-  const applications = filterApplicationsForReports(filterApplicationsForAdmin(req, readApplications()), filters);
-  const settings = readSettings();
+  const applications = filterApplicationsForReports(filterApplicationsForAdmin(req, await readApplications()), filters);
+  const settings = await readSettings();
 
   return renderReportsPage(res, {
     title: "Department Reports and Analytics",
@@ -4043,7 +4035,7 @@ app.get("/admin/reports", ensureDepartmentAdmin, (req, res) => {
   });
 });
 
-app.get("/admin/reports/export.csv", ensureDepartmentAdmin, (req, res) => {
+app.get("/admin/reports/export.csv", ensureDepartmentAdmin, async (req, res) => {
   const scopedDepartment = getAdminScopeDepartment(req);
   if (!scopedDepartment) {
     return res.redirect("/hr/reports");
@@ -4053,7 +4045,7 @@ app.get("/admin/reports/export.csv", ensureDepartmentAdmin, (req, res) => {
     allowDepartmentFilter: false,
     forcedDepartment: scopedDepartment || "All"
   });
-  const applications = filterApplicationsForReports(filterApplicationsForAdmin(req, readApplications()), filters);
+  const applications = filterApplicationsForReports(filterApplicationsForAdmin(req, await readApplications()), filters);
   const csv = convertApplicationsToCsv(applications);
 
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -4061,7 +4053,7 @@ app.get("/admin/reports/export.csv", ensureDepartmentAdmin, (req, res) => {
   return res.send(csv);
 });
 
-app.get("/admin/applications", ensureDepartmentAdmin, (req, res) => {
+app.get("/admin/applications", ensureDepartmentAdmin, async (req, res) => {
   let adminScopeDepartment = getAdminScopeDepartment(req);
   const statusFilterRaw = (req.query.status || "All").toString();
   const normalizedStatusFilter =
@@ -4085,7 +4077,7 @@ app.get("/admin/applications", ensureDepartmentAdmin, (req, res) => {
 
   const departmentFilter = adminScopeDepartment || requestedDepartmentFilter;
 
-  const allApplications = filterApplicationsForAdmin(req, readApplications()).sort(
+  const allApplications = filterApplicationsForAdmin(req, await readApplications()).sort(
     (a, b) => new Date(b.submittedAt) - new Date(a.submittedAt)
   );
 
@@ -4124,14 +4116,14 @@ app.get("/admin/applications", ensureDepartmentAdmin, (req, res) => {
   });
 });
 
-app.get("/admin/departments", ensureDepartmentAdmin, (_req, res) => {
-  const applications = readApplications();
+app.get("/admin/departments", ensureDepartmentAdmin, async (_req, res) => {
+  const applications = await readApplications();
   const departmentSummaries = buildDepartmentAccessSummaries(applications);
   return renderDepartmentAccessPage(res, departmentSummaries);
 });
 
-app.get("/admin/applications/:id", ensureDepartmentAdmin, (req, res) => {
-  const applications = readApplications();
+app.get("/admin/applications/:id", ensureDepartmentAdmin, async (req, res) => {
+  const applications = await readApplications();
   const application = applications.find((item) => item.id === req.params.id);
 
   if (!application) {
@@ -4161,10 +4153,10 @@ app.get("/admin/applications/:id", ensureDepartmentAdmin, (req, res) => {
   });
 });
 
-app.post("/admin/applications/:id/placement", ensureDepartmentAdmin, (req, res) => {
+app.post("/admin/applications/:id/placement", ensureDepartmentAdmin, async (req, res) => {
   const assignedDepartment = (req.body.assignedDepartment || "").toString().trim();
   const adminScopeDepartment = getAdminScopeDepartment(req);
-  const applications = readApplications();
+  const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
   if (index === -1) {
@@ -4205,13 +4197,13 @@ app.post("/admin/applications/:id/placement", ensureDepartmentAdmin, (req, res) 
   application.updatedAt = new Date().toISOString();
 
   applications[index] = application;
-  writeApplications(applications);
+  await writeApplications(applications);
 
   return res.redirect(`/admin/applications/${req.params.id}?placementSaved=1`);
 });
 
-app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, (req, res) => {
-  const applications = readApplications();
+app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, async (req, res) => {
+  const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
   if (index === -1) {
@@ -4320,13 +4312,13 @@ app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, (req
   application.updatedAt = new Date().toISOString();
 
   applications[index] = application;
-  writeApplications(applications);
+  await writeApplications(applications);
 
   return res.redirect(`/admin/applications/${req.params.id}?docsReviewed=1`);
 });
 
-app.post("/admin/applications/:id/joining-letter", ensureDepartmentAdmin, (req, res) => {
-  const applications = readApplications();
+app.post("/admin/applications/:id/joining-letter", ensureDepartmentAdmin, async (req, res) => {
+  const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
   if (index === -1) {
@@ -4346,9 +4338,9 @@ app.post("/admin/applications/:id/joining-letter", ensureDepartmentAdmin, (req, 
   });
 });
 
-app.get("/admin/files/:filename", ensureDepartmentAdmin, (req, res) => {
+app.get("/admin/files/:filename", ensureDepartmentAdmin, async (req, res) => {
   const safeFilename = path.basename(req.params.filename);
-  const visibleApplications = filterApplicationsForAdmin(req, readApplications());
+  const visibleApplications = filterApplicationsForAdmin(req, await readApplications());
   const matchedApplication = visibleApplications.find((application) =>
     doesApplicationReferenceFile(application, safeFilename)
   );
@@ -4363,14 +4355,14 @@ app.get("/admin/files/:filename", ensureDepartmentAdmin, (req, res) => {
   });
 });
 
-app.post("/admin/applications/:id/status", ensureDepartmentAdmin, (req, res) => {
+app.post("/admin/applications/:id/status", ensureDepartmentAdmin, async (req, res) => {
   const { status, reviewerComment } = req.body;
 
   if (!STATUS_OPTIONS.includes(status)) {
     return res.status(400).send("Invalid status");
   }
 
-  const applications = readApplications();
+  const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
   if (index === -1) {
@@ -4414,12 +4406,12 @@ app.post("/admin/applications/:id/status", ensureDepartmentAdmin, (req, res) => 
   application.updatedAt = new Date().toISOString();
 
   applications[index] = application;
-  writeApplications(applications);
+  await writeApplications(applications);
 
   return res.redirect(`/admin/applications/${req.params.id}`);
 });
 
-app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, (req, res) => {
+app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, async (req, res) => {
   const {
     fullName,
     email,
@@ -4434,7 +4426,7 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, (req, res) => {
     coverNote
   } = req.body;
 
-  const applications = readApplications();
+  const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
   if (index === -1) {
@@ -4539,7 +4531,7 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, (req, res) => {
     });
   }
 
-  const settings = readSettings();
+  const settings = await readSettings();
   const institutionLimit = getInstitutionLimitForDepartment(
     settings,
     draftApplication.appliedDepartment
@@ -4571,13 +4563,13 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, (req, res) => {
 
   draftApplication.updatedAt = new Date().toISOString();
   applications[index] = draftApplication;
-  writeApplications(applications);
+  await writeApplications(applications);
 
   return res.redirect(`/admin/applications/${req.params.id}`);
 });
 
-app.post("/admin/applications/:id/freeze", ensureDepartmentAdmin, (req, res) => {
-  const applications = readApplications();
+app.post("/admin/applications/:id/freeze", ensureDepartmentAdmin, async (req, res) => {
+  const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
   if (index === -1) {
@@ -4594,13 +4586,13 @@ app.post("/admin/applications/:id/freeze", ensureDepartmentAdmin, (req, res) => 
     req.session?.adminRole || "hr_admin",
     "Record frozen by HR-managed department review."
   );
-  writeApplications(applications);
+  await writeApplications(applications);
 
   return res.redirect(`/admin/applications/${req.params.id}?frozen=1`);
 });
 
-app.post("/admin/applications/:id/unfreeze", ensureDepartmentAdmin, (req, res) => {
-  const applications = readApplications();
+app.post("/admin/applications/:id/unfreeze", ensureDepartmentAdmin, async (req, res) => {
+  const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
   if (index === -1) {
@@ -4613,12 +4605,12 @@ app.post("/admin/applications/:id/unfreeze", ensureDepartmentAdmin, (req, res) =
   }
 
   applications[index] = unfreezeApplicationRecord(application);
-  writeApplications(applications);
+  await writeApplications(applications);
 
   return res.redirect(`/admin/applications/${req.params.id}?unfrozen=1`);
 });
 
-app.get("/hr/applications", ensureHrAdmin, (req, res) => {
+app.get("/hr/applications", ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
   const statusFilterRaw = (req.query.status || "Verified").toString();
   const normalizedStatusFilter =
@@ -4631,7 +4623,7 @@ app.get("/hr/applications", ensureHrAdmin, (req, res) => {
       ? departmentFilterRaw
       : "All";
 
-  const allApplications = readApplications()
+  const allApplications = (await readApplications())
     .filter((application) => HR_VISIBLE_STATUSES.has(application.status))
     .sort(
     (a, b) => new Date(b.submittedAt) - new Date(a.submittedAt)
@@ -4646,8 +4638,8 @@ app.get("/hr/applications", ensureHrAdmin, (req, res) => {
     applications = applications.filter((item) => item.appliedDepartment === departmentFilter);
   }
 
-  const settings = readSettings();
-  const departmentSummaries = buildDepartmentReportRows(readApplications(), settings, null);
+  const settings = await readSettings();
+  const departmentSummaries = buildDepartmentReportRows(await readApplications(), settings, null);
 
   const stats = {
     total: allApplications.length,
@@ -4670,8 +4662,8 @@ app.get("/hr/applications", ensureHrAdmin, (req, res) => {
   });
 });
 
-app.get("/hr/applications/:id", ensureHrAdmin, (req, res) => {
-  const applications = readApplications();
+app.get("/hr/applications/:id", ensureHrAdmin, async (req, res) => {
+  const applications = await readApplications();
   const application = applications.find((item) => item.id === req.params.id);
 
   if (!application) {
@@ -4697,8 +4689,8 @@ app.get("/hr/applications/:id", ensureHrAdmin, (req, res) => {
   });
 });
 
-app.post("/hr/applications/:id/nita-complete", ensureHrAdmin, (req, res) => {
-  const applications = readApplications();
+app.post("/hr/applications/:id/nita-complete", ensureHrAdmin, async (req, res) => {
+  const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
   if (index === -1) {
@@ -4744,12 +4736,12 @@ app.post("/hr/applications/:id/nita-complete", ensureHrAdmin, (req, res) => {
   application.updatedAt = application.nitaWorkflow.updatedAt;
 
   applications[index] = application;
-  writeApplications(applications);
+  await writeApplications(applications);
 
   return res.redirect(`/hr/applications/${req.params.id}?nitaCompleted=1`);
 });
 
-app.post("/hr/applications/:id/status", ensureHrAdmin, (req, res) => {
+app.post("/hr/applications/:id/status", ensureHrAdmin, async (req, res) => {
   const status = (req.body.status || "").toString().trim();
   const reviewerComment = (req.body.reviewerComment || "").toString().trim();
   const hrAllowedStatuses = new Set(HR_VISIBLE_STATUSES);
@@ -4758,7 +4750,7 @@ app.post("/hr/applications/:id/status", ensureHrAdmin, (req, res) => {
     return res.status(400).send("Invalid HR status.");
   }
 
-  const applications = readApplications();
+  const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
   if (index === -1) {
@@ -4809,13 +4801,13 @@ app.post("/hr/applications/:id/status", ensureHrAdmin, (req, res) => {
   application.updatedAt = new Date().toISOString();
 
   applications[index] = application;
-  writeApplications(applications);
+  await writeApplications(applications);
 
   return res.redirect(`/hr/applications/${req.params.id}?statusSaved=1`);
 });
 
-app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, (req, res) => {
-  const applications = readApplications();
+app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, async (req, res) => {
+  const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
   if (index === -1) {
@@ -4852,7 +4844,7 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, (req, res) => {
     });
   }
 
-  return joiningLetterUploadMiddleware(req, res, (uploadError) => {
+  return joiningLetterUploadMiddleware(req, res, async (uploadError) => {
     if (uploadError) {
       cleanupUploadedFiles(req.files || {});
       if (req.file && req.file.filename) {
@@ -4896,7 +4888,7 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, (req, res) => {
       application.updatedAt = new Date().toISOString();
 
       applications[index] = application;
-      writeApplications(applications);
+      await writeApplications(applications);
       Promise.resolve(fileStorage.removeStoredFile(oldJoiningLetter)).catch(() => {});
 
       return res.redirect(`/hr/applications/${req.params.id}?joiningSaved=1`);
@@ -4911,9 +4903,9 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, (req, res) => {
   });
 });
 
-app.get("/hr/files/:filename", ensureHrAdmin, (req, res) => {
+app.get("/hr/files/:filename", ensureHrAdmin, async (req, res) => {
   const safeFilename = path.basename(req.params.filename);
-  const application = readApplications().find((item) => doesApplicationReferenceFile(item, safeFilename));
+  const application = (await readApplications()).find((item) => doesApplicationReferenceFile(item, safeFilename));
   if (!application) {
     return res.status(404).send("File not found");
   }
@@ -4933,23 +4925,38 @@ app.use((_req, res) => {
   res.status(404).render("not-found");
 });
 
-app.listen(PORT, () => {
-  console.log(`Attachment application system running on http://localhost:${PORT}`);
-  console.log(`Department review redirect: http://localhost:${PORT}${ADMIN_PORTAL_PATH} -> ${HR_PORTAL_PATH}`);
-  console.log(`HR portal entry: http://localhost:${PORT}${HR_PORTAL_PATH}`);
-  console.log(`Storage root: ${STORAGE_ROOT}`);
-  console.log(`Database file: ${DATABASE_FILE}`);
-  console.log("Session store: SQLite");
-  console.log(`File storage provider: ${fileStorage.provider}`);
-
-  const storageWarning = fileStorage.getProviderWarning();
-  if (storageWarning) {
-    console.warn(storageWarning);
+async function startServer() {
+  try {
+    await databasePromise;
+  } catch (error) {
+    console.error("Failed to connect to MongoDB.");
+    console.error(error);
+    process.exit(1);
   }
 
-  if (process.env.NODE_ENV === "production" && !process.env.STORAGE_ROOT) {
-    console.warn(
-      "Persistent storage warning: STORAGE_ROOT is not set. Uploaded files, database data, and sessions will reset on ephemeral hosting."
-    );
-  }
-});
+  app.listen(PORT, () => {
+    console.log(`Attachment application system running on http://localhost:${PORT}`);
+    console.log(`Department review redirect: http://localhost:${PORT}${ADMIN_PORTAL_PATH} -> ${HR_PORTAL_PATH}`);
+    console.log(`HR portal entry: http://localhost:${PORT}${HR_PORTAL_PATH}`);
+    console.log(`Storage root: ${STORAGE_ROOT}`);
+    console.log(`MongoDB database: ${MONGODB_DB_NAME}`);
+    console.log(`MongoDB connection configured: ${MONGODB_URI ? "yes" : "no"}`);
+    console.log("Session store: MongoDB");
+    console.log(`File storage provider: ${fileStorage.provider}`);
+
+    const storageWarning = fileStorage.getProviderWarning();
+    if (storageWarning) {
+      console.warn(storageWarning);
+    }
+
+    if (process.env.NODE_ENV === "production" && !process.env.STORAGE_ROOT) {
+      console.warn(
+        "Persistent storage warning: STORAGE_ROOT is not set. Uploaded files, database data, and sessions will reset on ephemeral hosting."
+      );
+    }
+  });
+}
+
+startServer();
+
+

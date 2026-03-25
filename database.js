@@ -1,318 +1,236 @@
-const fs = require("fs");
-const path = require("path");
-const Database = require("better-sqlite3");
+const crypto = require("crypto");
+const { MongoClient } = require("mongodb");
 
-function ensureDirectoryExists(dirPath) {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-  }
+const DEFAULT_MONGODB_DB_NAME = "attachment_application_system";
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function ensureColumnExists(db, tableName, columnName, definitionSql) {
-  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
-  const hasColumn = columns.some((column) => column.name === columnName);
-  if (!hasColumn) {
-    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${definitionSql}`);
-  }
+function clonePlain(value) {
+  return JSON.parse(JSON.stringify(value ?? null));
 }
 
-function createDatabase({
-  dataDir,
-  databaseFile,
+function buildApplicationRecord(application) {
+  const safeId = (application?.id || application?.placementNumber || crypto.randomUUID()).toString();
+  return {
+    _id: safeId,
+    placementNumber: (application?.placementNumber || safeId).toString(),
+    fullName: (application?.fullName || "").toString(),
+    email: (application?.email || "").toString(),
+    institution: (application?.institution || "").toString(),
+    appliedDepartment: (application?.appliedDepartment || application?.department || "").toString(),
+    assignedDepartment: (application?.assignedDepartment || "").toString(),
+    period: (application?.period || "").toString(),
+    status: (application?.status || "").toString(),
+    submittedAt: (application?.submittedAt || "").toString(),
+    data: clonePlain(application)
+  };
+}
+
+function buildDepartmentAdminRecord(admin) {
+  const timestamp = new Date().toISOString();
+  const username = (admin?.username || "").toString().trim().toLowerCase();
+  return {
+    _id: username,
+    username,
+    password: (admin?.password || "").toString(),
+    role: (admin?.role || "department_admin").toString(),
+    department: (admin?.department || "").toString(),
+    displayName: (admin?.displayName || "").toString(),
+    isActive: admin?.isActive === false ? false : true,
+    createdAt: (admin?.createdAt || timestamp).toString(),
+    updatedAt: (admin?.updatedAt || timestamp).toString()
+  };
+}
+
+function buildSettingsRecord(settings) {
+  return {
+    _id: "portal_settings",
+    value: clonePlain(settings),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function getSessionExpiry(sessionData) {
+  const expiresValue = sessionData?.cookie?.expires;
+  if (expiresValue) {
+    const dateValue = new Date(expiresValue);
+    if (!Number.isNaN(dateValue.getTime())) {
+      return dateValue.getTime();
+    }
+  }
+
+  const maxAge = Number(sessionData?.cookie?.maxAge);
+  if (Number.isFinite(maxAge) && maxAge > 0) {
+    return Date.now() + maxAge;
+  }
+
+  return null;
+}
+
+async function createDatabase({
   createDefaultSettings,
   createDefaultDepartmentAdmins
 }) {
-  ensureDirectoryExists(dataDir);
-  ensureDirectoryExists(path.dirname(databaseFile));
+  const mongoUri = (process.env.MONGODB_URI || process.env.MONGO_URI || "").toString().trim();
+  const databaseName = (process.env.MONGODB_DB_NAME || DEFAULT_MONGODB_DB_NAME).toString().trim();
 
-  const db = new Database(databaseFile);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS department_admins (
-      username TEXT PRIMARY KEY,
-      password TEXT NOT NULL,
-      role TEXT NOT NULL,
-      department TEXT NOT NULL,
-      displayName TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS applications (
-      id TEXT PRIMARY KEY,
-      placementNumber TEXT,
-      fullName TEXT,
-      email TEXT,
-      institution TEXT,
-      appliedDepartment TEXT,
-      assignedDepartment TEXT,
-      period TEXT,
-      status TEXT,
-      submittedAt TEXT,
-      data TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
-    CREATE INDEX IF NOT EXISTS idx_applications_department ON applications(appliedDepartment);
-    CREATE INDEX IF NOT EXISTS idx_applications_tracking ON applications(placementNumber);
-    CREATE INDEX IF NOT EXISTS idx_applications_email ON applications(email);
-
-    CREATE TABLE IF NOT EXISTS sessions (
-      sid TEXT PRIMARY KEY,
-      expiresAt INTEGER,
-      data TEXT NOT NULL,
-      updatedAt TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expiresAt);
-  `);
-
-  ensureColumnExists(db, "department_admins", "isActive", "isActive INTEGER NOT NULL DEFAULT 1");
-  ensureColumnExists(db, "department_admins", "createdAt", "createdAt TEXT");
-  ensureColumnExists(db, "department_admins", "updatedAt", "updatedAt TEXT");
-
-  const getSettingsRow = db.prepare("SELECT value FROM settings WHERE key = ?");
-  const setSettingsRow = db.prepare(`
-    INSERT INTO settings (key, value)
-    VALUES (?, ?)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value
-  `);
-  const countDepartmentAdmins = db.prepare("SELECT COUNT(*) AS total FROM department_admins");
-  const selectDepartmentAdmins = db.prepare(`
-    SELECT username, password, role, department, displayName, isActive, createdAt, updatedAt
-    FROM department_admins
-    ORDER BY department, username
-  `);
-  const clearDepartmentAdmins = db.prepare("DELETE FROM department_admins");
-  const insertDepartmentAdmin = db.prepare(`
-    INSERT INTO department_admins (
-      username,
-      password,
-      role,
-      department,
-      displayName,
-      isActive,
-      createdAt,
-      updatedAt
-    )
-    VALUES (
-      @username,
-      @password,
-      @role,
-      @department,
-      @displayName,
-      @isActive,
-      @createdAt,
-      @updatedAt
-    )
-  `);
-  const countApplications = db.prepare("SELECT COUNT(*) AS total FROM applications");
-  const selectApplications = db.prepare(`
-    SELECT data
-    FROM applications
-    ORDER BY COALESCE(submittedAt, '') DESC, id DESC
-  `);
-  const clearApplications = db.prepare("DELETE FROM applications");
-  const insertApplication = db.prepare(`
-    INSERT INTO applications (
-      id,
-      placementNumber,
-      fullName,
-      email,
-      institution,
-      appliedDepartment,
-      assignedDepartment,
-      period,
-      status,
-      submittedAt,
-      data
-    )
-    VALUES (
-      @id,
-      @placementNumber,
-      @fullName,
-      @email,
-      @institution,
-      @appliedDepartment,
-      @assignedDepartment,
-      @period,
-      @status,
-      @submittedAt,
-      @data
-    )
-  `);
-
-  const writeDepartmentAdminsTransaction = db.transaction((admins) => {
-    clearDepartmentAdmins.run();
-    admins.forEach((admin) => {
-      const timestamp = new Date().toISOString();
-      insertDepartmentAdmin.run({
-        username: (admin.username || "").toString().trim().toLowerCase(),
-        password: (admin.password || "").toString(),
-        role: (admin.role || "department_admin").toString(),
-        department: (admin.department || "").toString(),
-        displayName: (admin.displayName || "").toString(),
-        isActive: admin.isActive === false ? 0 : 1,
-        createdAt: (admin.createdAt || timestamp).toString(),
-        updatedAt: (admin.updatedAt || timestamp).toString()
-      });
-    });
-  });
-
-  const writeApplicationsTransaction = db.transaction((applications) => {
-    clearApplications.run();
-    applications.forEach((application) => {
-      const payload = JSON.stringify(application);
-      insertApplication.run({
-        id: (application.id || "").toString(),
-        placementNumber: (application.placementNumber || application.id || "").toString(),
-        fullName: (application.fullName || "").toString(),
-        email: (application.email || "").toString(),
-        institution: (application.institution || "").toString(),
-        appliedDepartment: (application.appliedDepartment || application.department || "").toString(),
-        assignedDepartment: (application.assignedDepartment || "").toString(),
-        period: (application.period || "").toString(),
-        status: (application.status || "").toString(),
-        submittedAt: (application.submittedAt || "").toString(),
-        data: payload
-      });
-    });
-  });
-
-  const getSessionRow = db.prepare("SELECT data, expiresAt FROM sessions WHERE sid = ?");
-  const upsertSessionRow = db.prepare(`
-    INSERT INTO sessions (sid, expiresAt, data, updatedAt)
-    VALUES (@sid, @expiresAt, @data, @updatedAt)
-    ON CONFLICT(sid) DO UPDATE SET
-      expiresAt = excluded.expiresAt,
-      data = excluded.data,
-      updatedAt = excluded.updatedAt
-  `);
-  const deleteSessionRow = db.prepare("DELETE FROM sessions WHERE sid = ?");
-  const deleteExpiredSessionsRow = db.prepare(
-    "DELETE FROM sessions WHERE expiresAt IS NOT NULL AND expiresAt > 0 AND expiresAt <= ?"
-  );
-
-  function writeSettings(settings) {
-    setSettingsRow.run("portal_settings", JSON.stringify(settings));
+  if (!mongoUri) {
+    throw new Error("MONGODB_URI is required when using MongoDB storage.");
   }
 
-  function readSettings() {
-    const row = getSettingsRow.get("portal_settings");
-    if (!row) {
+  const client = new MongoClient(mongoUri);
+  await client.connect();
+
+  const db = client.db(databaseName);
+  const settingsCollection = db.collection("settings");
+  const departmentAdminsCollection = db.collection("department_admins");
+  const applicationsCollection = db.collection("applications");
+  const sessionsCollection = db.collection("sessions");
+
+  await Promise.all([
+    applicationsCollection.createIndex({ status: 1 }, { name: "idx_applications_status" }),
+    applicationsCollection.createIndex(
+      { appliedDepartment: 1 },
+      { name: "idx_applications_department" }
+    ),
+    applicationsCollection.createIndex(
+      { placementNumber: 1 },
+      { name: "idx_applications_tracking" }
+    ),
+    applicationsCollection.createIndex({ email: 1 }, { name: "idx_applications_email" }),
+    departmentAdminsCollection.createIndex(
+      { department: 1, username: 1 },
+      { name: "idx_department_admins_department_username" }
+    ),
+    sessionsCollection.createIndex({ expiresAt: 1 }, { name: "idx_sessions_expires" })
+  ]);
+
+  async function writeSettings(settings) {
+    await settingsCollection.replaceOne(
+      { _id: "portal_settings" },
+      buildSettingsRecord(settings),
+      { upsert: true }
+    );
+  }
+
+  async function readSettings() {
+    const row = await settingsCollection.findOne({ _id: "portal_settings" });
+    if (!row || !isPlainObject(row.value)) {
       const defaults = createDefaultSettings();
-      writeSettings(defaults);
+      await writeSettings(defaults);
       return defaults;
     }
 
-    try {
-      return JSON.parse(row.value);
-    } catch (_error) {
-      const defaults = createDefaultSettings();
-      writeSettings(defaults);
-      return defaults;
+    return clonePlain(row.value);
+  }
+
+  async function writeDepartmentAdmins(admins) {
+    const records = (Array.isArray(admins) ? admins : [])
+      .map((admin) => buildDepartmentAdminRecord(admin))
+      .filter((admin) => admin.username);
+
+    await departmentAdminsCollection.deleteMany({});
+    if (records.length) {
+      await departmentAdminsCollection.insertMany(records, { ordered: true });
     }
   }
 
-  function writeDepartmentAdmins(admins) {
-    writeDepartmentAdminsTransaction(Array.isArray(admins) ? admins : []);
+  async function readDepartmentAdmins() {
+    const records = await departmentAdminsCollection
+      .find({}, { projection: { _id: 0 } })
+      .sort({ department: 1, username: 1 })
+      .toArray();
+
+    return clonePlain(records);
   }
 
-  function readDepartmentAdmins() {
-    return selectDepartmentAdmins.all();
+  async function writeApplications(applications) {
+    const records = (Array.isArray(applications) ? applications : [])
+      .map((application) => buildApplicationRecord(application));
+
+    await applicationsCollection.deleteMany({});
+    if (records.length) {
+      await applicationsCollection.insertMany(records, { ordered: true });
+    }
   }
 
-  function writeApplications(applications) {
-    writeApplicationsTransaction(Array.isArray(applications) ? applications : []);
-  }
+  async function readApplications() {
+    const records = await applicationsCollection
+      .find({}, { projection: { _id: 0, data: 1, submittedAt: 1 } })
+      .sort({ submittedAt: -1, placementNumber: -1 })
+      .toArray();
 
-  function readApplications() {
-    return selectApplications
-      .all()
-      .map((row) => {
-        try {
-          return JSON.parse(row.data);
-        } catch (_error) {
-          return null;
-        }
-      })
+    return records
+      .map((record) => clonePlain(record.data))
       .filter(Boolean);
   }
 
-  function getSessionExpiry(sessionData) {
-    const expiresValue = sessionData?.cookie?.expires;
-    if (expiresValue) {
-      const dateValue = new Date(expiresValue);
-      if (!Number.isNaN(dateValue.getTime())) {
-        return dateValue.getTime();
-      }
-    }
-
-    const maxAge = Number(sessionData?.cookie?.maxAge);
-    if (Number.isFinite(maxAge) && maxAge > 0) {
-      return Date.now() + maxAge;
-    }
-
-    return null;
+  async function pruneExpiredSessions(now = Date.now()) {
+    await sessionsCollection.deleteMany({
+      expiresAt: { $ne: null, $lte: now }
+    });
   }
 
-  function pruneExpiredSessions(now = Date.now()) {
-    deleteExpiredSessionsRow.run(now);
-  }
+  async function readSession(sid) {
+    await pruneExpiredSessions();
+    const row = await sessionsCollection.findOne(
+      { _id: sid },
+      { projection: { _id: 0, data: 1, expiresAt: 1 } }
+    );
 
-  function readSession(sid) {
-    pruneExpiredSessions();
-    const row = getSessionRow.get(sid);
     if (!row) {
       return null;
     }
 
     if (row.expiresAt && row.expiresAt > 0 && row.expiresAt <= Date.now()) {
-      deleteSessionRow.run(sid);
+      await sessionsCollection.deleteOne({ _id: sid });
       return null;
     }
 
-    try {
-      return JSON.parse(row.data);
-    } catch (_error) {
-      deleteSessionRow.run(sid);
-      return null;
+    return clonePlain(row.data);
+  }
+
+  async function writeSession(sid, sessionData) {
+    await pruneExpiredSessions();
+    await sessionsCollection.replaceOne(
+      { _id: sid },
+      {
+        _id: sid,
+        sid,
+        expiresAt: getSessionExpiry(sessionData),
+        data: clonePlain(sessionData || {}),
+        updatedAt: new Date().toISOString()
+      },
+      { upsert: true }
+    );
+  }
+
+  async function deleteSession(sid) {
+    await sessionsCollection.deleteOne({ _id: sid });
+  }
+
+  async function initializeDefaults() {
+    const [settingsRow, departmentAdminCount] = await Promise.all([
+      settingsCollection.findOne({ _id: "portal_settings" }, { projection: { _id: 1 } }),
+      departmentAdminsCollection.countDocuments()
+    ]);
+
+    if (!settingsRow) {
+      await writeSettings(createDefaultSettings());
+    }
+
+    if (!departmentAdminCount) {
+      await writeDepartmentAdmins(createDefaultDepartmentAdmins());
     }
   }
 
-  function writeSession(sid, sessionData) {
-    pruneExpiredSessions();
-    upsertSessionRow.run({
-      sid,
-      expiresAt: getSessionExpiry(sessionData),
-      data: JSON.stringify(sessionData || {}),
-      updatedAt: new Date().toISOString()
-    });
-  }
-
-  function deleteSession(sid) {
-    deleteSessionRow.run(sid);
-  }
-
-  function initializeDefaults() {
-    if (!getSettingsRow.get("portal_settings")) {
-      writeSettings(createDefaultSettings());
-    }
-
-    if ((countDepartmentAdmins.get().total || 0) === 0) {
-      writeDepartmentAdmins(createDefaultDepartmentAdmins());
-    }
-  }
-
-  initializeDefaults();
+  await initializeDefaults();
 
   return {
-    databaseFile,
+    client,
+    databaseName,
     readSettings,
     writeSettings,
     readDepartmentAdmins,

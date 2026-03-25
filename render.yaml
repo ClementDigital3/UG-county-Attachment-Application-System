@@ -17,6 +17,10 @@ services:
         generateValue: true
       - key: SESSION_COOKIE_MAX_AGE_HOURS
         value: "12"
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB_NAME
+        value: attachment_application_system
       - key: FILE_STORAGE_PROVIDER
         value: local
       - key: ADMIN_PORTAL_PATH

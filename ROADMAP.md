@@ -74,7 +74,7 @@ Status:
 - [ ] Planned
 
 Goal:
-- move from SQLite file-based storage to PostgreSQL for hosted production use
+- evaluate MongoDB vs PostgreSQL for long-term hosted production use
 
 Why it matters:
 - better persistence for hosted deployments
@@ -236,7 +236,7 @@ Why it matters:
 
 ## Working Notes
 
-- SQLite is the current active database.
-- Sessions are also stored in SQLite.
-- On free Render, local database files and uploads are still temporary.
-- For real hosted use, cloud file storage and a managed database are the next major upgrades.
+- MongoDB is the current active database.
+- Sessions are also stored in MongoDB.
+- On free Render, local uploaded files are still temporary unless cloud storage is enabled.
+- For real hosted use, cloud file storage and managed database backups are the next major upgrades.

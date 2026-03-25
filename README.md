@@ -36,28 +36,28 @@ You can present the system in this order:
 
 ## Database Explanation For Presentation
 
-This system now uses SQLite as its database.
+This system now uses MongoDB as its database.
 
 You can explain it like this:
 
 - the first version used JSON files for storage during early development
-- the current version uses SQLite, which is a real relational database
-- SQLite stores:
+- the current version uses MongoDB
+- MongoDB stores:
   - student applications
   - portal settings
   - department access records
-- SQLite was chosen because it is lightweight, easy to deploy, and suitable for the current project stage
+- login sessions
+- MongoDB was chosen so the system can run on a managed database service instead of depending on a local database file
 
 If asked how the application connects to the database, explain:
 
-- the Node.js backend connects directly to a SQLite database file
-- the database is accessed through the `better-sqlite3` package
+- the Node.js backend connects directly to MongoDB through the `mongodb` driver
 - the application reads and writes data through a dedicated storage layer
 
 If asked about future growth, explain:
 
-- SQLite is appropriate for the current prototype and demonstration stage
-- for larger production use with many simultaneous users, the next step would be PostgreSQL or another managed server database
+- MongoDB now removes the local database-file dependency from the hosted app
+- for larger production use with stricter relational reporting requirements, PostgreSQL is still a valid future option
 
 ## Short Demo Script
 
@@ -84,7 +84,7 @@ This project currently covers:
 - HR management UI for department review records.
 - Reports and analytics pages for HR and department review scope.
 - Period control, department slot control, and institution fairness control.
-- SQLite database storage for applications, settings, department accounts, and login sessions.
+- MongoDB storage for applications, settings, department accounts, and login sessions.
 - File storage abstraction with local storage by default and optional Cloudinary cloud storage.
 
 ## End-To-End Workflow
@@ -345,7 +345,7 @@ Completed UI work:
 
 ### Department access records
 
-Department access records are stored in the SQLite database.
+Department access records are stored in MongoDB.
 
 Default first-run pattern:
 
@@ -386,7 +386,7 @@ Do not store real production credentials in `README.md`.
 
 Main project data files:
 
-- `data/attachment-application-system.db` -> SQLite database for applications, settings, department access records, and login sessions
+- `MongoDB` -> applications, settings, department access records, and login sessions
 - `uploads/` -> uploaded documents and joining letters when local file storage is active
 
 ## Environment Configuration
@@ -399,7 +399,8 @@ Current important keys:
 - `SESSION_SECRET`
 - `SESSION_COOKIE_MAX_AGE_HOURS`
 - `STORAGE_ROOT`
-- `DATABASE_FILE`
+- `MONGODB_URI`
+- `MONGODB_DB_NAME`
 - `FILE_STORAGE_PROVIDER`
 - `CLOUDINARY_CLOUD_NAME`
 - `CLOUDINARY_API_KEY`
@@ -418,13 +419,13 @@ Current important keys:
 
 - Leave `STORAGE_ROOT` empty for local development.
 - For Render with a persistent disk, set `STORAGE_ROOT=/var/data`.
-- The app will store the SQLite database and uploaded files inside the configured storage root.
+- The app will store uploaded files inside the configured storage root when local file storage is active.
 
-### Database file
+### MongoDB
 
-- Leave `DATABASE_FILE` empty to use the default path:
-  - `<storage_root>/data/attachment-application-system.db`
-- Set `DATABASE_FILE` only if you want the database file in a different location.
+- Set `MONGODB_URI` to your MongoDB connection string.
+- Set `MONGODB_DB_NAME` to the database name you want the app to use.
+- The app will not start if `MONGODB_URI` is missing.
 
 ### File storage
 
@@ -439,7 +440,7 @@ Current important keys:
 
 ### Session storage
 
-- HR and department review sessions are stored in the SQLite database instead of Express MemoryStore.
+- HR and department review sessions are stored in MongoDB instead of Express MemoryStore.
 - This removes the default session warning and makes session handling consistent with the rest of the system.
 - Session lifetime is controlled by:
   - `SESSION_COOKIE_MAX_AGE_HOURS`
@@ -484,12 +485,14 @@ This repository now includes `render.yaml` for Render deployment.
   - set `STORAGE_ROOT=/var/data`
 - On free Render without a disk:
   - leave `STORAGE_ROOT` empty
-  - the SQLite database will run, but data will not persist across rebuilds or resets
+  - MongoDB data will still persist, but local uploaded files will not
 
 ### Required Render environment values
 
 - `SESSION_SECRET`
 - `DISPLAY_TIMEZONE`
+- `MONGODB_URI`
+- `MONGODB_DB_NAME`
 - `HR_USERNAME`
 - `HR_PASSWORD`
 - `DEFAULT_DEPARTMENT_ADMIN_PASSWORD`
@@ -499,7 +502,6 @@ This repository now includes `render.yaml` for Render deployment.
 - `PRESENTATION_LOGIN_USERNAME`
 - `PRESENTATION_LOGIN_PASSWORD`
 - `ALLOW_ANY_TEST_UPLOADS`
-- `DATABASE_FILE` if you want a custom SQLite path
 - `SESSION_COOKIE_MAX_AGE_HOURS`
 - `FILE_STORAGE_PROVIDER`
 - `CLOUDINARY_CLOUD_NAME`
@@ -507,18 +509,16 @@ This repository now includes `render.yaml` for Render deployment.
 - `CLOUDINARY_API_SECRET`
 - `CLOUDINARY_FOLDER`
 
-### Why the disk is required
+### Why the disk is still useful
 
-The application writes the SQLite database file and, when local storage is active, uploaded files to the filesystem. Without a persistent disk, redeploys or restarts can remove:
+The application now stores database data in MongoDB. When local file storage is active, uploaded files still go to the filesystem. Without a persistent disk, redeploys or restarts can remove:
 
-- applications
-- portal settings
-- department access bootstrap data
-- login sessions
 - uploaded combined documents
 - uploaded joining letters
+- generated county-endorsed NITA files
+- NITA re-submissions when they are stored locally
 
-If `FILE_STORAGE_PROVIDER=cloudinary` is configured correctly, uploaded documents and joining letters can persist in Cloudinary even when Render local storage is temporary. The SQLite database still needs a persistent disk or a managed database for full hosted persistence.
+If `FILE_STORAGE_PROVIDER=cloudinary` is configured correctly, uploaded documents and joining letters can persist in Cloudinary even when Render local storage is temporary.
 
 ## What Has Been Removed
 
@@ -536,13 +536,13 @@ Removed or intentionally not active:
 - Keep real credentials only in local `.env`
 - `.env` should not be pushed to GitHub
 - do not expose production usernames/passwords in documentation
-- SQLite is a real database and is better than JSON files for this project stage
-- on free Render without a persistent disk, the SQLite file is still temporary
+- MongoDB is now the active application database
+- on free Render without a persistent disk, local uploaded files are still temporary unless Cloudinary is used
 
 ## Recommended Future Work
 
 - See the full build backlog in [ROADMAP.md](ROADMAP.md)
-- move from SQLite file storage to PostgreSQL or another managed database for multi-user production deployment
+- improve hosted MongoDB deployment and backup strategy
 - add audit logs
 - improve institution balancing dashboards per department
 - add stronger production authentication and authorization
