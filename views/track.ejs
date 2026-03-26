@@ -14,11 +14,11 @@
 
         <form action="/track" method="post" class="form-grid <%= result ? '' : 'auth-form' %>">
           <label class="full-width">
-            ID Number / School ID Number
+            ID Number
             <input
               type="text"
               name="idNumber"
-              placeholder="12345678 or SC/ICT/2024/015"
+              placeholder="12345678"
               value="<%= formData.idNumber || '' %>"
               required
             />
@@ -51,7 +51,7 @@
 
           <div class="dashboard-quick-grid">
             <div class="summary">
-              <p><strong>Tracking / Placement Number:</strong> <%= result.placementNumber || result.id %></p>
+              <p><strong>Tracking Number:</strong> <%= result.placementNumber || result.id %></p>
               <p><strong>Name:</strong> <%= result.fullName %></p>
               <p><strong>Email:</strong> <%= result.email %></p>
             </div>

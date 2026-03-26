@@ -748,7 +748,7 @@ function ensureApplicationDefaults(application) {
   return {
     ...application,
     status: normalizeApplicationStatus(application.status),
-    placementNumber: application.placementNumber || application.id || "",
+    placementNumber: getTrackingNumber(application),
     idNumber: (application.idNumber || "").toString(),
     appliedDepartment,
     assignedDepartment: application.assignedDepartment || "",
@@ -1719,7 +1719,7 @@ function convertApplicationsToCsv(applications) {
 
   const rows = applications.map((application) => [
     application.id || "",
-    application.placementNumber || application.id || "",
+    getTrackingNumber(application),
     application.fullName || "",
     application.email || "",
     application.phone || "",
@@ -2053,37 +2053,99 @@ function buildStudentTimeline(application) {
   ];
 }
 
-function generateApplicationId(applications) {
-  let id = "";
-
-  do {
-    id = `ATT-${Date.now()}-${crypto.randomInt(100, 1000)}`;
-  } while (applications.some((item) => (item.id || "").toUpperCase() === id));
-
-  return id;
+function normalizeIdNumber(idNumber) {
+  return (idNumber || "").toString().trim().toLowerCase();
 }
 
-function generatePlacementNumber(applications) {
-  const year = new Date().getFullYear();
-  let placementNumber = "";
+function getIdNumberDigits(idNumber) {
+  return (idNumber || "").toString().trim().replace(/[^\d]/g, "");
+}
 
-  do {
-    placementNumber = `UG-ATT-${year}-${crypto.randomInt(100000, 1000000)}`;
-  } while (
-    applications.some(
-      (item) => (item.placementNumber || "").toUpperCase() === placementNumber
-    )
-  );
+function getIdNumberValidationError(idNumber) {
+  const raw = (idNumber || "").toString().trim();
+  if (!raw) {
+    return "Please enter the applicant ID number.";
+  }
 
-  return placementNumber;
+  if (!/^\d{5,12}$/.test(raw)) {
+    return "Please enter a valid ID number using digits only.";
+  }
+
+  return "";
+}
+
+function buildTrackingNumberBase(idNumber) {
+  const digits = getIdNumberDigits(idNumber);
+  return digits ? `ATT-${digits}` : "";
+}
+
+function isTrackingReferenceInUse(applications, reference, excludeId = "") {
+  const probe = (reference || "").toString().trim().toUpperCase();
+  if (!probe) {
+    return false;
+  }
+
+  return applications.some((item) => {
+    if ((item?.id || "").toString() === excludeId) {
+      return false;
+    }
+
+    const itemId = (item?.id || "").toString().trim().toUpperCase();
+    const itemTracking = (item?.placementNumber || "").toString().trim().toUpperCase();
+    return itemId === probe || itemTracking === probe;
+  });
+}
+
+function generateApplicationId(applications, idNumber) {
+  const base = buildTrackingNumberBase(idNumber);
+  if (!base) {
+    let id = "";
+
+    do {
+      id = `ATT-${Date.now()}-${crypto.randomInt(100, 1000)}`;
+    } while (applications.some((item) => (item.id || "").toUpperCase() === id));
+
+    return id;
+  }
+
+  let candidate = base;
+  let suffix = 2;
+  while (isTrackingReferenceInUse(applications, candidate)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+
+  return candidate;
+}
+
+function generatePlacementNumber(applications, idNumber, excludeId = "") {
+  const base = buildTrackingNumberBase(idNumber);
+  if (!base) {
+    return "";
+  }
+
+  let candidate = base;
+  let suffix = 2;
+  while (isTrackingReferenceInUse(applications, candidate, excludeId)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+
+  return candidate;
 }
 
 function getTrackingNumber(application) {
-  return (application?.placementNumber || application?.id || "").toString().trim();
-}
+  const storedTracking = (application?.placementNumber || "").toString().trim();
+  if (/^ATT-/i.test(storedTracking)) {
+    return storedTracking;
+  }
 
-function normalizeIdNumber(idNumber) {
-  return (idNumber || "").toString().trim().toLowerCase();
+  const derivedTracking = buildTrackingNumberBase(application?.idNumber);
+  if (derivedTracking) {
+    return derivedTracking;
+  }
+
+  return (storedTracking || application?.id || "").toString().trim();
 }
 
 function matchesTrackingNumber(application, trackingNumber) {
@@ -2097,8 +2159,9 @@ function matchesTrackingNumber(application, trackingNumber) {
     .toString()
     .trim()
     .toLowerCase();
+  const derivedTrackingNumber = getTrackingNumber(application).toLowerCase();
 
-  return appId === probe || placementNumber === probe;
+  return appId === probe || placementNumber === probe || derivedTrackingNumber === probe;
 }
 
 function findApplicationIndexByTrackingAndEmail(applications, trackingNumber, email) {
@@ -2654,7 +2717,7 @@ function getNotificationGreeting(application) {
 }
 
 function buildApplicationNotificationContent(req, application, eventType) {
-  const trackingNumber = application.placementNumber || application.id;
+  const trackingNumber = getTrackingNumber(application);
   const dashboardUrl = getStudentDashboardUrl(req, application);
   const rejectedDocuments = getRejectedDocuments(application);
   const dashboardStatus = getStudentDashboardStatus(application, rejectedDocuments);
@@ -3308,6 +3371,16 @@ app.post("/apply", async (req, res) => {
       });
     }
 
+    const idNumberError = getIdNumberValidationError(finalIdNumber);
+    if (idNumberError) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: idNumberError,
+        formData
+      });
+    }
+
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
       cleanupUploadedFiles(files);
       return renderApplyPage(res, {
@@ -3411,8 +3484,8 @@ app.post("/apply", async (req, res) => {
     }
 
     return (async () => {
-      const applicationId = generateApplicationId(applications);
-      const placementNumber = generatePlacementNumber(applications);
+      const applicationId = generateApplicationId(applications, finalIdNumber);
+      const placementNumber = generatePlacementNumber(applications, finalIdNumber) || applicationId;
       const combinedUpload = files[COMBINED_DOCUMENT_FIELD]?.[0] || null;
       const nitaUpload = files[NITA_DOCUMENT_FIELD]?.[0] || null;
       const storedAt = new Date().toISOString();
@@ -5276,6 +5349,15 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, async (req, res)
     });
   }
 
+  const idNumberError = getIdNumberValidationError(draftApplication.idNumber);
+  if (idNumberError) {
+    return renderAdminDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: idNumberError
+    });
+  }
+
   if (!isValidPeriod) {
     return renderAdminDetailPage(res, {
       statusCode: 400,
@@ -5330,6 +5412,10 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, async (req, res)
     });
   }
 
+  draftApplication.placementNumber =
+    generatePlacementNumber(applications, draftApplication.idNumber, draftApplication.id) ||
+    draftApplication.placementNumber ||
+    draftApplication.id;
   draftApplication.updatedAt = new Date().toISOString();
   applications[index] = draftApplication;
   await writeApplications(applications);

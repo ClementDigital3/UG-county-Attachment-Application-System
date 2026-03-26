@@ -9,7 +9,7 @@
         </div>
 
         <div class="summary">
-          <p><strong>Tracking / Placement Number:</strong> <%= application.placementNumber || application.id %></p>
+          <p><strong>Tracking Number:</strong> <%= application.placementNumber || application.id %></p>
           <p><strong>Name:</strong> <%= application.fullName %></p>
           <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
           <p><strong>Assigned Department:</strong> <%= application.assignedDepartment ? getDepartmentLabel(application.assignedDepartment) : 'Not assigned yet' %></p>

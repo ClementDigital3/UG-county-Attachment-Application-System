@@ -33,7 +33,7 @@
 
         <div class="summary">
           <p><strong>ID:</strong> <%= application.id %></p>
-          <p><strong>Tracking / Placement Number:</strong> <%= application.placementNumber || application.id %></p>
+          <p><strong>Tracking Number:</strong> <%= application.placementNumber || application.id %></p>
           <p><strong>Name:</strong> <%= application.fullName %></p>
           <p><strong>Email:</strong> <%= application.email %></p>
           <p><strong>Phone:</strong> <%= application.phone %></p>
@@ -70,12 +70,12 @@
           </label>
 
           <label>
-            ID Number / School ID Number *
+            ID Number *
             <input
               type="text"
               name="idNumber"
               value="<%= application.idNumber || '' %>"
-              placeholder="Example: 12345678 or SC/ICT/2024/015"
+              placeholder="Example: 12345678"
               required
             />
           </label>
