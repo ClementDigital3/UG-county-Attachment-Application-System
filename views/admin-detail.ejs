@@ -46,6 +46,9 @@
           <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
           <p><strong>Record State:</strong> <%= application.isFrozen ? 'Frozen' : 'Active' %></p>
           <p><strong>Submitted:</strong> <%= formatDate(application.submittedAt) %></p>
+          <p><strong>Terms Accepted:</strong> <%= application.termsAcceptance && application.termsAcceptance.agreed ? `Yes - ${formatDate(application.termsAcceptance.agreedAt)}` : 'Not recorded' %></p>
+          <p><strong>Recorded Source:</strong> <%= application.termsAcceptance && application.termsAcceptance.ipAddress ? application.termsAcceptance.ipAddress : 'Not recorded' %></p>
+          <p><strong>Terms Version:</strong> <%= application.termsAcceptance && application.termsAcceptance.version ? application.termsAcceptance.version : 'Not recorded' %></p>
           <p><strong>Cover Note:</strong> <%= application.coverNote || 'No cover note.' %></p>
         </div>
 

@@ -1,0 +1,62 @@
+<%- include("partials/layout-open", { pageTitle: "HR Account Settings", activePortal: "hr" }) %>
+<main class="container">
+      <section class="card">
+        <div class="row-between">
+          <h1>HR Account Settings</h1>
+          <div class="actions tight">
+            <a class="btn secondary" href="/hr/departments">Department Review</a>
+            <a class="btn secondary" href="/hr/communications">Communications</a>
+            <a class="btn secondary" href="/hr/reports">Reports</a>
+            <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+            <a class="btn secondary" href="/hr/applications">HR Queue</a>
+            <form action="/hr/logout" method="post">
+              <button class="btn secondary" type="submit">Logout</button>
+            </form>
+          </div>
+        </div>
+
+        <p>Use this page to update the HR login username and password. Enter the current password to authorize any account change.</p>
+
+        <div class="summary">
+          <p><strong>HR Username:</strong> <%= hrUsername %></p>
+          <p><strong>Password last updated:</strong> <%= updatedAt ? formatDate(updatedAt) : 'Not available' %></p>
+        </div>
+
+        <% if (error) { %>
+          <div class="alert"><%= error %></div>
+        <% } %>
+
+        <% if (notice) { %>
+          <div class="notice"><%= notice %></div>
+        <% } %>
+
+        <form action="/hr/account/password" method="post" class="form-grid">
+          <label>
+            HR Username
+            <input type="text" name="username" value="<%= hrUsername %>" required />
+          </label>
+
+          <label>
+            Current Password
+            <input type="password" name="currentPassword" required />
+          </label>
+
+          <label>
+            New Password
+            <input type="password" name="newPassword" minlength="6" />
+          </label>
+
+          <label>
+            Confirm New Password
+            <input type="password" name="confirmPassword" minlength="6" />
+          </label>
+
+          <div class="actions">
+            <button class="btn" type="submit">Update Password</button>
+            <a class="btn secondary" href="/hr/applications">Back to HR Queue</a>
+          </div>
+        </form>
+      </section>
+    </main>
+<%- include("partials/layout-close") %>

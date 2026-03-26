@@ -9,6 +9,7 @@ const crypto = require("crypto");
 const { createDatabase } = require("./database");
 const { createFileStorage } = require("./file-storage");
 const { createCountyEndorsedNitaPdf } = require("./county-nita-pdf");
+const { createNotificationService } = require("./notification-service");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -188,6 +189,15 @@ const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "";
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || "";
 const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || "";
 const CLOUDINARY_FOLDER = process.env.CLOUDINARY_FOLDER || "attachment-application-system";
+const SMTP_HOST = process.env.SMTP_HOST || "";
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_SECURE = process.env.SMTP_SECURE || "false";
+const SMTP_USER = process.env.SMTP_USER || "";
+const SMTP_PASS = process.env.SMTP_PASS || "";
+const NOTIFICATIONS_EMAIL_FROM = process.env.NOTIFICATIONS_EMAIL_FROM || "";
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
+const TWILIO_FROM_NUMBER = process.env.TWILIO_FROM_NUMBER || "";
 const COUNTY_ATTACHMENT_PROVIDER_NAME =
   process.env.COUNTY_ATTACHMENT_PROVIDER_NAME || "County Government of Uasin Gishu";
 const COUNTY_ATTACHMENT_PROVIDER_POSTAL_ADDRESS =
@@ -218,10 +228,23 @@ const OTHER_INSTITUTION_VALUE = "__OTHER__";
 const APPLICATION_REQUIREMENTS = [
   "Choose the department first, then select your institution before filling the rest of the form.",
   "Prepare a brief cover note introducing yourself and explaining why you need the attachment.",
-  "Prepare one combined scanned document containing passport photo, school cover letter, insurance copy, and both sides of your national ID or school ID.",
+  "Prepare one combined scanned document containing passport photo, school cover letter, a valid insurance copy from a recognisable insurance provider, and both sides of your national ID or school ID.",
   "Prepare the NITA document separately with your school stamp.",
   "Have a working email address, phone number, course/program, and attachment dates ready."
 ];
+
+const APPLICATION_TERMS = [
+  "I confirm that all information and documents submitted to the County Government of Uasin Gishu are true, correct, complete, and belong to me.",
+  "I understand that false information, forged documents, altered records, or duplicate submissions may lead to rejection, freezing, withdrawal, or removal from the attachment programme.",
+  "I understand that attachment placement depends on county intake windows, departmental capacity, and the institution fairness distribution rule applied by the county.",
+  "I understand that the County Government of Uasin Gishu does not accept liability for injuries, illness, medical costs, or other health-related situations during attachment, and I must maintain valid insurance cover from a recognisable provider.",
+  "I agree to follow all lawful instructions, reporting procedures, and attachment requirements issued by the County Government of Uasin Gishu during the attachment period.",
+  "I agree to maintain professionalism, discipline, confidentiality, respect, teamwork, and proper conduct throughout the attachment placement.",
+  "I understand that county attachment is a learning opportunity only and does not create a salary, wage, allowance, employment contract, or other payment obligation by the county.",
+  "I understand that I am responsible for checking the student dashboard, email notifications, correction requests, NITA instructions, and joining-letter updates through the official county system.",
+  "I understand that failure to comply with county attachment rules or conduct requirements may lead to withdrawal of placement or other county action."
+];
+const APPLICATION_TERMS_VERSION = "County Attachment Terms v3";
 
 function loadKenyaInstitutionGroups() {
   if (!fs.existsSync(KENYA_INSTITUTIONS_FILE)) {
@@ -281,6 +304,14 @@ function createDefaultDepartmentCapacities(defaultCapacity = 10) {
   }, {});
 }
 
+function createDefaultHrAccount() {
+  return {
+    username: normalizeAdminUsername(HR_USERNAME),
+    password: (HR_PASSWORD || "").toString(),
+    updatedAt: new Date().toISOString()
+  };
+}
+
 function createDefaultSettings() {
   const departmentCapacities = createDefaultDepartmentCapacities();
   const totalCapacity = Object.values(departmentCapacities).reduce((sum, value) => sum + value, 0);
@@ -294,7 +325,9 @@ function createDefaultSettings() {
     institutionMaxSharePercent: DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
     landingTickerText: "Attachment application dates will appear here once HR opens the next county window.",
     applicationDeadline: "",
+    communicationBroadcasts: [],
     departmentCapacities,
+    hrAccount: createDefaultHrAccount(),
     updatedAt: new Date().toISOString()
   };
 }
@@ -321,6 +354,18 @@ const fileStorage = createFileStorage({
   cloudinaryApiKey: CLOUDINARY_API_KEY,
   cloudinaryApiSecret: CLOUDINARY_API_SECRET,
   cloudinaryFolder: CLOUDINARY_FOLDER
+});
+
+const notificationService = createNotificationService({
+  smtpHost: SMTP_HOST,
+  smtpPort: SMTP_PORT,
+  smtpSecure: SMTP_SECURE,
+  smtpUser: SMTP_USER,
+  smtpPass: SMTP_PASS,
+  emailFrom: NOTIFICATIONS_EMAIL_FROM,
+  twilioAccountSid: TWILIO_ACCOUNT_SID,
+  twilioAuthToken: TWILIO_AUTH_TOKEN,
+  twilioFromNumber: TWILIO_FROM_NUMBER
 });
 
 class MongoSessionStore extends session.Store {
@@ -632,6 +677,71 @@ function normalizeStoredDocuments(documents) {
   return normalized;
 }
 
+function normalizeNotificationEntry(entry) {
+  const channel = (entry?.channel || "").toString().trim().toLowerCase();
+  const status = (entry?.status || "").toString().trim().toLowerCase();
+
+  return {
+    channel: channel === "sms" ? "sms" : "email",
+    status: ["sent", "failed", "skipped"].includes(status) ? status : "skipped",
+    subject: (entry?.subject || "").toString(),
+    message: (entry?.message || "").toString(),
+    recipient: (entry?.recipient || "").toString(),
+    reason: (entry?.reason || "").toString(),
+    initiatedBy: (entry?.initiatedBy || "system").toString(),
+    eventType: (entry?.eventType || "manual").toString(),
+    sentAt: (entry?.sentAt || new Date().toISOString()).toString()
+  };
+}
+
+function normalizeNotificationHistory(history) {
+  return (Array.isArray(history) ? history : [])
+    .map((entry) => normalizeNotificationEntry(entry))
+    .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+}
+
+function normalizeTermsAcceptanceRecord(record) {
+  const agreedAt = (record?.agreedAt || "").toString().trim();
+  const ipAddress = (record?.ipAddress || "").toString().trim();
+  const version = (record?.version || APPLICATION_TERMS_VERSION).toString().trim();
+
+  return {
+    agreed: record?.agreed === true,
+    agreedAt: agreedAt || null,
+    ipAddress: ipAddress || null,
+    version: version || APPLICATION_TERMS_VERSION
+  };
+}
+
+function normalizeBroadcastEntry(entry) {
+  const channels = Array.from(
+    new Set(
+      (Array.isArray(entry?.channels) ? entry.channels : [])
+        .map((channel) => (channel || "").toString().trim().toLowerCase())
+        .filter((channel) => channel === "email" || channel === "sms")
+    )
+  );
+
+  return {
+    id: (entry?.id || crypto.randomUUID()).toString(),
+    subject: (entry?.subject || "").toString(),
+    message: (entry?.message || "").toString(),
+    channels,
+    initiatedBy: (entry?.initiatedBy || "hr").toString(),
+    sentAt: (entry?.sentAt || new Date().toISOString()).toString(),
+    totalTargets: Number(entry?.totalTargets || 0),
+    deliveredCount: Number(entry?.deliveredCount || 0),
+    failedCount: Number(entry?.failedCount || 0),
+    skippedCount: Number(entry?.skippedCount || 0)
+  };
+}
+
+function normalizeBroadcastHistory(history) {
+  return (Array.isArray(history) ? history : [])
+    .map((entry) => normalizeBroadcastEntry(entry))
+    .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+}
+
 function ensureApplicationDefaults(application) {
   const appliedDepartment = application.appliedDepartment || application.department || "";
 
@@ -653,6 +763,8 @@ function ensureApplicationDefaults(application) {
     nitaResubmittedDocument: normalizeStoredFileEntry(application.nitaResubmittedDocument),
     nitaWorkflow: normalizeNitaWorkflow(application.nitaWorkflow),
     joiningLetter: normalizeStoredFileEntry(application.joiningLetter),
+    notificationHistory: normalizeNotificationHistory(application.notificationHistory),
+    termsAcceptance: normalizeTermsAcceptanceRecord(application.termsAcceptance),
     isFrozen: Boolean(application.isFrozen),
     frozenAt: application.frozenAt || null,
     frozenByRole: (application.frozenByRole || "").toString(),
@@ -701,6 +813,8 @@ async function readSettings() {
     .toString()
     .trim();
   normalized.applicationDeadline = (parsed?.applicationDeadline || "").toString().trim();
+  normalized.communicationBroadcasts = normalizeBroadcastHistory(parsed?.communicationBroadcasts);
+  normalized.hrAccount = normalizeHrAccount(parsed?.hrAccount, normalized.hrAccount);
   normalized.updatedAt = parsed?.updatedAt || normalized.updatedAt;
   return normalized;
 }
@@ -746,6 +860,14 @@ function getCapacitySummary(settings, applications) {
 
 function normalizeAdminUsername(username) {
   return (username || "").toString().trim().toLowerCase();
+}
+
+function normalizeHrAccount(account, fallback = createDefaultHrAccount()) {
+  return {
+    username: normalizeAdminUsername(account?.username) || fallback.username,
+    password: (account?.password || "").toString() || fallback.password,
+    updatedAt: (account?.updatedAt || fallback.updatedAt || new Date().toISOString()).toString()
+  };
 }
 
 function isPresentationLogin(usernameInput, passwordInput) {
@@ -818,9 +940,12 @@ async function findAdminUserByCredentials(usernameInput, passwordInput) {
     return null;
   }
 
-  if (username === normalizeAdminUsername(HR_USERNAME) && password === HR_PASSWORD) {
+  const settings = await readSettings();
+  const hrAccount = normalizeHrAccount(settings?.hrAccount);
+
+  if (username === hrAccount.username && password === hrAccount.password) {
     return {
-      username,
+      username: hrAccount.username,
       role: "hr_admin",
       department: null,
       displayName: "HR Administrator"
@@ -832,6 +957,80 @@ async function findAdminUserByCredentials(usernameInput, passwordInput) {
   );
 
   return departmentAdmin || null;
+}
+
+async function updateHrAccount({
+  username,
+  currentPassword,
+  newPassword,
+  confirmPassword
+}) {
+  const nextUsername = normalizeAdminUsername(username);
+  const current = (currentPassword || "").toString();
+  const next = (newPassword || "").toString();
+  const confirm = (confirmPassword || "").toString();
+  const settings = await readSettings();
+  const hrAccount = normalizeHrAccount(settings?.hrAccount);
+
+  if (!current) {
+    return { error: "Current password is required." };
+  }
+
+  if (current !== hrAccount.password) {
+    return { error: "Current password is incorrect." };
+  }
+
+  if (!nextUsername) {
+    return { error: "HR username is required." };
+  }
+
+  if (!/^[a-z0-9_]{3,40}$/.test(nextUsername)) {
+    return {
+      error: "HR username must be 3 to 40 characters and use only lowercase letters, numbers, or underscores."
+    };
+  }
+
+  if (nextUsername === normalizeAdminUsername(PRESENTATION_LOGIN_USERNAME)) {
+    return { error: "That username is reserved by the presentation login settings." };
+  }
+
+  const departmentAdmins = await readDepartmentAdmins();
+  const usernameInUse = departmentAdmins.some((admin) => admin.username === nextUsername);
+  if (usernameInUse) {
+    return { error: "That username is already used by a department access record." };
+  }
+
+  const changingPassword = Boolean(next || confirm);
+  if (changingPassword) {
+    if (next.length < 6) {
+      return { error: "New password must be at least 6 characters long." };
+    }
+
+    if (next !== confirm) {
+      return { error: "New password and confirm password do not match." };
+    }
+  }
+
+  const nextPassword = changingPassword ? next : hrAccount.password;
+  if (nextUsername === hrAccount.username && nextPassword === hrAccount.password) {
+    return { error: "No account changes were provided." };
+  }
+
+  const updated = {
+    ...settings,
+    hrAccount: {
+      username: nextUsername,
+      password: nextPassword,
+      updatedAt: new Date().toISOString()
+    },
+    updatedAt: new Date().toISOString()
+  };
+
+  await writeSettings(updated);
+  return {
+    success: true,
+    hrAccount: updated.hrAccount
+  };
 }
 
 async function validateDepartmentAdminInput({
@@ -2347,6 +2546,306 @@ function getViewNitaDocumentDefinition() {
   };
 }
 
+function appendNotificationEntries(application, entries) {
+  const existing = normalizeNotificationHistory(application?.notificationHistory);
+  const nextEntries = (Array.isArray(entries) ? entries : []).map((entry) =>
+    normalizeNotificationEntry(entry)
+  );
+  application.notificationHistory = normalizeNotificationHistory([...existing, ...nextEntries]);
+  return application.notificationHistory;
+}
+
+function getNotificationOutcomeSummary(entries) {
+  const results = Array.isArray(entries) ? entries : [];
+  const sent = results.filter((entry) => entry.status === "sent").length;
+  const failed = results.filter((entry) => entry.status === "failed").length;
+  const skipped = results.filter((entry) => entry.status === "skipped").length;
+
+  return {
+    sent,
+    failed,
+    skipped,
+    hasDelivered: sent > 0,
+    hasAnyAttempt: results.length > 0
+  };
+}
+
+function buildBroadcastRecipientTargets(applications) {
+  const targets = new Map();
+
+  (Array.isArray(applications) ? applications : []).forEach((item, index) => {
+    const application = ensureApplicationDefaults(item);
+    const email = (application.email || "").toString().trim().toLowerCase();
+    const phone = (application.phone || "").toString().trim();
+    const key = `${email}::${phone}`;
+
+    if (!email && !phone) {
+      return;
+    }
+
+    if (!targets.has(key)) {
+      targets.set(key, {
+        email,
+        phone,
+        indexes: []
+      });
+    }
+
+    targets.get(key).indexes.push(index);
+  });
+
+  return Array.from(targets.values());
+}
+
+function createBroadcastHistoryEntry({
+  subject,
+  message,
+  channels,
+  initiatedBy,
+  totalTargets,
+  deliveredCount,
+  failedCount,
+  skippedCount
+}) {
+  return normalizeBroadcastEntry({
+    subject,
+    message,
+    channels,
+    initiatedBy,
+    totalTargets,
+    deliveredCount,
+    failedCount,
+    skippedCount,
+    sentAt: new Date().toISOString()
+  });
+}
+
+function getRequestBaseUrl(req) {
+  const forwardedProto = (req.headers["x-forwarded-proto"] || "").toString().split(",")[0].trim();
+  const protocol = forwardedProto || req.protocol || "http";
+  const host = (req.get("host") || "").toString().trim();
+  return host ? `${protocol}://${host}` : "";
+}
+
+function getRequestIpAddress(req) {
+  const forwarded = (req.headers["x-forwarded-for"] || "").toString().split(",")[0].trim();
+  return forwarded || (req.ip || "").toString().trim() || null;
+}
+
+function getStudentDashboardUrl(req, application) {
+  const trackingNumber = (application?.placementNumber || application?.id || "").toString().trim();
+  const email = (application?.email || "").toString().trim();
+
+  if (!trackingNumber || !email) {
+    return "";
+  }
+
+  const query = new URLSearchParams({
+    trackingNumber,
+    email
+  }).toString();
+  const relativeUrl = `/track?${query}`;
+  const baseUrl = getRequestBaseUrl(req);
+  return baseUrl ? `${baseUrl}${relativeUrl}` : relativeUrl;
+}
+
+function getNotificationGreeting(application) {
+  return `Hello ${(application?.fullName || "Applicant").toString().trim()},`;
+}
+
+function buildApplicationNotificationContent(req, application, eventType) {
+  const trackingNumber = application.placementNumber || application.id;
+  const dashboardUrl = getStudentDashboardUrl(req, application);
+  const rejectedDocuments = getRejectedDocuments(application);
+  const dashboardStatus = getStudentDashboardStatus(application, rejectedDocuments);
+  const baseLines = [
+    getNotificationGreeting(application),
+    "",
+    `Tracking number: ${trackingNumber}`,
+    application.appliedDepartment
+      ? `Department: ${getDepartmentLabel(application.appliedDepartment)}`
+      : "",
+    application.period ? `Attachment period: ${getPeriodLabel(application.period)}` : "",
+    `Current status: ${application.status}`,
+    "",
+    `Next step: ${dashboardStatus.nextActionTitle}`,
+    dashboardStatus.nextActionText
+  ];
+
+  let subject = `Attachment Application Update - ${trackingNumber}`;
+  let introLines = [];
+  let detailLines = [];
+
+  switch (eventType) {
+    case "application_submitted":
+      subject = `Application Received - ${trackingNumber}`;
+      introLines = [
+        "Your attachment application has been received successfully.",
+        "The county-endorsed NITA document is available in your student dashboard."
+      ];
+      detailLines = [
+        "Download the county-endorsed NITA document, take it to the NITA office for stamping, then upload the stamped copy from the dashboard."
+      ];
+      break;
+    case "documents_correction_requested":
+      subject = `Corrections Required - ${trackingNumber}`;
+      introLines = [
+        "Department review requested corrections on one or more documents."
+      ];
+      detailLines = rejectedDocuments.length
+        ? [
+          "Documents requiring correction:",
+          ...rejectedDocuments.map((document) =>
+            `- ${document.label}${document.review?.comment ? `: ${document.review.comment}` : ""}`
+          )
+        ]
+        : [];
+      break;
+    case "documents_resubmitted":
+      subject = `Corrected Documents Received - ${trackingNumber}`;
+      introLines = [
+        "Your corrected documents were received successfully.",
+        "Department review will continue from the student dashboard workflow."
+      ];
+      break;
+    case "department_verified":
+      subject = `Department Review Completed - ${trackingNumber}`;
+      introLines = [
+        "Your application has been verified by the department and is now in the HR workflow."
+      ];
+      break;
+    case "department_rejected":
+      subject = `Application Rejected - ${trackingNumber}`;
+      introLines = [
+        "Your application was marked as rejected during review."
+      ];
+      detailLines = application.reviewerComment
+        ? [`Review note: ${application.reviewerComment}`]
+        : [];
+      break;
+    case "nita_resubmitted":
+      subject = `Stamped NITA Received - ${trackingNumber}`;
+      introLines = [
+        "Your stamped NITA document has been received and sent to HR for review."
+      ];
+      break;
+    case "nita_completed":
+      subject = `NITA Stage Completed - ${trackingNumber}`;
+      introLines = [
+        "HR confirmed the stamped NITA document."
+      ];
+      detailLines = [
+        "Your application is now waiting for the final HR admission decision."
+      ];
+      break;
+    case "hr_admitted":
+      subject = `Application Admitted - ${trackingNumber}`;
+      introLines = [
+        application.joiningLetter?.filename
+          ? "HR admitted your application and your joining letter is ready."
+          : "HR admitted your application."
+      ];
+      detailLines = [
+        application.joiningLetter?.filename
+          ? "Open the student dashboard and download your joining letter."
+          : "HR will upload the joining letter next. Watch the student dashboard for the download."
+      ];
+      break;
+    case "hr_rejected":
+      subject = `Application Rejected By HR - ${trackingNumber}`;
+      introLines = [
+        "HR marked your application as rejected."
+      ];
+      detailLines = application.reviewerComment
+        ? [`HR note: ${application.reviewerComment}`]
+        : [];
+      break;
+    case "joining_letter_ready":
+      subject = `Joining Letter Ready - ${trackingNumber}`;
+      introLines = [
+        "Your joining letter is now ready for download."
+      ];
+      detailLines = [
+        "Open the student dashboard and download the joining letter."
+      ];
+      break;
+    default:
+      break;
+  }
+
+  const lines = [...introLines, "", ...baseLines];
+
+  if (detailLines.length) {
+    lines.push("", ...detailLines);
+  }
+
+  if (dashboardUrl) {
+    lines.push("", `Student dashboard: ${dashboardUrl}`);
+  }
+
+  return {
+    subject,
+    message: lines.join("\n")
+  };
+}
+
+async function sendApplicationNotification({
+  req,
+  application,
+  eventType,
+  initiatedBy = "system",
+  channels = ["email", "sms"],
+  subject,
+  message
+}) {
+  const notification = subject && message
+    ? { subject, message }
+    : buildApplicationNotificationContent(req, application, eventType);
+
+  const entries = await notificationService.send({
+    channels,
+    toEmail: application.email,
+    toPhone: application.phone,
+    subject: notification.subject,
+    message: notification.message,
+    initiatedBy,
+    eventType
+  });
+
+  appendNotificationEntries(application, entries);
+  return entries;
+}
+
+async function sendAndPersistApplicationNotification({
+  req,
+  applications,
+  index,
+  eventType,
+  initiatedBy = "system",
+  channels,
+  subject,
+  message
+}) {
+  if (index < 0 || !applications[index]) {
+    return [];
+  }
+
+  const application = ensureApplicationDefaults(applications[index]);
+  const entries = await sendApplicationNotification({
+    req,
+    application,
+    eventType,
+    initiatedBy,
+    channels,
+    subject,
+    message
+  });
+
+  applications[index] = application;
+  await writeApplications(applications);
+  return entries;
+}
+
 function ensureDepartmentAdmin(req, res, next) {
   if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
     return next();
@@ -2454,6 +2953,7 @@ async function renderApplyPage(res, { error = null, formData = {}, statusCode = 
     departmentOptions: DEPARTMENTS,
     institutionGroups: KENYA_INSTITUTION_GROUPS,
     applicationRequirements: APPLICATION_REQUIREMENTS,
+    applicationTerms: APPLICATION_TERMS,
     canStartApplication,
     showApplicationFields,
     selectedInstitutionAvailability,
@@ -2482,7 +2982,6 @@ function renderTrackPage(res, {
       timeline: buildStudentTimeline(safeResult)
     }
     : null;
-
   return res.status(statusCode).render("track", {
     error,
     message,
@@ -2550,10 +3049,45 @@ function renderHrDetailPage(res, {
     getDepartmentLabel,
     getStatusClass,
     hrStatusOptions: ["Verified", "Admitted", "Rejected"],
+    notificationProviderSummary: notificationService.getProviderSummary(),
     combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION,
     nitaDocumentDefinition: NITA_DOCUMENT_DEFINITION,
     countySignedNitaDefinition: COUNTY_SIGNED_NITA_DEFINITION,
     nitaResubmissionDefinition: NITA_RESUBMISSION_DEFINITION
+  });
+}
+
+async function renderHrCommunicationsPage(res, {
+  error = null,
+  notice = null,
+  formData = {},
+  statusCode = 200
+} = {}) {
+  const settings = await readSettings();
+  const applications = await readApplications();
+  const targets = buildBroadcastRecipientTargets(applications);
+
+  return res.status(statusCode).render("hr-communications", {
+    error,
+    notice,
+    formData: {
+      subject: (formData.subject || "").toString(),
+      message: (formData.message || "").toString(),
+      channels: Array.isArray(formData.channels)
+        ? formData.channels
+        : formData.channels
+          ? [formData.channels]
+          : ["email"]
+    },
+    notificationProviderSummary: notificationService.getProviderSummary(),
+    communicationBroadcasts: normalizeBroadcastHistory(settings.communicationBroadcasts),
+    communicationStats: {
+      totalApplications: applications.length,
+      totalTargets: targets.length,
+      emailTargets: targets.filter((target) => target.email).length,
+      smsTargets: targets.filter((target) => target.phone).length
+    },
+    formatDate
   });
 }
 
@@ -2705,7 +3239,8 @@ app.post("/apply", async (req, res) => {
       period,
       startDate,
       endDate,
-      coverNote
+      coverNote,
+      acceptedTerms
     } = formData;
 
     const settings = await readSettings();
@@ -2722,6 +3257,7 @@ app.post("/apply", async (req, res) => {
     let finalStartDate = (startDate || "").trim();
     let finalEndDate = (endDate || "").trim();
     let finalCoverNote = (coverNote || "").trim();
+    const termsAccepted = (acceptedTerms || "").toString().trim() === "yes";
 
     const requiredText = [
       finalFullName,
@@ -2749,6 +3285,15 @@ app.post("/apply", async (req, res) => {
       return renderApplyPage(res, {
         statusCode: 400,
         error: "Please fill all required fields, upload the combined document, and upload the NITA document separately.",
+        formData
+      });
+    }
+
+    if (!termsAccepted) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: "You must accept the county application terms and conditions before submitting.",
         formData
       });
     }
@@ -2887,6 +3432,12 @@ app.post("/apply", async (req, res) => {
         uploadedAt: storedAt,
         security: documentSecurity[NITA_DOCUMENT_FIELD] || null
       });
+      const termsAcceptance = normalizeTermsAcceptanceRecord({
+        agreed: true,
+        agreedAt: storedAt,
+        ipAddress: getRequestIpAddress(req),
+        version: APPLICATION_TERMS_VERSION
+      });
 
       const newApplication = ensureApplicationDefaults({
         id: applicationId,
@@ -2922,6 +3473,7 @@ app.post("/apply", async (req, res) => {
           updatedAt: storedAt
         },
         joiningLetter: null,
+        termsAcceptance,
         status: "Pending",
         reviewerComment: "",
         submittedAt: storedAt,
@@ -2930,6 +3482,14 @@ app.post("/apply", async (req, res) => {
 
       applications.push(newApplication);
       await writeApplications(applications);
+      const newIndex = applications.findIndex((application) => application.id === newApplication.id);
+      await sendAndPersistApplicationNotification({
+        req,
+        applications,
+        index: newIndex,
+        eventType: "application_submitted",
+        initiatedBy: "system"
+      });
 
       return res.redirect(`/application/${newApplication.id}`);
     })().catch((storageError) => {
@@ -3250,6 +3810,13 @@ app.post("/track/resubmit", async (req, res) => {
       currentApplication.updatedAt = new Date().toISOString();
       applications[index] = currentApplication;
       await writeApplications(applications);
+      await sendAndPersistApplicationNotification({
+        req,
+        applications,
+        index,
+        eventType: "documents_resubmitted",
+        initiatedBy: "system"
+      });
 
       return renderTrackPage(res, {
         message:
@@ -3404,6 +3971,13 @@ app.post("/track/nita-resubmit", async (req, res) => {
 
       applications[index] = currentApplication;
       await writeApplications(applications);
+      await sendAndPersistApplicationNotification({
+        req,
+        applications,
+        index,
+        eventType: "nita_resubmitted",
+        initiatedBy: "system"
+      });
       Promise.resolve(fileStorage.removeStoredFile(previousResubmittedDocument)).catch(() => {});
 
       return renderTrackPage(res, {
@@ -3724,6 +4298,23 @@ async function renderAdminAccountsPage(res, {
   });
 }
 
+async function renderHrAccountPage(res, {
+  statusCode = 200,
+  error = null,
+  notice = null
+} = {}) {
+  const settings = await readSettings();
+  const hrAccount = normalizeHrAccount(settings?.hrAccount);
+
+  return res.status(statusCode).render("hr-account", {
+    hrUsername: hrAccount.username,
+    updatedAt: hrAccount.updatedAt,
+    error,
+    notice,
+    formatDate
+  });
+}
+
 function buildDepartmentAccessSummaries(applications) {
   return DEPARTMENTS.map((department) => {
     const applied = applications.filter((item) => item.appliedDepartment === department.key);
@@ -3760,6 +4351,157 @@ app.get("/hr/admin-accounts", ensureHrAdmin, async (req, res) => {
   }
 
   return renderAdminAccountsPage(res, { notice });
+});
+
+app.get("/hr/account", ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  let notice = null;
+  if (req.query.passwordChanged === "1") {
+    notice = "HR password updated successfully.";
+  }
+
+  return renderHrAccountPage(res, { notice });
+});
+
+app.post("/hr/account/password", ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  const result = await updateHrAccount({
+    username: req.body.username,
+    currentPassword: req.body.currentPassword,
+    newPassword: req.body.newPassword,
+    confirmPassword: req.body.confirmPassword
+  });
+
+  if (result.error) {
+    return renderHrAccountPage(res, {
+      statusCode: 400,
+      error: result.error
+    });
+  }
+
+  req.session.adminUsername = result.hrAccount.username;
+  return res.redirect("/hr/account?passwordChanged=1");
+});
+
+app.get("/hr/communications", ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  const notice =
+    req.query.sent === "1"
+      ? "Broadcast communication sent successfully."
+      : req.query.sent === "partial"
+        ? "Broadcast communication reached some applicants. Check the history summary for partial delivery."
+        : null;
+  const error =
+    req.query.sent === "failed"
+      ? "No broadcast communication was delivered. Check the provider configuration or recipient restrictions."
+      : null;
+
+  return renderHrCommunicationsPage(res, {
+    notice,
+    error
+  });
+});
+
+app.post("/hr/communications", ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  const subject = (req.body.subject || "").toString().trim();
+  const message = (req.body.message || "").toString().trim();
+  const channels = Array.isArray(req.body.channels)
+    ? req.body.channels
+    : req.body.channels
+      ? [req.body.channels]
+      : [];
+  const safeFormData = { subject, message, channels };
+
+  if (!channels.length) {
+    return renderHrCommunicationsPage(res, {
+      statusCode: 400,
+      error: "Select at least one channel for the broadcast.",
+      formData: safeFormData
+    });
+  }
+
+  if (channels.includes("email") && !subject) {
+    return renderHrCommunicationsPage(res, {
+      statusCode: 400,
+      error: "An email subject is required when the broadcast includes email.",
+      formData: safeFormData
+    });
+  }
+
+  if (!message) {
+    return renderHrCommunicationsPage(res, {
+      statusCode: 400,
+      error: "Enter the communication message before sending the broadcast.",
+      formData: safeFormData
+    });
+  }
+
+  const applications = await readApplications();
+  const recipientTargets = buildBroadcastRecipientTargets(applications);
+
+  if (!recipientTargets.length) {
+    return renderHrCommunicationsPage(res, {
+      statusCode: 400,
+      error: "No applicant contacts are available yet. Submit at least one application first.",
+      formData: safeFormData
+    });
+  }
+
+  let deliveredCount = 0;
+  let failedCount = 0;
+  let skippedCount = 0;
+
+  for (const target of recipientTargets) {
+    const entries = await notificationService.send({
+      channels,
+      toEmail: target.email,
+      toPhone: target.phone,
+      subject,
+      message,
+      initiatedBy: "hr",
+      eventType: "general_hr_broadcast"
+    });
+    const outcome = getNotificationOutcomeSummary(entries);
+    deliveredCount += outcome.sent;
+    failedCount += outcome.failed;
+    skippedCount += outcome.skipped;
+
+    target.indexes.forEach((index) => {
+      const application = ensureApplicationDefaults(applications[index]);
+      appendNotificationEntries(application, entries);
+      applications[index] = application;
+    });
+  }
+
+  await writeApplications(applications);
+
+  const settings = await readSettings();
+  settings.communicationBroadcasts = normalizeBroadcastHistory([
+    createBroadcastHistoryEntry({
+      subject,
+      message,
+      channels,
+      initiatedBy: "hr",
+      totalTargets: recipientTargets.length,
+      deliveredCount,
+      failedCount,
+      skippedCount
+    }),
+    ...(Array.isArray(settings.communicationBroadcasts) ? settings.communicationBroadcasts : [])
+  ]);
+  settings.updatedAt = new Date().toISOString();
+  await writeSettings(settings);
+
+  if (deliveredCount > 0 && failedCount === 0 && skippedCount === 0) {
+    return res.redirect("/hr/communications?sent=1");
+  }
+
+  if (deliveredCount > 0) {
+    return res.redirect("/hr/communications?sent=partial");
+  }
+
+  return res.redirect("/hr/communications?sent=failed");
 });
 
 app.post("/hr/admin-accounts/create", ensureHrAdmin, async (req, res) => {
@@ -4313,6 +5055,15 @@ app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, asyn
 
   applications[index] = application;
   await writeApplications(applications);
+  if (application.status === "Needs Correction") {
+    await sendAndPersistApplicationNotification({
+      req,
+      applications,
+      index,
+      eventType: "documents_correction_requested",
+      initiatedBy: "department_review"
+    });
+  }
 
   return res.redirect(`/admin/applications/${req.params.id}?docsReviewed=1`);
 });
@@ -4370,6 +5121,7 @@ app.post("/admin/applications/:id/status", ensureDepartmentAdmin, async (req, re
   }
 
   const application = ensureApplicationDefaults(applications[index]);
+  const previousStatus = application.status;
 
   if (!canAdminAccessApplication(req, application)) {
     return res.status(403).send("Access denied for this department.");
@@ -4407,6 +5159,23 @@ app.post("/admin/applications/:id/status", ensureDepartmentAdmin, async (req, re
 
   applications[index] = application;
   await writeApplications(applications);
+  if (status !== previousStatus && status === "Verified") {
+    await sendAndPersistApplicationNotification({
+      req,
+      applications,
+      index,
+      eventType: "department_verified",
+      initiatedBy: "department_review"
+    });
+  } else if (status !== previousStatus && status === "Rejected") {
+    await sendAndPersistApplicationNotification({
+      req,
+      applications,
+      index,
+      eventType: "department_rejected",
+      initiatedBy: "department_review"
+    });
+  }
 
   return res.redirect(`/admin/applications/${req.params.id}`);
 });
@@ -4698,6 +5467,7 @@ app.post("/hr/applications/:id/nita-complete", ensureHrAdmin, async (req, res) =
   }
 
   const application = ensureApplicationDefaults(applications[index]);
+  const previousStatus = application.status;
 
   if (!HR_VISIBLE_STATUSES.has(application.status)) {
     return res.status(400).send("Application is not yet in HR review queue.");
@@ -4737,6 +5507,13 @@ app.post("/hr/applications/:id/nita-complete", ensureHrAdmin, async (req, res) =
 
   applications[index] = application;
   await writeApplications(applications);
+  await sendAndPersistApplicationNotification({
+    req,
+    applications,
+    index,
+    eventType: "nita_completed",
+    initiatedBy: "hr"
+  });
 
   return res.redirect(`/hr/applications/${req.params.id}?nitaCompleted=1`);
 });
@@ -4802,6 +5579,23 @@ app.post("/hr/applications/:id/status", ensureHrAdmin, async (req, res) => {
 
   applications[index] = application;
   await writeApplications(applications);
+  if (status !== previousStatus && status === "Admitted") {
+    await sendAndPersistApplicationNotification({
+      req,
+      applications,
+      index,
+      eventType: "hr_admitted",
+      initiatedBy: "hr"
+    });
+  } else if (status !== previousStatus && status === "Rejected") {
+    await sendAndPersistApplicationNotification({
+      req,
+      applications,
+      index,
+      eventType: "hr_rejected",
+      initiatedBy: "hr"
+    });
+  }
 
   return res.redirect(`/hr/applications/${req.params.id}?statusSaved=1`);
 });
@@ -4889,6 +5683,13 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, async (req, res) 
 
       applications[index] = application;
       await writeApplications(applications);
+      await sendAndPersistApplicationNotification({
+        req,
+        applications,
+        index,
+        eventType: "joining_letter_ready",
+        initiatedBy: "hr"
+      });
       Promise.resolve(fileStorage.removeStoredFile(oldJoiningLetter)).catch(() => {});
 
       return res.redirect(`/hr/applications/${req.params.id}?joiningSaved=1`);
@@ -4943,6 +5744,9 @@ async function startServer() {
     console.log(`MongoDB connection configured: ${MONGODB_URI ? "yes" : "no"}`);
     console.log("Session store: MongoDB");
     console.log(`File storage provider: ${fileStorage.provider}`);
+    const notificationProviders = notificationService.getProviderSummary();
+    console.log(`Email notifications: ${notificationProviders.emailEnabled ? "configured" : "not configured"}`);
+    console.log(`SMS notifications: ${notificationProviders.smsEnabled ? "configured" : "not configured"}`);
 
     const storageWarning = fileStorage.getProviderWarning();
     if (storageWarning) {

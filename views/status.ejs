@@ -4,6 +4,10 @@
         <h1>Application Received</h1>
         <p>Your application has been submitted successfully.</p>
 
+        <div class="notice">
+          Check your email for the application notification and next-step guidance. If email or SMS delivery delays, keep your tracking number and use the student dashboard to follow progress.
+        </div>
+
         <div class="summary">
           <p><strong>Tracking / Placement Number:</strong> <%= application.placementNumber || application.id %></p>
           <p><strong>Name:</strong> <%= application.fullName %></p>
@@ -12,6 +16,7 @@
           <p><strong>Period:</strong> <%= application.period ? getPeriodLabel(application.period) : 'Not set' %></p>
           <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
           <p><strong>Submitted:</strong> <%= formatDate(application.submittedAt) %></p>
+          <p><strong>Terms Accepted:</strong> <%= application.termsAcceptance && application.termsAcceptance.agreed ? `Yes - ${formatDate(application.termsAcceptance.agreedAt)}` : 'Not recorded' %></p>
           <p><strong>Last Updated:</strong> <%= formatDate(application.updatedAt) %></p>
           <p><strong>Reviewer Comment:</strong> <%= application.reviewerComment || 'No comment yet.' %></p>
           <p><strong>Next Step:</strong> Your application is received. Department review comes first, then HR handles the NITA workflow before the final admission decision.</p>

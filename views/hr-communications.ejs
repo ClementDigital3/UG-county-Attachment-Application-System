@@ -1,0 +1,131 @@
+<%- include("partials/layout-open", { pageTitle: "HR Communications", activePortal: "hr" }) %>
+<main class="container">
+      <section class="card">
+        <div class="row-between">
+          <h1>HR Communications</h1>
+          <div class="actions tight">
+            <a class="btn secondary" href="/hr/departments">Department Review</a>
+            <a class="btn secondary" href="/hr/reports">Reports</a>
+            <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+            <a class="btn secondary" href="/hr/account">HR Account</a>
+            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+            <a class="btn secondary" href="/hr/applications">HR Queue</a>
+            <form action="/hr/logout" method="post">
+              <button class="btn secondary" type="submit">Logout</button>
+            </form>
+          </div>
+        </div>
+
+        <p>
+          Use this general communication space to send the same update to all student
+          contacts already recorded in attachment applications.
+        </p>
+
+        <div class="stats compact">
+          <div>
+            <strong><%= communicationStats.totalApplications %></strong>
+            <span>Applications</span>
+          </div>
+          <div>
+            <strong><%= communicationStats.totalTargets %></strong>
+            <span>Unique Contacts</span>
+          </div>
+          <div>
+            <strong><%= communicationStats.emailTargets %></strong>
+            <span>Email Targets</span>
+          </div>
+          <div>
+            <strong><%= communicationStats.smsTargets %></strong>
+            <span>SMS Targets</span>
+          </div>
+        </div>
+
+        <div class="summary">
+          <p><strong>Email alerts:</strong> <%= notificationProviderSummary.emailEnabled ? 'Configured' : 'Not configured' %></p>
+          <p><strong>SMS alerts:</strong> <%= notificationProviderSummary.smsEnabled ? 'Configured' : 'Not configured' %></p>
+          <p><strong>Broadcast scope:</strong> All applicant email addresses and phone numbers currently saved in the system.</p>
+        </div>
+
+        <% if (error) { %>
+          <div class="alert"><%= error %></div>
+        <% } %>
+
+        <% if (notice) { %>
+          <div class="notice"><%= notice %></div>
+        <% } %>
+
+        <form action="/hr/communications" method="post" class="form-grid">
+          <label class="full-width">
+            Communication Channels
+            <div class="actions tight">
+              <label class="checkbox-inline">
+                <input
+                  type="checkbox"
+                  name="channels"
+                  value="email"
+                  <%= !formData.channels || formData.channels.includes('email') ? 'checked' : '' %>
+                />
+                Email
+              </label>
+              <label class="checkbox-inline">
+                <input
+                  type="checkbox"
+                  name="channels"
+                  value="sms"
+                  <%= formData.channels && formData.channels.includes('sms') ? 'checked' : '' %>
+                />
+                SMS
+              </label>
+            </div>
+          </label>
+
+          <label class="full-width">
+            Subject
+            <input
+              type="text"
+              name="subject"
+              placeholder="Example: County attachment application update"
+              value="<%= formData.subject || '' %>"
+            />
+            <span class="field-hint">Required when email is selected.</span>
+          </label>
+
+          <label class="full-width">
+            Message
+            <textarea
+              name="message"
+              rows="6"
+              placeholder="Write the update HR wants all students to receive."
+              required
+            ><%= formData.message || '' %></textarea>
+          </label>
+
+          <div class="actions full-width">
+            <button class="btn" type="submit">Send Broadcast</button>
+          </div>
+        </form>
+
+        <h2>Broadcast History</h2>
+        <% if (communicationBroadcasts.length) { %>
+          <div class="task-list">
+            <% communicationBroadcasts.slice(0, 12).forEach((entry) => { %>
+              <div class="summary">
+                <p><strong>Channels:</strong> <%= entry.channels.length ? entry.channels.join(', ').toUpperCase() : 'None' %></p>
+                <% if (entry.subject) { %>
+                  <p><strong>Subject:</strong> <%= entry.subject %></p>
+                <% } %>
+                <p><strong>Message:</strong> <%= entry.message %></p>
+                <p><strong>Sent:</strong> <%= formatDate(entry.sentAt) %></p>
+                <p><strong>Targets:</strong> <%= entry.totalTargets %></p>
+                <p><strong>Delivered:</strong> <%= entry.deliveredCount %></p>
+                <p><strong>Failed:</strong> <%= entry.failedCount %></p>
+                <p><strong>Skipped:</strong> <%= entry.skippedCount %></p>
+              </div>
+            <% }) %>
+          </div>
+        <% } else { %>
+          <p>No general communication has been sent yet.</p>
+        <% } %>
+      </section>
+    </main>
+<%- include("partials/layout-close") %>

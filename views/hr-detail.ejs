@@ -5,8 +5,10 @@
           <h1>HR Review Application</h1>
           <div class="actions tight">
             <a class="btn secondary" href="/hr/departments">Department Review</a>
+            <a class="btn secondary" href="/hr/communications">Communications</a>
             <a class="btn secondary" href="/hr/reports">Reports</a>
             <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+            <a class="btn secondary" href="/hr/account">HR Account</a>
             <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
             <a class="btn secondary" href="/hr/applications">Back to HR Queue</a>
             <form action="/hr/logout" method="post">
@@ -45,6 +47,9 @@
           <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
           <p><strong>Record State:</strong> <%= application.isFrozen ? 'Frozen' : 'Active' %></p>
           <p><strong>Submitted:</strong> <%= formatDate(application.submittedAt) %></p>
+          <p><strong>Terms Accepted:</strong> <%= application.termsAcceptance && application.termsAcceptance.agreed ? `Yes - ${formatDate(application.termsAcceptance.agreedAt)}` : 'Not recorded' %></p>
+          <p><strong>Recorded Source:</strong> <%= application.termsAcceptance && application.termsAcceptance.ipAddress ? application.termsAcceptance.ipAddress : 'Not recorded' %></p>
+          <p><strong>Terms Version:</strong> <%= application.termsAcceptance && application.termsAcceptance.version ? application.termsAcceptance.version : 'Not recorded' %></p>
           <p><strong>Last Updated:</strong> <%= formatDate(application.updatedAt) %></p>
           <p><strong>NITA Workflow:</strong> <%= application.nitaWorkflow.status %></p>
           <p><strong>Department/HR Comment:</strong> <%= application.reviewerComment || 'No comment yet.' %></p>
@@ -146,6 +151,50 @@
             <button class="btn" type="submit">Save HR Decision</button>
           </div>
         </form>
+
+        <h2>Student Communication History</h2>
+        <p>General HR broadcasts and workflow-triggered notifications for this student appear below. Use the main HR Communications page to send updates to all applicant contacts.</p>
+        <div class="summary">
+          <p><strong>Email alerts:</strong> <%= notificationProviderSummary.emailEnabled ? 'Configured' : 'Not configured' %></p>
+          <p><strong>SMS alerts:</strong> <%= notificationProviderSummary.smsEnabled ? 'Configured' : 'Not configured' %></p>
+          <div class="actions tight">
+            <a class="btn secondary" href="/hr/communications">Open HR Communications</a>
+          </div>
+        </div>
+
+        <details class="history-toggle">
+          <summary>
+            Communication History
+            <span class="history-toggle-meta">
+              <%= application.notificationHistory && application.notificationHistory.length ? `${application.notificationHistory.length} entries` : 'No entries yet' %>
+            </span>
+          </summary>
+
+          <% if (application.notificationHistory && application.notificationHistory.length) { %>
+            <div class="task-list">
+              <% application.notificationHistory.slice(0, 12).forEach((entry) => { %>
+                <div class="summary">
+                  <p>
+                    <strong><%= entry.channel.toUpperCase() %></strong>
+                    <span class="badge <%= entry.status === 'sent' ? 'verified' : entry.status === 'failed' ? 'rejected' : 'pending' %>"><%= entry.status %></span>
+                  </p>
+                  <p><strong>Event:</strong> <%= entry.eventType || 'manual' %></p>
+                  <% if (entry.subject) { %>
+                    <p><strong>Subject:</strong> <%= entry.subject %></p>
+                  <% } %>
+                  <p><strong>Message:</strong> <%= entry.message %></p>
+                  <p><strong>Recipient:</strong> <%= entry.recipient || 'Not available' %></p>
+                  <p><strong>Sent:</strong> <%= formatDate(entry.sentAt) %></p>
+                  <% if (entry.reason) { %>
+                    <p><strong>Provider note:</strong> <%= entry.reason %></p>
+                  <% } %>
+                </div>
+              <% }) %>
+            </div>
+          <% } else { %>
+            <p>No communication history recorded yet.</p>
+          <% } %>
+        </details>
 
         <h2>Joining Letter Upload (HR Only)</h2>
         <p>Complete the NITA workflow and set status to <strong>Admitted</strong> first, then upload the joining letter.</p>

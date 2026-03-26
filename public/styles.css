@@ -951,6 +951,38 @@ label {
   font-size: 0.84rem;
 }
 
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
+}
+
+.checkbox-inline input {
+  width: auto;
+}
+
+.terms-consent {
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.terms-consent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.terms-consent-row input {
+  width: auto;
+  margin-top: 0.2rem;
+}
+
 .field-hint-spacer {
   visibility: hidden;
   user-select: none;
@@ -1104,6 +1136,45 @@ select:focus {
 .summary h3 {
   margin: 0 0 0.2rem;
   color: var(--heading);
+}
+
+.history-toggle {
+  margin-top: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--card-bg);
+  overflow: hidden;
+}
+
+.history-toggle summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  list-style: none;
+  padding: 1rem 1.1rem;
+  font-weight: 700;
+  color: var(--label);
+}
+
+.history-toggle summary::-webkit-details-marker {
+  display: none;
+}
+
+.history-toggle[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.history-toggle > .task-list,
+.history-toggle > p {
+  padding: 1rem 1.1rem 1.1rem;
+}
+
+.history-toggle-meta {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .requirements-list {

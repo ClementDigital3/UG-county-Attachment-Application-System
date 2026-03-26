@@ -43,25 +43,51 @@
     </div>
 
     <div class="summary">
-      <p><strong>Already Applied?</strong></p>
-      <p>
-        Use the Student Dashboard to check whether your application is pending,
-        verified, admitted, rejected, or needs correction.
+      <h3>County Terms And Conditions</h3>
+      <ul class="requirements-list">
+        <% applicationTerms.forEach((term) => { %>
+          <li><%= term %></li>
+        <% }) %>
+      </ul>
+      <p class="field-hint">
+        These terms are aligned with the County Government of Uasin Gishu online application and induction requirements.
       </p>
-      <p>
-        Use your ID number and email to open the dashboard. The same dashboard is also used to download the county-endorsed NITA document, re-submit the stamped copy, and later download the joining letter.
-      </p>
-      <div class="actions tight">
-        <a class="btn secondary" href="/track">Track Application</a>
-      </div>
     </div>
 
     <% if (canStartApplication) { %>
       <form action="/apply" method="post" enctype="multipart/form-data" class="form-grid" id="applyForm">
-        <section class="selection-panel full-width">
+        <section class="selection-panel full-width terms-checkpoint">
           <div class="selection-panel-header">
             <div>
               <p class="eyebrow">Step 1</p>
+              <h2>Accept county terms before you continue</h2>
+            </div>
+            <div class="selection-panel-note">
+              The agreement is recorded with the application for county review.
+            </div>
+          </div>
+
+          <label class="full-width terms-consent">
+            <span class="terms-consent-row">
+              <input
+                id="acceptedTermsGate"
+                type="checkbox"
+                name="acceptedTerms"
+                value="yes"
+                <%= formData.acceptedTerms === 'yes' ? 'checked' : '' %>
+                required
+              />
+              <span>
+                I agree to the County Government of Uasin Gishu attachment application terms and conditions, and I understand this acceptance is recorded with my application.
+              </span>
+            </span>
+          </label>
+        </section>
+
+        <section class="selection-panel full-width">
+          <div class="selection-panel-header">
+            <div>
+              <p class="eyebrow">Step 2</p>
               <h2>Choose department and institution first</h2>
             </div>
             <div class="selection-panel-note">
@@ -72,7 +98,7 @@
           <div class="selection-grid">
             <label>
               Department Applied For *
-              <select id="appliedDepartmentSelect" name="appliedDepartment" required>
+              <select id="appliedDepartmentSelect" name="appliedDepartment" required <%= formData.acceptedTerms === 'yes' ? '' : 'disabled' %>>
                 <option value="">Select department</option>
                 <% departmentOptions.forEach((department) => { %>
                   <option value="<%= department.key %>" <%= formData.appliedDepartment === department.key ? 'selected' : '' %>>
@@ -110,13 +136,15 @@
 
           <div
             id="institutionSlotBox"
-            class="selection-status-card tone-<%= showApplicationFields ? 'success' : (selectedInstitutionAvailability.institutionResolutionError || selectedInstitutionAvailability.isDepartmentFull || selectedInstitutionAvailability.isInstitutionFull ? 'danger' : 'muted') %>"
+            class="selection-status-card tone-<%= formData.acceptedTerms !== 'yes' ? 'muted' : (showApplicationFields ? 'success' : (selectedInstitutionAvailability.institutionResolutionError || selectedInstitutionAvailability.isDepartmentFull || selectedInstitutionAvailability.isInstitutionFull ? 'danger' : 'muted')) %>"
           >
             <strong id="institutionStatusHeading">
-              <%= showApplicationFields ? 'You can continue with the application.' : 'Department and institution selection required.' %>
+              <%= formData.acceptedTerms !== 'yes' ? 'Accept the county terms first.' : (showApplicationFields ? 'You can continue with the application.' : 'Department and institution selection required.') %>
             </strong>
             <p id="institutionStatusMessage" class="selection-status-message">
-              <% if (!formData.appliedDepartment) { %>
+              <% if (formData.acceptedTerms !== 'yes') { %>
+                Accept the county terms and conditions first. The department and institution fields will unlock immediately after you agree.
+              <% } else if (!formData.appliedDepartment) { %>
                 Select the department first, then choose the institution to confirm whether that institution still has room in the department.
               <% } else if (!formData.institution) { %>
                 Department selected. Choose the institution next so the system can confirm the remaining institution slots.
@@ -133,7 +161,7 @@
               <% } %>
             </p>
             <div class="selection-status-metrics" id="institutionStatusMetrics">
-              <% if (formData.appliedDepartment) { %>
+              <% if (formData.acceptedTerms === 'yes' && formData.appliedDepartment) { %>
                 <span>
                   Department remaining:
                   <strong><%= selectedInstitutionAvailability.departmentRemaining %></strong>
@@ -155,11 +183,11 @@
 
         <section
           id="applicationFields"
-          class="application-fields full-width <%= showApplicationFields ? '' : 'is-hidden' %>"
-          aria-hidden="<%= showApplicationFields ? 'false' : 'true' %>"
+          class="application-fields full-width <%= showApplicationFields && formData.acceptedTerms === 'yes' ? '' : 'is-hidden' %>"
+          aria-hidden="<%= showApplicationFields && formData.acceptedTerms === 'yes' ? 'false' : 'true' %>"
         >
           <div class="application-fields-header">
-            <p class="eyebrow">Step 2</p>
+            <p class="eyebrow">Step 3</p>
             <h2>Complete the application details</h2>
           </div>
 
@@ -263,7 +291,7 @@
             </label>
 
             <div class="full-width actions">
-              <button id="applySubmitButton" class="btn" type="submit" <%= showApplicationFields ? '' : 'disabled' %>>
+              <button id="applySubmitButton" class="btn" type="submit" <%= showApplicationFields && formData.acceptedTerms === 'yes' ? '' : 'disabled' %>>
                 Submit Application
               </button>
               <a class="btn secondary" href="/">Cancel</a>
@@ -278,6 +306,7 @@
 <% if (canStartApplication) { %>
   <script>
     (() => {
+      const termsCheckbox = document.getElementById("acceptedTermsGate");
       const departmentSelect = document.getElementById("appliedDepartmentSelect");
       const institutionInput = document.getElementById("institutionInput");
       const applicationFields = document.getElementById("applicationFields");
@@ -287,7 +316,7 @@
       const statusMetrics = document.getElementById("institutionStatusMetrics");
       const submitButton = document.getElementById("applySubmitButton");
 
-      if (!departmentSelect || !institutionInput || !applicationFields || !statusBox || !statusHeading || !statusMessage || !statusMetrics || !submitButton) {
+      if (!termsCheckbox || !departmentSelect || !institutionInput || !applicationFields || !statusBox || !statusHeading || !statusMessage || !statusMetrics || !submitButton) {
         return;
       }
 
@@ -327,22 +356,34 @@
 
       function renderDefaultState() {
         setTone("muted");
-        statusHeading.textContent = "Department and institution selection required.";
+        statusHeading.textContent = "Accept the county terms first.";
         statusMessage.textContent =
-          "Select the department first, then choose the institution to confirm whether that institution still has room in the department.";
+          "Accept the county terms and conditions first. The department and institution fields will unlock immediately after you agree.";
         statusMetrics.innerHTML = "";
-        institutionInput.disabled = !departmentSelect.value;
+        departmentSelect.disabled = !termsCheckbox.checked;
+        institutionInput.disabled = true;
         setFieldsVisible(false);
       }
 
       async function refreshAvailability() {
+        if (!termsCheckbox.checked) {
+          renderDefaultState();
+          return;
+        }
+
         const department = departmentSelect.value.trim();
         const institution = institutionInput.value.trim();
 
+        departmentSelect.disabled = false;
         institutionInput.disabled = !department;
 
         if (!department) {
-          renderDefaultState();
+          setTone("muted");
+          statusHeading.textContent = "Department and institution selection required.";
+          statusMessage.textContent =
+            "Select the department first, then choose the institution to confirm whether that institution still has room in the department.";
+          statusMetrics.innerHTML = "";
+          setFieldsVisible(false);
           return;
         }
 
@@ -421,6 +462,7 @@
         }
       }
 
+      termsCheckbox.addEventListener("change", refreshAvailability);
       departmentSelect.addEventListener("change", refreshAvailability);
       institutionInput.addEventListener("input", refreshAvailability);
       institutionInput.addEventListener("change", refreshAvailability);
