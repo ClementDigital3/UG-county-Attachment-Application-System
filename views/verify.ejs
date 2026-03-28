@@ -1,0 +1,45 @@
+<%- include("partials/layout-open", { pageTitle: "Public Verification", activePortal: "track" }) %>
+<main class="container small">
+      <section class="card">
+        <h1>Public Verification</h1>
+        <p>Use the tracking number and the applicant ID number to confirm whether an application record exists and view its current public status.</p>
+
+        <% if (error) { %>
+          <div class="alert"><%= error %></div>
+        <% } %>
+
+        <form action="/verify" method="post" class="form-grid auth-form">
+          <label class="full-width">
+            Tracking Number
+            <input type="text" name="trackingNumber" value="<%= formData.trackingNumber || '' %>" placeholder="ATT-12345678" required />
+          </label>
+
+          <label class="full-width">
+            ID Number
+            <input type="text" name="idNumber" value="<%= formData.idNumber || '' %>" placeholder="12345678" required />
+          </label>
+
+          <div class="actions full-width">
+            <button class="btn" type="submit">Verify Record</button>
+            <a class="btn secondary" href="/track">Student Dashboard</a>
+            <a class="btn secondary" href="/">Back</a>
+          </div>
+        </form>
+      </section>
+
+      <% if (result) { %>
+        <section class="card">
+          <h2>Verification Result</h2>
+          <div class="summary">
+            <p><strong>Tracking Number:</strong> <%= result.placementNumber || result.id %></p>
+            <p><strong>Applicant Name:</strong> <%= result.fullName %></p>
+            <p><strong>Department:</strong> <%= result.appliedDepartment ? getDepartmentLabel(result.appliedDepartment) : 'Not set' %></p>
+            <p><strong>Period:</strong> <%= result.period ? getPeriodLabel(result.period) : 'Not set' %></p>
+            <p><strong>Status:</strong> <span class="badge <%= getStatusClass(result.status) %>"><%= result.status %></span></p>
+            <p><strong>Submitted:</strong> <%= formatDate(result.submittedAt) %></p>
+            <p><strong>Last Updated:</strong> <%= formatDate(result.updatedAt) %></p>
+          </div>
+        </section>
+      <% } %>
+    </main>
+<%- include("partials/layout-close") %>

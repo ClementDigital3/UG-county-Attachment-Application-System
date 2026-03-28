@@ -1,0 +1,59 @@
+<%- include("partials/layout-open", { pageTitle: "HR Audit Trail", activePortal: "hr" }) %>
+<main class="container">
+      <section class="card">
+        <div class="row-between">
+          <h1>HR Audit Trail</h1>
+          <div class="actions tight">
+            <a class="btn secondary" href="/hr/departments">Department Review</a>
+            <a class="btn secondary" href="/hr/communications">Communications</a>
+            <a class="btn secondary" href="/hr/reports">Reports</a>
+            <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+            <a class="btn secondary" href="/hr/account">HR Account</a>
+            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+            <a class="btn secondary" href="/hr/applications">HR Queue</a>
+            <form action="/hr/logout" method="post">
+              <button class="btn secondary" type="submit">Logout</button>
+            </form>
+          </div>
+        </div>
+
+        <p>System-level changes are recorded here so HR can review who changed sensitive settings, account access, and communication actions.</p>
+
+        <% if (error) { %>
+          <div class="alert"><%= error %></div>
+        <% } %>
+
+        <% if (notice) { %>
+          <div class="notice"><%= notice %></div>
+        <% } %>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Action</th>
+                <th>Actor</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (!auditTrail.length) { %>
+                <tr>
+                  <td class="table-empty-state" colspan="4"><strong>No audit entries recorded yet.</strong> New HR and department control actions will appear here.</td>
+                </tr>
+              <% } %>
+              <% auditTrail.forEach((entry) => { %>
+                <tr>
+                  <td><%= formatDate(entry.at) %></td>
+                  <td><%= entry.action %></td>
+                  <td><%= entry.actorUsername %> (<%= entry.actorRole %>)</td>
+                  <td><%= entry.note || 'No note recorded.' %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+<%- include("partials/layout-close") %>

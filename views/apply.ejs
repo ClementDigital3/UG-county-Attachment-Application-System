@@ -3,7 +3,7 @@
   <section class="card">
     <h1>Attachment Application Form</h1>
     <p>
-      Start with the department and institution selection first. The rest of the form opens only when that institution still has room in the selected department.
+      Start with the department, institution, and applicant category selection first. The rest of the form opens once the system confirms normal slot availability or a valid PWD/special-applicant declaration.
     </p>
 
     <% if (error) { %>
@@ -18,7 +18,7 @@
 
     <% if (slotsFull) { %>
       <div class="alert">
-        Application slots are currently full for this intake. Please check again later.
+        Ordinary application slots are currently full for this intake. Declared PWD or special applicants can still continue after explaining their condition for county review.
       </div>
     <% } %>
 
@@ -88,10 +88,10 @@
           <div class="selection-panel-header">
             <div>
               <p class="eyebrow">Step 2</p>
-              <h2>Choose department and institution first</h2>
+              <h2>Choose department, institution, and applicant category first</h2>
             </div>
             <div class="selection-panel-note">
-              Institution slots are checked immediately after you choose both.
+              Universities appear first, then polytechnics, then colleges. Declared PWD or special applicants can continue with a valid explanation even when ordinary slot limits are full.
             </div>
           </div>
 
@@ -109,6 +109,18 @@
             </label>
 
             <label>
+              Disability / Special Applicant Status *
+              <select id="disabilityStatusSelect" name="disabilityStatus" required <%= formData.acceptedTerms === 'yes' ? '' : 'disabled' %>>
+                <option value="">Select status</option>
+                <option value="no" <%= formData.disabilityStatus === 'no' ? 'selected' : '' %>>Not disabled</option>
+                <option value="yes" <%= formData.disabilityStatus === 'yes' ? 'selected' : '' %>>PWD / Special applicant</option>
+              </select>
+              <span class="field-hint">
+                Every applicant must declare whether they are applying under the normal path or as a PWD / special applicant.
+              </span>
+            </label>
+
+            <label>
               Institution *
               <input
                 id="institutionInput"
@@ -119,7 +131,7 @@
                 placeholder="Search or type institution name"
                 required
                 autocomplete="off"
-                <%= formData.appliedDepartment ? '' : 'disabled' %>
+                <%= formData.acceptedTerms === 'yes' && formData.appliedDepartment && formData.disabilityStatus ? '' : 'disabled' %>
               >
               <datalist id="institutionOptions">
                 <% institutionGroups.forEach((group) => { %>
@@ -129,27 +141,50 @@
                 <% }) %>
               </datalist>
               <span class="field-hint">
-                Start typing to search. If your institution is not listed, enter the full institution name without abbreviations.
+                This field unlocks after you choose the department and applicant category. Universities appear first, then polytechnics, then colleges.
               </span>
             </label>
           </div>
 
+          <label
+            id="disabilityReasonLabel"
+            class="full-width <%= formData.disabilityStatus === 'yes' ? '' : 'is-hidden' %>"
+          >
+            Disability / Special Consideration Explanation *
+            <span class="field-hint">
+              Explain the disability or special condition clearly. This reason is reviewed by the county as the basis for the special-applicant slot override.
+            </span>
+            <textarea
+              id="disabilityReasonInput"
+              name="disabilityReason"
+              rows="4"
+              placeholder="State the disability or special condition and any accommodation or consideration needed."
+              <%= formData.disabilityStatus === 'yes' ? 'required' : '' %>
+            ><%= formData.disabilityReason || '' %></textarea>
+          </label>
+
           <div
             id="institutionSlotBox"
-            class="selection-status-card tone-<%= formData.acceptedTerms !== 'yes' ? 'muted' : (showApplicationFields ? 'success' : (selectedInstitutionAvailability.institutionResolutionError || selectedInstitutionAvailability.isDepartmentFull || selectedInstitutionAvailability.isInstitutionFull ? 'danger' : 'muted')) %>"
+            class="selection-status-card tone-<%= formData.acceptedTerms !== 'yes' ? 'muted' : (selectedInstitutionAvailability.specialApplicantReasonRequired ? 'warning' : (showApplicationFields ? 'success' : (selectedInstitutionAvailability.institutionResolutionError || selectedInstitutionAvailability.isDepartmentFull || selectedInstitutionAvailability.isInstitutionFull ? 'danger' : 'muted'))) %>"
           >
             <strong id="institutionStatusHeading">
-              <%= formData.acceptedTerms !== 'yes' ? 'Accept the county terms first.' : (showApplicationFields ? 'You can continue with the application.' : 'Department and institution selection required.') %>
+              <%= formData.acceptedTerms !== 'yes' ? 'Accept the county terms first.' : (selectedInstitutionAvailability.specialApplicantReasonRequired ? 'Special applicant explanation required.' : (showApplicationFields ? 'You can continue with the application.' : 'Department, institution, and applicant category required.')) %>
             </strong>
             <p id="institutionStatusMessage" class="selection-status-message">
               <% if (formData.acceptedTerms !== 'yes') { %>
                 Accept the county terms and conditions first. The department and institution fields will unlock immediately after you agree.
+              <% } else if (!formData.disabilityStatus) { %>
+                Select whether you are applying as a normal applicant or a PWD / special applicant before the slot check can continue.
               <% } else if (!formData.appliedDepartment) { %>
                 Select the department first, then choose the institution to confirm whether that institution still has room in the department.
+              <% } else if (selectedInstitutionAvailability.specialApplicantReasonRequired) { %>
+                Because you selected the PWD / special-applicant path, you must explain the disability or special condition before continuing.
               <% } else if (!formData.institution) { %>
                 Department selected. Choose the institution next so the system can confirm the remaining institution slots.
               <% } else if (selectedInstitutionAvailability.institutionResolutionError) { %>
                 <%= selectedInstitutionAvailability.institutionResolutionError %>
+              <% } else if (showApplicationFields && selectedInstitutionAvailability.specialApplicant && selectedInstitutionAvailability.canBypassLimits) { %>
+                Special-applicant path active. You can continue with the application even if ordinary department or institution slot limits are full. HR will review the explanation you provided.
               <% } else if (showApplicationFields) { %>
                 <%= selectedInstitutionAvailability.institutionLabel %> can still use <%= selectedInstitutionAvailability.institutionRemaining %> of <%= selectedInstitutionAvailability.institutionLimit %> institution slot(s) in <%= selectedInstitutionAvailability.departmentLabel %>.
               <% } else if (selectedInstitutionAvailability.isDepartmentFull) { %>
@@ -174,6 +209,12 @@
                   <span>
                     Institution remaining:
                     <strong><%= selectedInstitutionAvailability.institutionRemaining %></strong>
+                  </span>
+                <% } %>
+                <% if (selectedInstitutionAvailability.specialApplicant && selectedInstitutionAvailability.canBypassLimits) { %>
+                  <span>
+                    Special applicant override:
+                    <strong>Active</strong>
                   </span>
                 <% } %>
               <% } %>
@@ -215,6 +256,15 @@
                 value="<%= formData.idNumber || '' %>"
                 placeholder="Example: 12345678"
                 required
+              />
+            </label>
+
+            <label>
+              Disability / Special Applicant
+              <input
+                type="text"
+                value="<%= formData.disabilityStatus === 'yes' ? 'PWD / Special applicant' : 'Not disabled' %>"
+                readonly
               />
             </label>
 
@@ -308,6 +358,9 @@
     (() => {
       const termsCheckbox = document.getElementById("acceptedTermsGate");
       const departmentSelect = document.getElementById("appliedDepartmentSelect");
+      const disabilityStatusSelect = document.getElementById("disabilityStatusSelect");
+      const disabilityReasonLabel = document.getElementById("disabilityReasonLabel");
+      const disabilityReasonInput = document.getElementById("disabilityReasonInput");
       const institutionInput = document.getElementById("institutionInput");
       const applicationFields = document.getElementById("applicationFields");
       const statusBox = document.getElementById("institutionSlotBox");
@@ -316,7 +369,7 @@
       const statusMetrics = document.getElementById("institutionStatusMetrics");
       const submitButton = document.getElementById("applySubmitButton");
 
-      if (!termsCheckbox || !departmentSelect || !institutionInput || !applicationFields || !statusBox || !statusHeading || !statusMessage || !statusMetrics || !submitButton) {
+      if (!termsCheckbox || !departmentSelect || !disabilityStatusSelect || !disabilityReasonLabel || !disabilityReasonInput || !institutionInput || !applicationFields || !statusBox || !statusHeading || !statusMessage || !statusMetrics || !submitButton) {
         return;
       }
 
@@ -351,7 +404,17 @@
           );
         }
 
+        if (data.specialApplicant && data.canBypassLimits) {
+          metrics.push("<span>Special applicant override: <strong>Active</strong></span>");
+        }
+
         statusMetrics.innerHTML = metrics.join("");
+      }
+
+      function syncDisabilityUi() {
+        const isSpecialApplicant = disabilityStatusSelect.value === "yes";
+        disabilityReasonLabel.classList.toggle("is-hidden", !isSpecialApplicant);
+        disabilityReasonInput.required = isSpecialApplicant;
       }
 
       function renderDefaultState() {
@@ -361,7 +424,10 @@
           "Accept the county terms and conditions first. The department and institution fields will unlock immediately after you agree.";
         statusMetrics.innerHTML = "";
         departmentSelect.disabled = !termsCheckbox.checked;
+        disabilityStatusSelect.disabled = !termsCheckbox.checked;
+        disabilityReasonInput.disabled = !termsCheckbox.checked || disabilityStatusSelect.value !== "yes";
         institutionInput.disabled = true;
+        syncDisabilityUi();
         setFieldsVisible(false);
       }
 
@@ -372,10 +438,25 @@
         }
 
         const department = departmentSelect.value.trim();
+        const disabilityStatus = disabilityStatusSelect.value.trim();
+        const disabilityReason = disabilityReasonInput.value.trim();
         const institution = institutionInput.value.trim();
 
         departmentSelect.disabled = false;
-        institutionInput.disabled = !department;
+        disabilityStatusSelect.disabled = false;
+        disabilityReasonInput.disabled = disabilityStatus !== "yes";
+        syncDisabilityUi();
+        institutionInput.disabled = !department || !disabilityStatus;
+
+        if (!disabilityStatus) {
+          setTone("muted");
+          statusHeading.textContent = "Applicant category required.";
+          statusMessage.textContent =
+            "Select whether you are applying as a normal applicant or as a PWD / special applicant before continuing.";
+          statusMetrics.innerHTML = "";
+          setFieldsVisible(false);
+          return;
+        }
 
         if (!department) {
           setTone("muted");
@@ -387,6 +468,10 @@
           return;
         }
 
+        if (!disabilityStatus) {
+          institutionInput.disabled = true;
+        }
+
         if (controller) {
           controller.abort();
         }
@@ -395,7 +480,7 @@
 
         try {
           const response = await fetch(
-            `/api/institution-availability?department=${encodeURIComponent(department)}&institution=${encodeURIComponent(institution)}`,
+            `/api/institution-availability?department=${encodeURIComponent(department)}&institution=${encodeURIComponent(institution)}&disabilityStatus=${encodeURIComponent(disabilityStatus)}&disabilityReason=${encodeURIComponent(disabilityReason)}`,
             { signal: controller.signal }
           );
 
@@ -405,6 +490,15 @@
 
           const data = await response.json();
           renderMetrics(data);
+
+          if (data.specialApplicantReasonRequired) {
+            setTone("warning");
+            statusHeading.textContent = "Special applicant explanation required.";
+            statusMessage.textContent =
+              "Because you selected the PWD / special-applicant path, you must explain the disability or special condition before continuing.";
+            setFieldsVisible(false);
+            return;
+          }
 
           if (!institution) {
             setTone("muted");
@@ -422,6 +516,15 @@
               data.institutionResolutionError ||
               "Please choose a recognised institution from the dropdown before continuing.";
             setFieldsVisible(false);
+            return;
+          }
+
+          if (data.specialApplicant && data.canBypassLimits) {
+            setTone("success");
+            statusHeading.textContent = "Special applicant path confirmed.";
+            statusMessage.textContent =
+              "PWD / special-applicant override is active. You can continue with the application and HR will review the explanation you provided.";
+            setFieldsVisible(true);
             return;
           }
 
@@ -464,6 +567,9 @@
 
       termsCheckbox.addEventListener("change", refreshAvailability);
       departmentSelect.addEventListener("change", refreshAvailability);
+      disabilityStatusSelect.addEventListener("change", refreshAvailability);
+      disabilityReasonInput.addEventListener("input", refreshAvailability);
+      disabilityReasonInput.addEventListener("change", refreshAvailability);
       institutionInput.addEventListener("input", refreshAvailability);
       institutionInput.addEventListener("change", refreshAvailability);
       refreshAvailability();

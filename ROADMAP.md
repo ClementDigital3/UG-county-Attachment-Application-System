@@ -1,242 +1,236 @@
 # Project Roadmap
 
-This backlog tracks the next build steps for the County Attachment Application System so work can continue in small, controlled releases.
+This roadmap now reflects the current state of the County Attachment Application System. It separates what is already implemented from what still blocks a real county-wide production handover.
 
-## How To Use This Backlog
+## Current Delivery Status
 
-- Build from top to bottom unless a production issue forces a different priority.
-- Keep one feature focused per commit where possible.
-- After each finished item:
-  - update this file
-  - commit
-  - push
-  - redeploy if the change affects the hosted app
+Implemented:
 
-## Current Priority
+- MongoDB migration for applications, settings, department access records, and sessions
+- Cloud file storage abstraction with Cloudinary support
+- Student application portal
+- Student self-service dashboard
+- HR-controlled department review flow
+- HR final review queue
+- NITA workflow with automatic county-endorsed document generation
+- Joining-letter upload and student download
+- HR department access management
+- Analytics and reporting pages
+- HR communications page
+- Email and SMS notification integration points
+- Landing-page intake windows, deadline runner, and countdown
+- County terms and conditions checkpoint with recorded acceptance
 
-1. PostgreSQL migration
-2. Notifications
-3. Audit trail
-4. Search and advanced filtering
-5. Security hardening
-6. Document review workflow improvement
+Partially implemented or operationally limited:
 
-## Phase 1: Immediate Practical Improvements
+- email notifications depend on SMTP configuration
+- SMS notifications depend on Twilio and valid production sender support for Kenya
+- Cloudinary durability depends on proper environment configuration
 
-### 1. Cloud file storage
+## Top Priority Before Real County Production Use
+
+These items should be treated as production blockers, not optional polish.
+
+### 1. Password hashing
 
 Status:
+
+- [x] Baseline implemented
+
+Why it matters:
+
+- HR and department credentials should not remain dependent on plain-text password handling
+
+What is now in place:
+
+- stored HR and department passwords are hashed
+- legacy plain-text credentials are upgraded on successful login
+- password change flow works against hashed credentials
+
+Remaining work:
+
+- define secure password reset and recovery policy
+- rotate bootstrap credentials during handover
+
+### 2. Rate limiting and login protection
+
+Status:
+
+- [~] Partially implemented
+
+Why it matters:
+
+- HR login and student tracking endpoints should be protected from brute force and abuse
+
+What is now in place:
+
+- rate limiting on HR login
+- rate limiting on student tracking and public verification
+- temporary repeated-failure blocking
+
+Remaining work:
+
+- tune thresholds for production traffic
+- add stronger monitoring, alerting, and lockout policy
+- review session-security hardening
+
+### 3. Audit trail
+
+Status:
+
+- [~] Partially implemented
+
+Why it matters:
+
+- county operations need accountability for sensitive actions
+
+What is now in place:
+
+- application audit trail for major workflow actions
+- system audit trail for settings, account, and communication changes
+- HR audit page for operational review
+
+Remaining work:
+
+- define audit retention policy
+- add export/archive policy for county oversight
+
+### 4. Backup and recovery strategy
+
+Status:
+
+- [ ] Required
+
+Why it matters:
+
+- production handover is incomplete without recoverability
+
+Expected work:
+
+- confirm MongoDB backup process
+- confirm Cloudinary recovery expectations
+- document restore steps and ownership
+
+### 5. HR handover and operating guide
+
+Status:
+
+- [~] Documentation drafted, operations handover still required
+
+Why it matters:
+
+- HR needs a formal operating guide, not only code or demo knowledge
+
+Expected work:
+
+- provide portal operating instructions
+- define ownership and support contacts
+- document routine workflows and escalation paths
+
+## Next Operational Improvements
+
+These are valuable next steps after the production blockers above.
+
+### 6. Search and advanced filtering
+
+Status:
+
 - [x] Implemented
 
 Goal:
-- move uploaded documents and joining letters away from local disk
 
-Why it matters:
-- Render free hosting does not keep local files permanently
-- uploaded documents should survive restarts and redeploys
+- speed up HR and department review for larger volumes
 
-Possible options:
-- Cloudinary
-- Amazon S3 nb
-- Supabase Storage
-
-### 2. Admin account management UI
+### 7. Document review workflow improvement
 
 Status:
-- [x] Implemented
+
+- [x] Implemented baseline
 
 Goal:
-- let HR create, edit, reset, activate, and deactivate department admin accounts from the portal
 
-Why it matters:
-- removes manual backend editing
-- makes departmental administration realistic for county use
+- standardize correction reasons and make document review easier to understand
 
-### 3. Analytics and reporting dashboard
+### 8. Joining letter templates
 
 Status:
-- [x] Implemented
+
+- [x] Implemented baseline
 
 Goal:
-- show operational summaries for HR and department admins
 
-Suggested outputs:
-- total applications by department
-- total applications by institution
-- pending, verified, approved, rejected counts
-- remaining slots by department
+- allow HR to generate joining letters from standard templates instead of uploading each one manually
 
-## Phase 2: Hosted Production Readiness
-
-### 4. PostgreSQL migration
+### 9. Public application verification page
 
 Status:
+
+- [x] Implemented baseline
+
+Goal:
+
+- provide a safer public follow-up path using tracking number plus identity verification inputs
+
+### 10. Timezone and activity consistency cleanup
+
+Status:
+
 - [ ] Planned
 
 Goal:
-- evaluate MongoDB vs PostgreSQL for long-term hosted production use
 
-Why it matters:
-- better persistence for hosted deployments
-- better fit for multi-user production workloads
-- cleaner path for reporting and scaling
+- ensure all activity and timestamps consistently reflect county local time
 
-### 5. Notifications
+## Longer-Term Strategic Work
+
+### 11. Database strategy review
 
 Status:
+
 - [ ] Planned
 
 Goal:
-- notify students when key application events happen
 
-Suggested triggers:
-- application received
-- correction requested
-- application approved
-- application rejected
-- joining letter ready
+- review MongoDB versus PostgreSQL for long-term county production scale, reporting needs, and operations
 
-Possible channels:
-- email
-- SMS
+Current note:
 
-### 6. Audit trail
+- MongoDB is the active live database today
+- this item is now a strategic review, not an immediate migration requirement
+
+### 12. Role expansion
 
 Status:
+
 - [ ] Planned
 
 Goal:
-- record important system actions for accountability
 
-Examples:
-- who verified an application
-- who approved or rejected an application
-- when a document was re-uploaded
-- when portal settings were changed
+- introduce more structured access control if the county later requires more separation of duties
 
-### 7. Search and advanced filtering
+Possible future roles:
 
-Status:
-- [ ] Planned
-
-Goal:
-- make admin and HR review faster as application volume grows
-
-Suggested filters:
-- department
-- period
-- institution
-- status
-- date range
-
-## Phase 3: User Experience And Workflow
-
-### 8. Student self-service dashboard
-
-Status:
-- [x] Implemented
-
-Goal:
-- give students a clearer post-application experience
-
-Suggested content:
-- application status
-- reviewer comments
-- correction requests
-- joining letter download
-
-### 9. Document review workflow improvement
-
-Status:
-- [ ] Planned
-
-Goal:
-- make document correction and review more structured
-
-Suggested improvements:
-- standard correction reasons
-- clearer review notes
-- review history per application
-
-### 10. Attachment slot dashboard
-
-Status:
-- [ ] Planned
-
-Goal:
-- make slot usage and institution balancing more visible
-
-Suggested outputs:
-- live slot usage by department
-- remaining slot count by department
-- institution fairness pressure indicators
-
-### 11. Joining letter templates
-
-Status:
-- [ ] Planned
-
-Goal:
-- allow HR to generate a standard joining letter from a template instead of uploading each one manually
-
-### 12. Public application verification page
-
-Status:
-- [ ] Planned
-
-Goal:
-- allow safer public tracking using placement number and supporting identity details
-
-Why it matters:
-- reduces confusion during follow-up
-- makes status confirmation easier for students
-
-## Phase 4: Governance And Security
-
-### 13. Role expansion
-
-Status:
-- [ ] Planned
-
-Goal:
-- support more structured access control
-
-Suggested roles:
 - super admin
 - HR admin
-- department admin
+- department reviewer
 - records officer
 
-### 14. Security hardening
+### 13. Advanced slot and fairness dashboard
 
 Status:
+
 - [ ] Planned
 
 Goal:
-- improve production safety before real county rollout
 
-Suggested work:
-- password hashing
-- rate limiting
-- CSRF protection
-- login lockout after repeated failures
-- stricter upload controls in production mode
-
-### 15. Timezone and activity consistency
-
-Status:
-- [ ] Planned
-
-Goal:
-- make displayed dates and times match county local time consistently
-
-Why it matters:
-- review history should reflect the actual action time in East Africa Time
-- users should not see delayed or misleading timestamps
+- provide stronger visibility into departmental capacity pressure and institution distribution
 
 ## Working Notes
 
-- MongoDB is the current active database.
+- MongoDB is the current active application database.
 - Sessions are also stored in MongoDB.
-- On free Render, local uploaded files are still temporary unless cloud storage is enabled.
-- For real hosted use, cloud file storage and managed database backups are the next major upgrades.
+- Cloudinary should be treated as the preferred hosted file-storage path.
+- Email is the most reliable notification channel in the current system.
+- SMS support exists in the codebase, but Kenyan production delivery depends on provider/sender readiness.
+- The system is currently suitable for demo, pilot, and controlled deployment.
+- A real county-wide handover still requires the production-blocker items above to be completed.

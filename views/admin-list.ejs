@@ -6,6 +6,7 @@
           <div class="actions tight">
             <a class="btn secondary" href="/hr/applications">HR Queue</a>
             <a class="btn secondary" href="/hr/departments">Department Access</a>
+            <a class="btn secondary" href="/hr/audit">Audit Trail</a>
             <a class="btn secondary" href="/admin/reports">Department Report</a>
             <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
             <form action="/hr/logout" method="post">
@@ -56,6 +57,18 @@
               <option value="Admitted" <%= statusFilter === 'Admitted' ? 'selected' : '' %>>Admitted</option>
               <option value="Rejected" <%= statusFilter === 'Rejected' ? 'selected' : '' %>>Rejected</option>
             </select>
+          </label>
+          <label>
+            Search
+            <input type="text" name="search" value="<%= search || '' %>" placeholder="Tracking number, name, email, ID" />
+          </label>
+          <label>
+            Submitted from
+            <input type="date" name="dateFrom" value="<%= dateFrom || '' %>" />
+          </label>
+          <label>
+            Submitted to
+            <input type="date" name="dateTo" value="<%= dateTo || '' %>" />
           </label>
           <input type="hidden" name="department" value="<%= departmentFilter %>" />
           <button class="btn" type="submit">Apply Filter</button>

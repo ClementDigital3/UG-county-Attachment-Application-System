@@ -6,6 +6,7 @@
           <div class="actions tight">
             <a class="btn secondary" href="/hr/departments">Department Review</a>
             <a class="btn secondary" href="/hr/communications">Communications</a>
+            <a class="btn secondary" href="/hr/audit">Audit Trail</a>
             <a class="btn secondary" href="/hr/reports">Reports</a>
             <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
             <a class="btn secondary" href="/hr/account">HR Account</a>
@@ -55,6 +56,18 @@
                 </option>
               <% }) %>
             </select>
+          </label>
+          <label>
+            Search
+            <input type="text" name="search" value="<%= search || '' %>" placeholder="Tracking number, name, email, ID" />
+          </label>
+          <label>
+            Submitted from
+            <input type="date" name="dateFrom" value="<%= dateFrom || '' %>" />
+          </label>
+          <label>
+            Submitted to
+            <input type="date" name="dateTo" value="<%= dateTo || '' %>" />
           </label>
           <button class="btn" type="submit">Apply Filter</button>
         </form>

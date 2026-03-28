@@ -10,6 +10,7 @@ const { createDatabase } = require("./database");
 const { createFileStorage } = require("./file-storage");
 const { createCountyEndorsedNitaPdf } = require("./county-nita-pdf");
 const { createNotificationService } = require("./notification-service");
+const { createJoiningLetterTemplatePdf } = require("./joining-letter-template");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,8 +38,42 @@ const STATUS_OPTIONS = ["Pending", "Needs Correction", "Verified", "Admitted", "
 const FINAL_DECISION_STATUSES = new Set(["Admitted", "Rejected"]);
 const HR_VISIBLE_STATUSES = new Set(["Verified", "Admitted", "Rejected"]);
 const DEFAULT_INSTITUTION_MAX_SHARE_PERCENT = 40;
+const PASSWORD_HASH_PREFIX = "scrypt";
+const APP_AUDIT_TRAIL_LIMIT = 80;
+const SYSTEM_AUDIT_TRAIL_LIMIT = 150;
 const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI || "";
 const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || "attachment_application_system";
+const CORRECTION_REASON_OPTIONS = [
+  { key: "missing_pages", label: "Missing pages or incomplete document" },
+  { key: "unclear_scan", label: "Unreadable or unclear scan" },
+  { key: "wrong_document", label: "Wrong document uploaded" },
+  { key: "mismatch", label: "Document details do not match the application" },
+  { key: "missing_stamp", label: "Required stamp or signature is missing" },
+  { key: "expired_invalid", label: "Expired or invalid document" },
+  { key: "other", label: "Other correction required" }
+];
+const JOINING_LETTER_TEMPLATES = [
+  { key: "standard_county", label: "Standard County Attachment Joining Letter" }
+];
+const INSTITUTION_CATEGORY_PRIORITY = {
+  "Public Universities": 1,
+  "Private Universities": 2,
+  "Public University Constituent Colleges": 3,
+  "National Polytechnics": 4,
+  "Public Colleges": 5
+};
+const RATE_LIMIT_CONFIG = {
+  hrLogin: {
+    windowMs: 15 * 60 * 1000,
+    maxAttempts: 5,
+    blockMs: 30 * 60 * 1000
+  },
+  studentTracking: {
+    windowMs: 10 * 60 * 1000,
+    maxAttempts: 8,
+    blockMs: 15 * 60 * 1000
+  }
+};
 
 const PERIODS = [
   { key: "JAN_MAR", label: "January - March", shortLabel: "Jan - Mar" },
@@ -246,6 +281,163 @@ const APPLICATION_TERMS = [
 ];
 const APPLICATION_TERMS_VERSION = "County Attachment Terms v3";
 
+function isPasswordHash(value) {
+  return (value || "").toString().startsWith(`${PASSWORD_HASH_PREFIX}$`);
+}
+
+function hashPassword(value) {
+  const plain = (value || "").toString();
+  const salt = crypto.randomBytes(16).toString("hex");
+  const derivedKey = crypto.scryptSync(plain, salt, 64).toString("hex");
+  return `${PASSWORD_HASH_PREFIX}$${salt}$${derivedKey}`;
+}
+
+function verifyPassword(plainText, storedValue) {
+  const plain = (plainText || "").toString();
+  const stored = (storedValue || "").toString();
+
+  if (!stored) {
+    return false;
+  }
+
+  if (!isPasswordHash(stored)) {
+    return plain === stored;
+  }
+
+  const [, salt, expectedHex] = stored.split("$");
+  if (!salt || !expectedHex) {
+    return false;
+  }
+
+  const actualHex = crypto.scryptSync(plain, salt, 64).toString("hex");
+  const expectedBuffer = Buffer.from(expectedHex, "hex");
+  const actualBuffer = Buffer.from(actualHex, "hex");
+
+  if (expectedBuffer.length !== actualBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(expectedBuffer, actualBuffer);
+}
+
+function getCorrectionReasonLabel(reasonCode) {
+  const normalized = (reasonCode || "").toString().trim();
+  return CORRECTION_REASON_OPTIONS.find((item) => item.key === normalized)?.label || "";
+}
+
+function normalizeCorrectionReason(reasonCode) {
+  const normalized = (reasonCode || "").toString().trim();
+  return CORRECTION_REASON_OPTIONS.some((item) => item.key === normalized) ? normalized : "";
+}
+
+function getReviewExplanation(review) {
+  const reasonLabel = getCorrectionReasonLabel(review?.reasonCode);
+  const note = (review?.comment || "").toString().trim();
+
+  if (reasonLabel && note) {
+    return `${reasonLabel}. ${note}`;
+  }
+
+  return reasonLabel || note || "No specific correction note was provided.";
+}
+
+function normalizeAuditMetadata(metadata) {
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? JSON.parse(JSON.stringify(metadata))
+    : {};
+}
+
+function normalizeAuditEntry(entry) {
+  return {
+    scope: (entry?.scope || "application").toString().trim(),
+    action: (entry?.action || "updated").toString().trim(),
+    actorRole: (entry?.actorRole || "system").toString().trim(),
+    actorUsername: (entry?.actorUsername || "system").toString().trim(),
+    note: (entry?.note || "").toString().trim(),
+    at: (entry?.at || new Date().toISOString()).toString(),
+    metadata: normalizeAuditMetadata(entry?.metadata)
+  };
+}
+
+function normalizeAuditTrail(trail, limit = APP_AUDIT_TRAIL_LIMIT) {
+  return (Array.isArray(trail) ? trail : [])
+    .map((entry) => normalizeAuditEntry(entry))
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, limit);
+}
+
+function getActorInfo(req, fallbackRole = "system") {
+  return {
+    actorRole: (req?.session?.adminRole || fallbackRole).toString(),
+    actorUsername:
+      (req?.session?.adminUsername || req?.session?.adminDepartment || fallbackRole).toString()
+  };
+}
+
+function appendApplicationAudit(application, entry) {
+  application.auditTrail = normalizeAuditTrail([
+    normalizeAuditEntry(entry),
+    ...(Array.isArray(application.auditTrail) ? application.auditTrail : [])
+  ]);
+  return application.auditTrail;
+}
+
+function appendSettingsAudit(settings, entry) {
+  settings.systemAuditTrail = normalizeAuditTrail(
+    [normalizeAuditEntry(entry), ...(Array.isArray(settings.systemAuditTrail) ? settings.systemAuditTrail : [])],
+    SYSTEM_AUDIT_TRAIL_LIMIT
+  );
+  return settings.systemAuditTrail;
+}
+
+function createRateLimiter({ windowMs, maxAttempts, blockMs }) {
+  const bucket = new Map();
+
+  function getState(key) {
+    const now = Date.now();
+    const normalizedKey = (key || "unknown").toString();
+    const existing = bucket.get(normalizedKey);
+    if (!existing || now - existing.windowStart > windowMs) {
+      const fresh = {
+        count: 0,
+        windowStart: now,
+        blockedUntil: 0
+      };
+      bucket.set(normalizedKey, fresh);
+      return fresh;
+    }
+
+    return existing;
+  }
+
+  return {
+    check(key) {
+      const state = getState(key);
+      const now = Date.now();
+      if (state.blockedUntil > now) {
+        return {
+          allowed: false,
+          retryAfterMs: state.blockedUntil - now
+        };
+      }
+
+      return { allowed: true, retryAfterMs: 0 };
+    },
+    fail(key) {
+      const state = getState(key);
+      state.count += 1;
+      if (state.count >= maxAttempts) {
+        state.blockedUntil = Date.now() + blockMs;
+      }
+      bucket.set((key || "unknown").toString(), state);
+      return state;
+    },
+    reset(key) {
+      bucket.delete((key || "unknown").toString());
+    }
+  };
+}
+
 function loadKenyaInstitutionGroups() {
   if (!fs.existsSync(KENYA_INSTITUTIONS_FILE)) {
     return [];
@@ -281,7 +473,11 @@ function loadKenyaInstitutionGroups() {
         };
       })
       .filter((group) => group.institutions.length > 0)
-      .sort((a, b) => a.category.localeCompare(b.category, "en", { sensitivity: "base" }));
+      .sort((a, b) => {
+        const rankA = INSTITUTION_CATEGORY_PRIORITY[a.category] || 999;
+        const rankB = INSTITUTION_CATEGORY_PRIORITY[b.category] || 999;
+        return rankA - rankB || a.category.localeCompare(b.category, "en", { sensitivity: "base" });
+      });
   } catch (_error) {
     return [];
   }
@@ -307,7 +503,7 @@ function createDefaultDepartmentCapacities(defaultCapacity = 10) {
 function createDefaultHrAccount() {
   return {
     username: normalizeAdminUsername(HR_USERNAME),
-    password: (HR_PASSWORD || "").toString(),
+    password: hashPassword((HR_PASSWORD || "").toString()),
     updatedAt: new Date().toISOString()
   };
 }
@@ -326,6 +522,7 @@ function createDefaultSettings() {
     landingTickerText: "Attachment application dates will appear here once HR opens the next county window.",
     applicationDeadline: "",
     communicationBroadcasts: [],
+    systemAuditTrail: [],
     departmentCapacities,
     hrAccount: createDefaultHrAccount(),
     updatedAt: new Date().toISOString()
@@ -335,7 +532,7 @@ function createDefaultSettings() {
 function createDefaultDepartmentAdmins() {
   return DEPARTMENTS.map((department) => ({
     username: `${department.key}_admin`,
-    password: DEFAULT_DEPARTMENT_ADMIN_PASSWORD,
+    password: hashPassword(DEFAULT_DEPARTMENT_ADMIN_PASSWORD),
     role: "department_admin",
     department: department.key,
     displayName: `${department.label} Admin`
@@ -367,6 +564,8 @@ const notificationService = createNotificationService({
   twilioAuthToken: TWILIO_AUTH_TOKEN,
   twilioFromNumber: TWILIO_FROM_NUMBER
 });
+const hrLoginRateLimiter = createRateLimiter(RATE_LIMIT_CONFIG.hrLogin);
+const studentTrackingRateLimiter = createRateLimiter(RATE_LIMIT_CONFIG.studentTracking);
 
 class MongoSessionStore extends session.Store {
   constructor(dbPromise) {
@@ -491,6 +690,7 @@ function createDefaultDocumentsReview() {
   return REQUIRED_DOCUMENT_FIELDS.reduce((acc, fieldName) => {
     acc[fieldName] = {
       status: "Pending",
+      reasonCode: "",
       comment: ""
     };
     return acc;
@@ -500,6 +700,7 @@ function createDefaultDocumentsReview() {
 function createDefaultCombinedDocumentReview() {
   return {
     status: "Pending",
+    reasonCode: "",
     comment: ""
   };
 }
@@ -507,6 +708,7 @@ function createDefaultCombinedDocumentReview() {
 function createDefaultNitaReview() {
   return {
     status: "Pending",
+    reasonCode: "",
     comment: ""
   };
 }
@@ -553,6 +755,7 @@ function normalizeDocumentsReview(documentsReview) {
 
     defaults[fieldName] = {
       status: safeStatus,
+      reasonCode: normalizeCorrectionReason(source[fieldName]?.reasonCode),
       comment: (source[fieldName]?.comment || "").toString().trim()
     };
   });
@@ -569,6 +772,7 @@ function normalizeCombinedDocumentReview(review) {
 
   return {
     status: safeStatus,
+    reasonCode: normalizeCorrectionReason(review?.reasonCode),
     comment: (review?.comment || "").toString().trim()
   };
 }
@@ -582,6 +786,7 @@ function normalizeNitaReview(review) {
 
   return {
     status: safeStatus,
+    reasonCode: normalizeCorrectionReason(review?.reasonCode),
     comment: (review?.comment || "").toString().trim()
   };
 }
@@ -713,6 +918,23 @@ function normalizeTermsAcceptanceRecord(record) {
   };
 }
 
+function normalizeDisabilityStatus(value) {
+  const normalized = (value || "").toString().trim().toLowerCase();
+  return normalized === "yes" ? "yes" : "no";
+}
+
+function normalizeDisabilityReason(value) {
+  return (value || "").toString().trim().replace(/\s+/g, " ");
+}
+
+function isSpecialApplicantStatus(value) {
+  return normalizeDisabilityStatus(value) === "yes";
+}
+
+function isSpecialApplicantApplication(application) {
+  return isSpecialApplicantStatus(application?.disabilityStatus);
+}
+
 function normalizeBroadcastEntry(entry) {
   const channels = Array.from(
     new Set(
@@ -750,6 +972,8 @@ function ensureApplicationDefaults(application) {
     status: normalizeApplicationStatus(application.status),
     placementNumber: getTrackingNumber(application),
     idNumber: (application.idNumber || "").toString(),
+    disabilityStatus: normalizeDisabilityStatus(application.disabilityStatus),
+    disabilityReason: normalizeDisabilityReason(application.disabilityReason),
     appliedDepartment,
     assignedDepartment: application.assignedDepartment || "",
     documents: normalizeStoredDocuments(application.documents || {}),
@@ -765,6 +989,7 @@ function ensureApplicationDefaults(application) {
     joiningLetter: normalizeStoredFileEntry(application.joiningLetter),
     notificationHistory: normalizeNotificationHistory(application.notificationHistory),
     termsAcceptance: normalizeTermsAcceptanceRecord(application.termsAcceptance),
+    auditTrail: normalizeAuditTrail(application.auditTrail),
     isFrozen: Boolean(application.isFrozen),
     frozenAt: application.frozenAt || null,
     frozenByRole: (application.frozenByRole || "").toString(),
@@ -814,6 +1039,10 @@ async function readSettings() {
     .trim();
   normalized.applicationDeadline = (parsed?.applicationDeadline || "").toString().trim();
   normalized.communicationBroadcasts = normalizeBroadcastHistory(parsed?.communicationBroadcasts);
+  normalized.systemAuditTrail = normalizeAuditTrail(
+    parsed?.systemAuditTrail,
+    SYSTEM_AUDIT_TRAIL_LIMIT
+  );
   normalized.hrAccount = normalizeHrAccount(parsed?.hrAccount, normalized.hrAccount);
   normalized.updatedAt = parsed?.updatedAt || normalized.updatedAt;
   return normalized;
@@ -821,13 +1050,24 @@ async function readSettings() {
 
 async function writeSettings(settings) {
   const database = await databasePromise;
-  await database.writeSettings(settings);
+  const safeSettings = {
+    ...settings,
+    hrAccount: {
+      ...normalizeHrAccount(settings?.hrAccount),
+      password: isPasswordHash(settings?.hrAccount?.password)
+        ? settings.hrAccount.password
+        : hashPassword((settings?.hrAccount?.password || "").toString())
+    },
+    systemAuditTrail: normalizeAuditTrail(settings?.systemAuditTrail, SYSTEM_AUDIT_TRAIL_LIMIT)
+  };
+  await database.writeSettings(safeSettings);
 }
 
 function getCapacitySummary(settings, applications) {
   const applicationsByDepartment = DEPARTMENTS.reduce((acc, department) => {
     acc[department.key] = applications.filter(
-      (application) => application.appliedDepartment === department.key
+      (application) =>
+        application.appliedDepartment === department.key && !isSpecialApplicantApplication(application)
     ).length;
     return acc;
   }, {});
@@ -943,7 +1183,16 @@ async function findAdminUserByCredentials(usernameInput, passwordInput) {
   const settings = await readSettings();
   const hrAccount = normalizeHrAccount(settings?.hrAccount);
 
-  if (username === hrAccount.username && password === hrAccount.password) {
+  if (username === hrAccount.username && verifyPassword(password, hrAccount.password)) {
+    if (!isPasswordHash(hrAccount.password)) {
+      settings.hrAccount = {
+        ...hrAccount,
+        password: hashPassword(password),
+        updatedAt: new Date().toISOString()
+      };
+      settings.updatedAt = new Date().toISOString();
+      await writeSettings(settings);
+    }
     return {
       username: hrAccount.username,
       role: "hr_admin",
@@ -952,9 +1201,24 @@ async function findAdminUserByCredentials(usernameInput, passwordInput) {
     };
   }
 
-  const departmentAdmin = (await readDepartmentAdmins()).find(
-    (item) => item.username === username && item.password === password && item.isActive
+  const departmentAdmins = await readDepartmentAdmins();
+  const departmentAdmin = departmentAdmins.find(
+    (item) => item.username === username && verifyPassword(password, item.password) && item.isActive
   );
+
+  if (departmentAdmin && !isPasswordHash(departmentAdmin.password)) {
+    const upgraded = departmentAdmins.map((admin) =>
+      admin.username === departmentAdmin.username
+        ? {
+          ...admin,
+          password: hashPassword(password),
+          updatedAt: new Date().toISOString()
+        }
+        : admin
+    );
+    await saveDepartmentAdmins(upgraded);
+    departmentAdmin.password = upgraded.find((item) => item.username === departmentAdmin.username)?.password || departmentAdmin.password;
+  }
 
   return departmentAdmin || null;
 }
@@ -976,7 +1240,7 @@ async function updateHrAccount({
     return { error: "Current password is required." };
   }
 
-  if (current !== hrAccount.password) {
+  if (!verifyPassword(current, hrAccount.password)) {
     return { error: "Current password is incorrect." };
   }
 
@@ -1011,8 +1275,8 @@ async function updateHrAccount({
     }
   }
 
-  const nextPassword = changingPassword ? next : hrAccount.password;
-  if (nextUsername === hrAccount.username && nextPassword === hrAccount.password) {
+  const nextPassword = changingPassword ? hashPassword(next) : hrAccount.password;
+  if (nextUsername === hrAccount.username && !changingPassword) {
     return { error: "No account changes were provided." };
   }
 
@@ -1095,6 +1359,10 @@ async function validateDepartmentAdminInput({
 async function saveDepartmentAdmins(admins) {
   const normalized = (admins || [])
     .map((admin) => normalizeDepartmentAdminUser(admin))
+    .map((admin) => ({
+      ...admin,
+      password: isPasswordHash(admin.password) ? admin.password : hashPassword(admin.password)
+    }))
     .filter(Boolean);
   const database = await databasePromise;
   await database.writeDepartmentAdmins(normalized);
@@ -1172,7 +1440,7 @@ async function setDepartmentAdminPassword(existingUsername, password) {
 
   admins[index] = {
     ...admins[index],
-    password: password.toString(),
+    password: hashPassword(password.toString()),
     updatedAt: new Date().toISOString()
   };
   await saveDepartmentAdmins(admins);
@@ -1414,13 +1682,18 @@ function getInstitutionAvailability(
   excludeId = null,
   options = {}
 ) {
+  const specialApplicant = isSpecialApplicantStatus(options.disabilityStatus);
+  const disabilityReason = normalizeDisabilityReason(options.disabilityReason);
   const departmentCapacity = Number(settings?.departmentCapacities?.[departmentKey] || 0);
   const departmentUsed = applications.filter((application) => {
     if (excludeId && application.id === excludeId) {
       return false;
     }
 
-    return application.appliedDepartment === departmentKey;
+    return (
+      application.appliedDepartment === departmentKey &&
+      !isSpecialApplicantApplication(application)
+    );
   }).length;
   const departmentRemaining = Math.max(0, departmentCapacity - departmentUsed);
   const resolvedInstitution = resolveInstitutionSelection(
@@ -1436,6 +1709,13 @@ function getInstitutionAvailability(
     institutionLimit > 0 ? Math.max(0, institutionLimit - institutionUsed) : 0;
   const departmentSelected = Boolean(departmentKey && isValidDepartment(departmentKey));
   const institutionSelected = Boolean(institutionLabel);
+  const specialApplicantReasonRequired = specialApplicant && !disabilityReason;
+  const canBypassLimits = specialApplicant && !specialApplicantReasonRequired;
+  const normalSlotsAvailable =
+    departmentSelected &&
+    institutionSelected &&
+    departmentRemaining > 0 &&
+    (institutionLimit <= 0 || institutionRemaining > 0);
 
   return {
     departmentSelected,
@@ -1450,13 +1730,15 @@ function getInstitutionAvailability(
     institutionUsed,
     institutionRemaining,
     institutionResolutionError: resolvedInstitution.fullNameError,
+    specialApplicant,
+    canBypassLimits,
+    specialApplicantReasonRequired,
     isDepartmentFull: departmentSelected && departmentRemaining <= 0,
     isInstitutionFull: institutionSelected && institutionLimit > 0 && institutionRemaining <= 0,
     canApply:
       departmentSelected &&
       institutionSelected &&
-      departmentRemaining > 0 &&
-      (institutionLimit <= 0 || institutionRemaining > 0)
+      (normalSlotsAvailable || canBypassLimits)
   };
 }
 
@@ -1484,6 +1766,7 @@ function getInstitutionUsageCount(applications, departmentKey, institutionName, 
 
     return (
       application.appliedDepartment === departmentKey &&
+      !isSpecialApplicantApplication(application) &&
       normalizeInstitutionName(application.institution) === institutionKey
     );
   }).length;
@@ -1599,13 +1882,16 @@ function buildDepartmentReportRows(applications, settings, scopedDepartment = nu
     const departmentApplications = applications.filter(
       (application) => application.appliedDepartment === department.key
     );
+    const ordinaryDepartmentApplications = departmentApplications.filter(
+      (application) => !isSpecialApplicantApplication(application)
+    );
     const capacity = Number(settings.departmentCapacities?.[department.key] || 0);
     const approved = departmentApplications.filter((application) => isAdmittedStatus(application.status)).length;
     const verified = departmentApplications.filter((application) => application.status === "Verified").length;
     const pending = departmentApplications.filter(
       (application) => application.status === "Pending" || application.status === "Needs Correction"
     ).length;
-    const remaining = Math.max(0, capacity - departmentApplications.length);
+    const remaining = Math.max(0, capacity - ordinaryDepartmentApplications.length);
 
     return {
       ...department,
@@ -1615,7 +1901,7 @@ function buildDepartmentReportRows(applications, settings, scopedDepartment = nu
       verified,
       pending,
       remaining,
-      fillRate: capacity > 0 ? Math.round((departmentApplications.length / capacity) * 100) : 0
+      fillRate: capacity > 0 ? Math.round((ordinaryDepartmentApplications.length / capacity) * 100) : 0
     };
   });
 }
@@ -1746,6 +2032,9 @@ function getReportFilterState({ query = {}, allowDepartmentFilter = false, force
   const requestedStatus = (query.status || "All").toString().trim();
   const requestedPeriod = (query.period || "All").toString().trim();
   const requestedDepartment = (query.department || "All").toString().trim();
+  const requestedSearch = (query.search || "").toString().trim();
+  const requestedDateFrom = (query.dateFrom || "").toString().trim();
+  const requestedDateTo = (query.dateTo || "").toString().trim();
   const normalizedRequestedStatus =
     requestedStatus === "All" ? "All" : normalizeApplicationStatus(requestedStatus);
   const validStatuses = new Set(["All", ...STATUS_OPTIONS]);
@@ -1754,6 +2043,9 @@ function getReportFilterState({ query = {}, allowDepartmentFilter = false, force
   return {
     status: validStatuses.has(normalizedRequestedStatus) ? normalizedRequestedStatus : "All",
     period: validPeriods.has(requestedPeriod) ? requestedPeriod : "All",
+    search: requestedSearch,
+    dateFrom: /^\d{4}-\d{2}-\d{2}$/.test(requestedDateFrom) ? requestedDateFrom : "",
+    dateTo: /^\d{4}-\d{2}-\d{2}$/.test(requestedDateTo) ? requestedDateTo : "",
     department:
       forcedDepartment ||
       (allowDepartmentFilter &&
@@ -1774,6 +2066,14 @@ function filterApplicationsForReports(applications, filters) {
     }
 
     if (filters.department !== "All" && application.appliedDepartment !== filters.department) {
+      return false;
+    }
+
+    if (!matchesApplicationSearch(application, filters.search)) {
+      return false;
+    }
+
+    if (!isWithinDateRange(application.submittedAt || application.updatedAt, filters.dateFrom, filters.dateTo)) {
       return false;
     }
 
@@ -1922,7 +2222,7 @@ function getStudentDashboardStatus(application, rejectedDocuments) {
         nextActionTitle: application?.joiningLetter?.filename ? "Next step" : "Current status",
         nextActionText: application?.joiningLetter?.filename
           ? "Download your joining letter and keep the tracking number for reference."
-          : "Wait for HR to upload the joining letter, then download it from this dashboard."
+          : "Wait for HR to generate the joining letter, then download it from this dashboard."
       };
     case "Rejected":
       return {
@@ -2044,8 +2344,8 @@ function buildStudentTimeline(application) {
       note:
         status === "Admitted"
           ? application?.joiningLetter?.filename
-            ? "Admitted and joining letter uploaded."
-            : "Admitted. Joining letter upload is pending."
+            ? "Admitted and joining letter generated."
+            : "Admitted. Joining letter generation is pending."
           : status === "Rejected"
             ? "Final decision recorded."
             : "Final HR decision not reached yet."
@@ -2695,6 +2995,75 @@ function getRequestIpAddress(req) {
   return forwarded || (req.ip || "").toString().trim() || null;
 }
 
+function formatRetryWindow(retryAfterMs) {
+  const totalSeconds = Math.max(1, Math.ceil(Number(retryAfterMs || 0) / 1000));
+  const minutes = Math.ceil(totalSeconds / 60);
+  return minutes <= 1 ? "about 1 minute" : `about ${minutes} minutes`;
+}
+
+function getHrLoginRateLimitKey(req) {
+  const ip = getRequestIpAddress(req) || "unknown";
+  const username = normalizeAdminUsername(req.body?.username || req.query?.username || "");
+  return `hr-login:${ip}:${username || "unknown"}`;
+}
+
+function getTrackingRateLimitKey(req) {
+  const ip = getRequestIpAddress(req) || "unknown";
+  const email = (req.body?.email || req.query?.email || "").toString().trim().toLowerCase();
+  const idNumber = normalizeIdNumber(req.body?.idNumber || req.query?.idNumber || "");
+  return `track:${ip}:${email || "unknown"}:${idNumber || "unknown"}`;
+}
+
+function matchesApplicationSearch(application, searchQuery) {
+  const query = (searchQuery || "").toString().trim().toLowerCase();
+  if (!query) {
+    return true;
+  }
+
+  const normalizedApplication = ensureApplicationDefaults(application);
+  const searchable = [
+    normalizedApplication.id,
+    normalizedApplication.placementNumber,
+    normalizedApplication.fullName,
+    normalizedApplication.email,
+    normalizedApplication.phone,
+    normalizedApplication.idNumber,
+    normalizedApplication.institution,
+    normalizedApplication.course,
+    normalizedApplication.appliedDepartment,
+    getDepartmentLabel(normalizedApplication.appliedDepartment),
+    normalizedApplication.period,
+    getPeriodLabel(normalizedApplication.period)
+  ]
+    .filter(Boolean)
+    .map((value) => value.toString().toLowerCase());
+
+  return searchable.some((value) => value.includes(query));
+}
+
+function isWithinDateRange(dateValue, dateFrom, dateTo) {
+  const parsed = new Date(dateValue || "");
+  if (Number.isNaN(parsed.getTime())) {
+    return false;
+  }
+
+  if (dateFrom) {
+    const start = new Date(`${dateFrom}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || parsed < start) {
+      return false;
+    }
+  }
+
+  if (dateTo) {
+    const end = new Date(`${dateTo}T23:59:59.999`);
+    if (Number.isNaN(end.getTime()) || parsed > end) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function getStudentDashboardUrl(req, application) {
   const trackingNumber = (application?.placementNumber || application?.id || "").toString().trim();
   const email = (application?.email || "").toString().trim();
@@ -2811,7 +3180,7 @@ function buildApplicationNotificationContent(req, application, eventType) {
       detailLines = [
         application.joiningLetter?.filename
           ? "Open the student dashboard and download your joining letter."
-          : "HR will upload the joining letter next. Watch the student dashboard for the download."
+          : "HR will generate the joining letter next. Watch the student dashboard for the download."
       ];
       break;
     case "hr_rejected":
@@ -2998,9 +3367,14 @@ async function renderApplyPage(res, { error = null, formData = {}, statusCode = 
     settings,
     applications,
     (formData.appliedDepartment || "").toString().trim(),
-    (formData.institution || "").toString().trim()
+    (formData.institution || "").toString().trim(),
+    null,
+    {
+      disabilityStatus: formData.disabilityStatus,
+      disabilityReason: formData.disabilityReason
+    }
   );
-  const canStartApplication = hasOpenPeriods && !slotsFull;
+  const canStartApplication = hasOpenPeriods;
   const showApplicationFields = canStartApplication && selectedInstitutionAvailability.canApply;
 
   return res.status(statusCode).render("apply", {
@@ -3053,6 +3427,7 @@ function renderTrackPage(res, {
     rejectedDocuments,
     studentDashboard,
     formatDate,
+    getReviewExplanation,
     getPeriodLabel,
     getDepartmentLabel,
     getStatusClass,
@@ -3092,6 +3467,8 @@ async function renderAdminDetailPage(res, {
     combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION,
     nitaDocumentDefinition: NITA_DOCUMENT_DEFINITION,
     statusOptions,
+    correctionReasonOptions: CORRECTION_REASON_OPTIONS,
+    getCorrectionReasonLabel,
     error,
     notice
   });
@@ -3103,20 +3480,37 @@ function renderHrDetailPage(res, {
   notice = null,
   statusCode = 200
 }) {
+  const normalized = ensureApplicationDefaults(application);
   return res.status(statusCode).render("hr-detail", {
-    application: ensureApplicationDefaults(application),
+    application: normalized,
     notice,
     error,
     formatDate,
     getPeriodLabel,
     getDepartmentLabel,
     getStatusClass,
+    getCorrectionReasonLabel,
     hrStatusOptions: ["Verified", "Admitted", "Rejected"],
+    joiningLetterTemplates: JOINING_LETTER_TEMPLATES,
     notificationProviderSummary: notificationService.getProviderSummary(),
     combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION,
     nitaDocumentDefinition: NITA_DOCUMENT_DEFINITION,
     countySignedNitaDefinition: COUNTY_SIGNED_NITA_DEFINITION,
     nitaResubmissionDefinition: NITA_RESUBMISSION_DEFINITION
+  });
+}
+
+async function renderHrAuditPage(res, {
+  error = null,
+  notice = null,
+  statusCode = 200
+} = {}) {
+  const settings = await readSettings();
+  return res.status(statusCode).render("hr-audit", {
+    error,
+    notice,
+    auditTrail: normalizeAuditTrail(settings.systemAuditTrail, SYSTEM_AUDIT_TRAIL_LIMIT),
+    formatDate
   });
 }
 
@@ -3216,6 +3610,8 @@ app.get("/api/institution-availability", async (req, res) => {
   const departmentKey = (req.query.department || "").toString().trim();
   const institutionName = (req.query.institution || "").toString().trim();
   const otherInstitution = (req.query.otherInstitution || "").toString().trim();
+  const disabilityStatus = (req.query.disabilityStatus || "").toString().trim();
+  const disabilityReason = (req.query.disabilityReason || "").toString().trim();
 
   if (!departmentKey || !isValidDepartment(departmentKey)) {
     return res.json({
@@ -3230,6 +3626,9 @@ app.get("/api/institution-availability", async (req, res) => {
       institutionUsed: 0,
       institutionRemaining: 0,
       institutionResolutionError: "",
+      specialApplicant: isSpecialApplicantStatus(disabilityStatus),
+      canBypassLimits: false,
+      specialApplicantReasonRequired: false,
       isDepartmentFull: false,
       isInstitutionFull: false,
       canApply: false
@@ -3244,7 +3643,7 @@ app.get("/api/institution-availability", async (req, res) => {
     departmentKey,
     institutionName,
     null,
-    { otherInstitution }
+    { otherInstitution, disabilityStatus, disabilityReason }
   );
 
   return res.json(availability);
@@ -3296,6 +3695,8 @@ app.post("/apply", async (req, res) => {
       email,
       phone,
       idNumber,
+      disabilityStatus,
+      disabilityReason,
       institution,
       course,
       appliedDepartment,
@@ -3313,6 +3714,10 @@ app.post("/apply", async (req, res) => {
     let finalEmail = (email || "").trim().toLowerCase();
     let finalPhone = (phone || "").trim();
     let finalIdNumber = (idNumber || "").trim();
+    const rawDisabilityStatus = (disabilityStatus || "").toString().trim().toLowerCase();
+    const finalDisabilityStatus = normalizeDisabilityStatus(disabilityStatus);
+    const finalDisabilityReason = normalizeDisabilityReason(disabilityReason);
+    const specialApplicant = isSpecialApplicantStatus(finalDisabilityStatus);
     let finalInstitution = (institution || "").trim();
     let finalCourse = (course || "").trim();
     let finalAppliedDepartment = (appliedDepartment || "").trim();
@@ -3357,6 +3762,24 @@ app.post("/apply", async (req, res) => {
       return renderApplyPage(res, {
         statusCode: 400,
         error: "You must accept the county application terms and conditions before submitting.",
+        formData
+      });
+    }
+
+    if (!["yes", "no"].includes(rawDisabilityStatus)) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: "Please choose whether you are applying as a normal applicant or a PWD / special applicant.",
+        formData
+      });
+    }
+
+    if (specialApplicant && !finalDisabilityReason) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: "Please explain the disability or special condition before continuing with the application.",
         formData
       });
     }
@@ -3429,7 +3852,7 @@ app.post("/apply", async (req, res) => {
       capacitySummary.applicationsByDepartment[finalAppliedDepartment] || 0
     );
 
-    if (selectedDepartmentUsed >= selectedDepartmentCapacity) {
+    if (!specialApplicant && selectedDepartmentUsed >= selectedDepartmentCapacity) {
       cleanupUploadedFiles(files);
       return renderApplyPage(res, {
         statusCode: 400,
@@ -3445,7 +3868,7 @@ app.post("/apply", async (req, res) => {
       finalInstitution
     );
 
-    if (institutionLimit > 0 && institutionUsage >= institutionLimit) {
+    if (!specialApplicant && institutionLimit > 0 && institutionUsage >= institutionLimit) {
       cleanupUploadedFiles(files);
       const fairnessRatio =
         Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT;
@@ -3519,6 +3942,8 @@ app.post("/apply", async (req, res) => {
         email: finalEmail,
         phone: finalPhone,
         idNumber: finalIdNumber,
+        disabilityStatus: finalDisabilityStatus,
+        disabilityReason: finalDisabilityReason,
         institution: finalInstitution,
         course: finalCourse,
         appliedDepartment: finalAppliedDepartment,
@@ -3552,6 +3977,21 @@ app.post("/apply", async (req, res) => {
         submittedAt: storedAt,
         updatedAt: storedAt
       });
+      appendApplicationAudit(newApplication, {
+        scope: "application",
+        action: "application_submitted",
+        actorRole: "student",
+        actorUsername: finalEmail || finalIdNumber || "student",
+        note: "Student submitted a new attachment application.",
+        at: storedAt,
+        metadata: {
+          idNumber: finalIdNumber,
+          trackingNumber: placementNumber,
+          department: finalAppliedDepartment,
+          period: finalPeriod,
+          disabilityStatus: finalDisabilityStatus
+        }
+      });
 
       applications.push(newApplication);
       await writeApplications(applications);
@@ -3580,6 +4020,7 @@ app.get("/track", async (req, res) => {
   const idNumber = (req.query.idNumber || "").toString().trim();
   const trackingNumber = (req.query.trackingNumber || "").toString().trim();
   const email = (req.query.email || "").toString().trim().toLowerCase();
+  const rateLimitKey = getTrackingRateLimitKey(req);
 
   if ((!idNumber && !trackingNumber) || !email) {
     return renderTrackPage(res, {
@@ -3599,6 +4040,18 @@ app.get("/track", async (req, res) => {
   const result = resultIndex >= 0 ? applications[resultIndex] : null;
 
   if (!result) {
+    const limitState = studentTrackingRateLimiter.check(rateLimitKey);
+    if (!limitState.allowed) {
+      return renderTrackPage(res, {
+        statusCode: 429,
+        error: `Too many tracking attempts. Try again in ${formatRetryWindow(limitState.retryAfterMs)}.`,
+        formData: {
+          idNumber,
+          email
+        }
+      });
+    }
+    studentTrackingRateLimiter.fail(rateLimitKey);
     return renderTrackPage(res, {
       statusCode: 404,
       error: "No application found with the provided details.",
@@ -3609,6 +4062,7 @@ app.get("/track", async (req, res) => {
     });
   }
 
+  studentTrackingRateLimiter.reset(rateLimitKey);
   return renderTrackPage(res, {
     result,
     formData: {
@@ -3622,6 +4076,19 @@ app.post("/track", async (req, res) => {
   const idNumber = (req.body.idNumber || "").trim();
   const trackingNumber = (req.body.trackingNumber || req.body.applicationId || "").trim();
   const email = (req.body.email || "").trim().toLowerCase();
+  const rateLimitKey = getTrackingRateLimitKey(req);
+  const rateLimitState = studentTrackingRateLimiter.check(rateLimitKey);
+
+  if (!rateLimitState.allowed) {
+    return renderTrackPage(res, {
+      statusCode: 429,
+      error: `Too many tracking attempts. Try again in ${formatRetryWindow(rateLimitState.retryAfterMs)}.`,
+      formData: {
+        idNumber,
+        email
+      }
+    });
+  }
 
   if ((!idNumber && !trackingNumber) || !email) {
     return renderTrackPage(res, {
@@ -3643,6 +4110,7 @@ app.post("/track", async (req, res) => {
   const result = resultIndex >= 0 ? applications[resultIndex] : null;
 
   if (!result) {
+    studentTrackingRateLimiter.fail(rateLimitKey);
     return renderTrackPage(res, {
       statusCode: 404,
       error: "No application found with the provided details.",
@@ -3653,6 +4121,7 @@ app.post("/track", async (req, res) => {
     });
   }
 
+  studentTrackingRateLimiter.reset(rateLimitKey);
   return renderTrackPage(res, {
     result,
     formData: {
@@ -3881,6 +4350,18 @@ app.post("/track/resubmit", async (req, res) => {
       }
 
       currentApplication.updatedAt = new Date().toISOString();
+      appendApplicationAudit(currentApplication, {
+        scope: "application",
+        action: "documents_resubmitted",
+        actorRole: "student",
+        actorUsername: currentApplication.email || currentApplication.idNumber || "student",
+        note: `Student re-uploaded ${rejectedFieldNames.map(getDocumentLabel).join(", ")}.`,
+        at: currentApplication.updatedAt,
+        metadata: {
+          trackingNumber: currentApplication.placementNumber || currentApplication.id,
+          documentFields: rejectedFieldNames
+        }
+      });
       applications[index] = currentApplication;
       await writeApplications(applications);
       await sendAndPersistApplicationNotification({
@@ -4041,6 +4522,17 @@ app.post("/track/nita-resubmit", async (req, res) => {
         updatedAt: submittedAt
       };
       currentApplication.updatedAt = submittedAt;
+      appendApplicationAudit(currentApplication, {
+        scope: "application",
+        action: "nita_resubmitted",
+        actorRole: "student",
+        actorUsername: currentApplication.email || currentApplication.idNumber || "student",
+        note: "Student uploaded the stamped NITA document for HR review.",
+        at: submittedAt,
+        metadata: {
+          trackingNumber: currentApplication.placementNumber || currentApplication.id
+        }
+      });
 
       applications[index] = currentApplication;
       await writeApplications(applications);
@@ -4074,6 +4566,89 @@ app.post("/track/nita-resubmit", async (req, res) => {
       });
     });
   });
+});
+
+app.get("/verify", async (req, res) => {
+  const trackingNumber = (req.query.trackingNumber || "").toString().trim();
+  const idNumber = (req.query.idNumber || "").toString().trim();
+  const rateLimitKey = getTrackingRateLimitKey(req);
+
+  if (!trackingNumber || !idNumber) {
+    return res.render("verify", {
+      error: null,
+      result: null,
+      formData: {
+        trackingNumber,
+        idNumber
+      },
+      formatDate,
+      getDepartmentLabel,
+      getPeriodLabel,
+      getStatusClass
+    });
+  }
+
+  const rateLimitState = studentTrackingRateLimiter.check(rateLimitKey);
+  if (!rateLimitState.allowed) {
+    return res.status(429).render("verify", {
+      error: `Too many verification attempts. Try again in ${formatRetryWindow(rateLimitState.retryAfterMs)}.`,
+      result: null,
+      formData: {
+        trackingNumber,
+        idNumber
+      },
+      formatDate,
+      getDepartmentLabel,
+      getPeriodLabel,
+      getStatusClass
+    });
+  }
+
+  const applications = await readApplications();
+  const result = applications.find((application) => {
+    const normalized = ensureApplicationDefaults(application);
+    return normalized.placementNumber === trackingNumber && normalized.idNumber === idNumber;
+  });
+
+  if (!result) {
+    studentTrackingRateLimiter.fail(rateLimitKey);
+    return res.status(404).render("verify", {
+      error: "No application record matched the supplied tracking number and ID number.",
+      result: null,
+      formData: {
+        trackingNumber,
+        idNumber
+      },
+      formatDate,
+      getDepartmentLabel,
+      getPeriodLabel,
+      getStatusClass
+    });
+  }
+
+  studentTrackingRateLimiter.reset(rateLimitKey);
+  return res.render("verify", {
+    error: null,
+    result: ensureApplicationDefaults(result),
+    formData: {
+      trackingNumber,
+      idNumber
+    },
+    formatDate,
+    getDepartmentLabel,
+    getPeriodLabel,
+    getStatusClass
+  });
+});
+
+app.post("/verify", async (req, res) => {
+  const trackingNumber = (req.body.trackingNumber || "").toString().trim();
+  const idNumber = (req.body.idNumber || "").toString().trim();
+  const query = new URLSearchParams({
+    trackingNumber,
+    idNumber
+  }).toString();
+  return res.redirect(`/verify?${query}`);
 });
 
 app.get("/application/:id", async (req, res) => {
@@ -4190,8 +4765,17 @@ app.get(HR_PORTAL_PATH, async (req, res) => {
 app.post(HR_PORTAL_PATH, async (req, res) => {
   const username = (req.body.username || "").toString();
   const password = (req.body.password || "").toString();
+  const rateLimitKey = getHrLoginRateLimitKey(req);
+  const rateLimitState = hrLoginRateLimiter.check(rateLimitKey);
+
+  if (!rateLimitState.allowed) {
+    return res.status(429).render("hr-login", {
+      error: `Too many login attempts. Try again in ${formatRetryWindow(rateLimitState.retryAfterMs)}.`
+    });
+  }
 
   if (isPresentationLogin(username, password)) {
+    hrLoginRateLimiter.reset(rateLimitKey);
     req.session.isAdmin = true;
     req.session.adminUsername = normalizeAdminUsername(username);
     req.session.adminRole = "hr_admin";
@@ -4203,11 +4787,13 @@ app.post(HR_PORTAL_PATH, async (req, res) => {
   const adminUser = await findAdminUserByCredentials(username, password);
 
   if (!adminUser || adminUser.role !== "hr_admin") {
+    hrLoginRateLimiter.fail(rateLimitKey);
     return res.status(401).render("hr-login", {
       error: "Invalid HR login credentials."
     });
   }
 
+  hrLoginRateLimiter.reset(rateLimitKey);
   req.session.isAdmin = true;
   req.session.adminUsername = adminUser.username;
   req.session.adminRole = "hr_admin";
@@ -4260,6 +4846,8 @@ app.get("/hr/periods", ensureHrAdmin, async (req, res) => {
 app.post("/hr/periods", ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
   const settings = await readSettings();
+  const previousOpenPeriods = { ...(settings.openPeriods || {}) };
+  const previousCapacities = { ...(settings.departmentCapacities || {}) };
   const updated = {
     ...settings,
     openPeriods: {
@@ -4345,6 +4933,29 @@ app.post("/hr/periods", ensureHrAdmin, async (req, res) => {
   }
 
   updated.updatedAt = new Date().toISOString();
+  appendSettingsAudit(updated, {
+    scope: "settings",
+    action: "period_settings_updated",
+    ...getActorInfo(req, "hr_admin"),
+    note: "HR updated intake windows, deadline, runner message, or slot capacities.",
+    at: updated.updatedAt,
+    metadata: {
+      applicationDeadline: updated.applicationDeadline,
+      landingTickerText: updated.landingTickerText,
+      institutionMaxSharePercent: updated.institutionMaxSharePercent,
+      openPeriodsChanged: Object.keys(updated.openPeriods || {}).filter(
+        (key) => Boolean(previousOpenPeriods[key]) !== Boolean(updated.openPeriods[key])
+      ),
+      capacityChanges: DEPARTMENTS.filter(
+        (department) =>
+          Number(previousCapacities[department.key] || 0) !== Number(updated.departmentCapacities[department.key] || 0)
+      ).map((department) => ({
+        department: department.key,
+        previous: Number(previousCapacities[department.key] || 0),
+        next: Number(updated.departmentCapacities[department.key] || 0)
+      }))
+    }
+  });
 
   await writeSettings(updated);
   return res.redirect("/hr/periods?saved=1");
@@ -4436,8 +5047,15 @@ app.get("/hr/account", ensureHrAdmin, async (req, res) => {
   return renderHrAccountPage(res, { notice });
 });
 
+app.get("/hr/audit", ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  return renderHrAuditPage(res);
+});
+
 app.post("/hr/account/password", ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
+  const previousSettings = await readSettings();
+  const previousHrAccount = normalizeHrAccount(previousSettings?.hrAccount);
   const result = await updateHrAccount({
     username: req.body.username,
     currentPassword: req.body.currentPassword,
@@ -4453,6 +5071,23 @@ app.post("/hr/account/password", ensureHrAdmin, async (req, res) => {
   }
 
   req.session.adminUsername = result.hrAccount.username;
+  const updatedSettings = await readSettings();
+  appendSettingsAudit(updatedSettings, {
+    scope: "settings",
+    action: "hr_account_updated",
+    ...getActorInfo(req, "hr_admin"),
+    note:
+      previousHrAccount.username !== result.hrAccount.username
+        ? `HR account username changed from ${previousHrAccount.username} to ${result.hrAccount.username}.`
+        : "HR account password updated.",
+    metadata: {
+      previousUsername: previousHrAccount.username,
+      newUsername: result.hrAccount.username,
+      passwordChanged: Boolean(req.body.newPassword)
+    }
+  });
+  updatedSettings.updatedAt = new Date().toISOString();
+  await writeSettings(updatedSettings);
   return res.redirect("/hr/account?passwordChanged=1");
 });
 
@@ -4563,6 +5198,20 @@ app.post("/hr/communications", ensureHrAdmin, async (req, res) => {
     }),
     ...(Array.isArray(settings.communicationBroadcasts) ? settings.communicationBroadcasts : [])
   ]);
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "communication_broadcast_sent",
+    ...getActorInfo(req, "hr_admin"),
+    note: "HR sent a general communication broadcast to applicant contacts.",
+    metadata: {
+      channels,
+      deliveredCount,
+      failedCount,
+      skippedCount,
+      targetCount: recipientTargets.length,
+      subject
+    }
+  });
   settings.updatedAt = new Date().toISOString();
   await writeSettings(settings);
 
@@ -4592,10 +5241,26 @@ app.post("/hr/admin-accounts/create", ensureHrAdmin, async (req, res) => {
     });
   }
 
+  const settings = await readSettings();
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "department_access_created",
+    ...getActorInfo(req, "hr_admin"),
+    note: `HR created department access for ${req.body.username || "new user"}.`,
+    metadata: {
+      username: (req.body.username || "").toString().trim(),
+      department: (req.body.department || "").toString().trim(),
+      displayName: (req.body.displayName || "").toString().trim()
+    }
+  });
+  settings.updatedAt = new Date().toISOString();
+  await writeSettings(settings);
   return res.redirect("/hr/admin-accounts?created=1");
 });
 
 app.post("/hr/admin-accounts/:username/update", ensureHrAdmin, async (req, res) => {
+  const previousAdmins = await readDepartmentAdmins();
+  const previous = previousAdmins.find((item) => item.username === req.params.username);
   const result = await updateDepartmentAdminAccount(req.params.username, {
     username: req.body.username,
     department: req.body.department,
@@ -4609,6 +5274,22 @@ app.post("/hr/admin-accounts/:username/update", ensureHrAdmin, async (req, res) 
     });
   }
 
+  const settings = await readSettings();
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "department_access_updated",
+    ...getActorInfo(req, "hr_admin"),
+    note: `HR updated department access for ${req.params.username}.`,
+    metadata: {
+      previousUsername: previous?.username || req.params.username,
+      newUsername: (req.body.username || "").toString().trim(),
+      previousDepartment: previous?.department || "",
+      newDepartment: (req.body.department || "").toString().trim(),
+      displayName: (req.body.displayName || "").toString().trim()
+    }
+  });
+  settings.updatedAt = new Date().toISOString();
+  await writeSettings(settings);
   return res.redirect("/hr/admin-accounts?updated=1");
 });
 
@@ -4622,6 +5303,18 @@ app.post("/hr/admin-accounts/:username/password", ensureHrAdmin, async (req, res
     });
   }
 
+  const settings = await readSettings();
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "department_access_password_updated",
+    ...getActorInfo(req, "hr_admin"),
+    note: `HR updated the password for department access ${req.params.username}.`,
+    metadata: {
+      username: req.params.username
+    }
+  });
+  settings.updatedAt = new Date().toISOString();
+  await writeSettings(settings);
   return res.redirect("/hr/admin-accounts?passwordReset=1");
 });
 
@@ -4636,6 +5329,21 @@ app.post("/hr/admin-accounts/:username/toggle", ensureHrAdmin, async (req, res) 
     });
   }
 
+  const settings = await readSettings();
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: nextState ? "department_access_restored" : "department_access_frozen",
+    ...getActorInfo(req, "hr_admin"),
+    note: nextState
+      ? `HR restored department access ${req.params.username}.`
+      : `HR froze department access ${req.params.username}.`,
+    metadata: {
+      username: req.params.username,
+      isActive: nextState
+    }
+  });
+  settings.updatedAt = new Date().toISOString();
+  await writeSettings(settings);
   return res.redirect("/hr/admin-accounts?toggled=1");
 });
 
@@ -4819,6 +5527,17 @@ app.post("/admin/periods", ensureDepartmentAdmin, async (req, res) => {
 
   updated.maxApplicants = totalCapacity;
   updated.updatedAt = new Date().toISOString();
+  appendSettingsAudit(updated, {
+    scope: "settings",
+    action: "department_capacity_updated",
+    ...getActorInfo(req, "department_admin"),
+    note: `Department slot capacity updated for ${adminScopeDepartment}.`,
+    at: updated.updatedAt,
+    metadata: editableDepartments.map((department) => ({
+      department: department.key,
+      capacity: Number(updated.departmentCapacities[department.key] || 0)
+    }))
+  });
 
   await writeSettings(updated);
   return res.redirect("/admin/periods?saved=1");
@@ -4891,19 +5610,34 @@ app.get("/admin/applications", ensureDepartmentAdmin, async (req, res) => {
   }
 
   const departmentFilter = adminScopeDepartment || requestedDepartmentFilter;
+  const search = (req.query.search || "").toString().trim();
+  const dateFrom = /^\d{4}-\d{2}-\d{2}$/.test((req.query.dateFrom || "").toString().trim())
+    ? (req.query.dateFrom || "").toString().trim()
+    : "";
+  const dateTo = /^\d{4}-\d{2}-\d{2}$/.test((req.query.dateTo || "").toString().trim())
+    ? (req.query.dateTo || "").toString().trim()
+    : "";
 
-  const allApplications = filterApplicationsForAdmin(req, await readApplications()).sort(
+  const scopedApplications = filterApplicationsForAdmin(req, await readApplications()).sort(
     (a, b) => new Date(b.submittedAt) - new Date(a.submittedAt)
   );
 
-  let applications =
+  let allApplications = scopedApplications;
+
+  if (departmentFilter !== "All") {
+    allApplications = allApplications.filter((item) => item.appliedDepartment === departmentFilter);
+  }
+
+  allApplications = allApplications.filter(
+    (item) =>
+      matchesApplicationSearch(item, search) &&
+      isWithinDateRange(item.submittedAt || item.updatedAt, dateFrom, dateTo)
+  );
+
+  const applications =
     statusFilter === "All"
       ? allApplications
       : allApplications.filter((item) => item.status === statusFilter);
-
-  if (departmentFilter !== "All") {
-    applications = applications.filter((item) => item.appliedDepartment === departmentFilter);
-  }
 
   const stats = {
     total: allApplications.length,
@@ -4924,6 +5658,9 @@ app.get("/admin/applications", ensureDepartmentAdmin, async (req, res) => {
     getStatusClass,
     statusFilter,
     departmentFilter,
+    search,
+    dateFrom,
+    dateTo,
     departmentOptions: adminScopeDepartment
       ? DEPARTMENTS.filter((department) => department.key === adminScopeDepartment)
       : DEPARTMENTS,
@@ -4953,7 +5690,7 @@ app.get("/admin/applications/:id", ensureDepartmentAdmin, async (req, res) => {
   if (req.query.docsReviewed === "1") {
     notice = "Document review updates saved.";
   } else if (req.query.joiningSaved === "1") {
-    notice = "Joining letter uploaded successfully.";
+    notice = "Joining letter generated successfully.";
   } else if (req.query.placementSaved === "1") {
     notice = "Department placement updated successfully.";
   } else if (req.query.frozen === "1") {
@@ -5010,6 +5747,16 @@ app.post("/admin/applications/:id/placement", ensureDepartmentAdmin, async (req,
 
   application.assignedDepartment = assignedDepartment;
   application.updatedAt = new Date().toISOString();
+  appendApplicationAudit(application, {
+    scope: "application",
+    action: "department_assignment_updated",
+    ...getActorInfo(req, "department_admin"),
+    note: `Department assignment set to ${assignedDepartment}.`,
+    at: application.updatedAt,
+    metadata: {
+      assignedDepartment
+    }
+  });
 
   applications[index] = application;
   await writeApplications(applications);
@@ -5048,6 +5795,9 @@ app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, asyn
     const combinedComment = (req.body[`docComment_${COMBINED_DOCUMENT_FIELD}`] || "")
       .toString()
       .trim();
+    const combinedReasonCode = normalizeCorrectionReason(
+      req.body[`docReason_${COMBINED_DOCUMENT_FIELD}`]
+    );
 
     if (!["Pending", "Accepted", "Rejected"].includes(combinedStatus)) {
       return renderAdminDetailPage(res, {
@@ -5057,9 +5807,18 @@ app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, asyn
       });
     }
 
+    if (combinedStatus === "Rejected" && !combinedReasonCode) {
+      return renderAdminDetailPage(res, {
+        statusCode: 400,
+        application,
+        error: `Select a correction reason for ${getDocumentLabel(COMBINED_DOCUMENT_FIELD)}.`
+      });
+    }
+
     application.combinedDocumentReview = {
       status: combinedStatus,
-      comment: combinedComment
+      comment: combinedComment,
+      reasonCode: combinedStatus === "Rejected" ? combinedReasonCode : ""
     };
     if (combinedStatus === "Rejected") {
       hasRejected = true;
@@ -5072,6 +5831,7 @@ app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, asyn
       const nitaComment = (req.body[`docComment_${NITA_DOCUMENT_FIELD}`] || "")
         .toString()
         .trim();
+      const nitaReasonCode = normalizeCorrectionReason(req.body[`docReason_${NITA_DOCUMENT_FIELD}`]);
 
       if (!["Pending", "Accepted", "Rejected"].includes(nitaStatus)) {
         return renderAdminDetailPage(res, {
@@ -5081,9 +5841,18 @@ app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, asyn
         });
       }
 
+      if (nitaStatus === "Rejected" && !nitaReasonCode) {
+        return renderAdminDetailPage(res, {
+          statusCode: 400,
+          application,
+          error: `Select a correction reason for ${getDocumentLabel(NITA_DOCUMENT_FIELD)}.`
+        });
+      }
+
       application.nitaDocumentReview = {
         status: nitaStatus,
-        comment: nitaComment
+        comment: nitaComment,
+        reasonCode: nitaStatus === "Rejected" ? nitaReasonCode : ""
       };
 
       if (nitaStatus === "Rejected") {
@@ -5096,6 +5865,7 @@ app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, asyn
     for (const fieldName of REQUIRED_DOCUMENT_FIELDS) {
       const status = (req.body[`docStatus_${fieldName}`] || "Pending").toString().trim();
       const comment = (req.body[`docComment_${fieldName}`] || "").toString().trim();
+      const reasonCode = normalizeCorrectionReason(req.body[`docReason_${fieldName}`]);
 
       if (!["Pending", "Accepted", "Rejected"].includes(status)) {
         return renderAdminDetailPage(res, {
@@ -5105,9 +5875,18 @@ app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, asyn
         });
       }
 
+      if (status === "Rejected" && !reasonCode) {
+        return renderAdminDetailPage(res, {
+          statusCode: 400,
+          application,
+          error: `Select a correction reason for ${getDocumentLabel(fieldName)}.`
+        });
+      }
+
       updatedReview[fieldName] = {
         status,
-        comment
+        comment,
+        reasonCode: status === "Rejected" ? reasonCode : ""
       };
 
       if (status === "Rejected") {
@@ -5125,6 +5904,24 @@ app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, asyn
   }
 
   application.updatedAt = new Date().toISOString();
+  appendApplicationAudit(application, {
+    scope: "application",
+    action: "document_review_updated",
+    ...getActorInfo(req, "department_admin"),
+    note: hasRejected
+      ? "Department review requested document corrections."
+      : "Department review updated document verification results.",
+    at: application.updatedAt,
+    metadata: {
+      statusAfterReview: application.status,
+      rejectedDocuments: getRejectedDocuments(application).map((document) => ({
+        key: document.key,
+        label: document.label,
+        reasonCode: document.review.reasonCode || "",
+        note: getReviewExplanation(document.review)
+      }))
+    }
+  });
 
   applications[index] = application;
   await writeApplications(applications);
@@ -5229,6 +6026,18 @@ app.post("/admin/applications/:id/status", ensureDepartmentAdmin, async (req, re
   application.status = status;
   application.reviewerComment = (reviewerComment || "").trim();
   application.updatedAt = new Date().toISOString();
+  appendApplicationAudit(application, {
+    scope: "application",
+    action: "department_status_updated",
+    ...getActorInfo(req, "department_admin"),
+    note: `Department review changed status from ${previousStatus} to ${status}.`,
+    at: application.updatedAt,
+    metadata: {
+      previousStatus,
+      newStatus: status,
+      reviewerComment: application.reviewerComment
+    }
+  });
 
   applications[index] = application;
   await writeApplications(applications);
@@ -5417,6 +6226,28 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, async (req, res)
     draftApplication.placementNumber ||
     draftApplication.id;
   draftApplication.updatedAt = new Date().toISOString();
+  appendApplicationAudit(draftApplication, {
+    scope: "application",
+    action: "applicant_details_updated",
+    ...getActorInfo(req, "department_admin"),
+    note: "Department review updated applicant profile details.",
+    at: draftApplication.updatedAt,
+    metadata: {
+      changedFields: [
+        "fullName",
+        "email",
+        "phone",
+        "idNumber",
+        "institution",
+        "course",
+        "appliedDepartment",
+        "period",
+        "startDate",
+        "endDate",
+        "coverNote"
+      ].filter((field) => (existingApplication[field] || "") !== (draftApplication[field] || ""))
+    }
+  });
   applications[index] = draftApplication;
   await writeApplications(applications);
 
@@ -5441,6 +6272,15 @@ app.post("/admin/applications/:id/freeze", ensureDepartmentAdmin, async (req, re
     req.session?.adminRole || "hr_admin",
     "Record frozen by HR-managed department review."
   );
+  appendApplicationAudit(applications[index], {
+    scope: "application",
+    action: "application_frozen",
+    ...getActorInfo(req, "department_admin"),
+    note: "Application record frozen under department review.",
+    metadata: {
+      isFrozen: true
+    }
+  });
   await writeApplications(applications);
 
   return res.redirect(`/admin/applications/${req.params.id}?frozen=1`);
@@ -5460,6 +6300,15 @@ app.post("/admin/applications/:id/unfreeze", ensureDepartmentAdmin, async (req, 
   }
 
   applications[index] = unfreezeApplicationRecord(application);
+  appendApplicationAudit(applications[index], {
+    scope: "application",
+    action: "application_restored",
+    ...getActorInfo(req, "department_admin"),
+    note: "Application record restored for further processing.",
+    metadata: {
+      isFrozen: false
+    }
+  });
   await writeApplications(applications);
 
   return res.redirect(`/admin/applications/${req.params.id}?unfrozen=1`);
@@ -5477,21 +6326,34 @@ app.get("/hr/applications", ensureHrAdmin, async (req, res) => {
     departmentFilterRaw === "All" || isValidDepartment(departmentFilterRaw)
       ? departmentFilterRaw
       : "All";
+  const search = (req.query.search || "").toString().trim();
+  const dateFrom = /^\d{4}-\d{2}-\d{2}$/.test((req.query.dateFrom || "").toString().trim())
+    ? (req.query.dateFrom || "").toString().trim()
+    : "";
+  const dateTo = /^\d{4}-\d{2}-\d{2}$/.test((req.query.dateTo || "").toString().trim())
+    ? (req.query.dateTo || "").toString().trim()
+    : "";
 
-  const allApplications = (await readApplications())
+  let allApplications = (await readApplications())
     .filter((application) => HR_VISIBLE_STATUSES.has(application.status))
     .sort(
     (a, b) => new Date(b.submittedAt) - new Date(a.submittedAt)
   );
 
-  let applications =
+  if (departmentFilter !== "All") {
+    allApplications = allApplications.filter((item) => item.appliedDepartment === departmentFilter);
+  }
+
+  allApplications = allApplications.filter(
+    (item) =>
+      matchesApplicationSearch(item, search) &&
+      isWithinDateRange(item.submittedAt || item.updatedAt, dateFrom, dateTo)
+  );
+
+  const applications =
     statusFilter === "All"
       ? allApplications
       : allApplications.filter((item) => item.status === statusFilter);
-
-  if (departmentFilter !== "All") {
-    applications = applications.filter((item) => item.appliedDepartment === departmentFilter);
-  }
 
   const settings = await readSettings();
   const departmentSummaries = buildDepartmentReportRows(await readApplications(), settings, null);
@@ -5508,6 +6370,9 @@ app.get("/hr/applications", ensureHrAdmin, async (req, res) => {
     stats,
     statusFilter,
     departmentFilter,
+    search,
+    dateFrom,
+    dateTo,
     departmentOptions: DEPARTMENTS,
     departmentSummaries,
     formatDate,
@@ -5533,7 +6398,7 @@ app.get("/hr/applications/:id", ensureHrAdmin, async (req, res) => {
     req.query.nitaCompleted === "1"
         ? "HR confirmed the stamped NITA document."
         : req.query.joiningSaved === "1"
-      ? "Joining letter uploaded successfully."
+      ? "Joining letter generated successfully."
         : req.query.statusSaved === "1"
       ? "HR status updated successfully."
         : null;
@@ -5590,6 +6455,17 @@ app.post("/hr/applications/:id/nita-complete", ensureHrAdmin, async (req, res) =
     updatedAt: new Date().toISOString()
   };
   application.updatedAt = application.nitaWorkflow.updatedAt;
+  appendApplicationAudit(application, {
+    scope: "application",
+    action: "nita_workflow_completed",
+    ...getActorInfo(req, "hr_admin"),
+    note: "HR confirmed the stamped NITA document.",
+    at: application.updatedAt,
+    metadata: {
+      previousStatus,
+      nitaStatus: application.nitaWorkflow.status
+    }
+  });
 
   applications[index] = application;
   await writeApplications(applications);
@@ -5621,6 +6497,7 @@ app.post("/hr/applications/:id/status", ensureHrAdmin, async (req, res) => {
   }
 
   const application = ensureApplicationDefaults(applications[index]);
+  const previousStatus = application.status;
 
   if (!HR_VISIBLE_STATUSES.has(application.status)) {
     return res.status(400).send("Application is not yet in HR review queue.");
@@ -5662,6 +6539,18 @@ app.post("/hr/applications/:id/status", ensureHrAdmin, async (req, res) => {
   application.status = status;
   application.reviewerComment = reviewerComment;
   application.updatedAt = new Date().toISOString();
+  appendApplicationAudit(application, {
+    scope: "application",
+    action: "hr_status_updated",
+    ...getActorInfo(req, "hr_admin"),
+    note: `HR changed final status from ${previousStatus} to ${status}.`,
+    at: application.updatedAt,
+    metadata: {
+      previousStatus,
+      newStatus: status,
+      reviewerComment
+    }
+  });
 
   applications[index] = application;
   await writeApplications(applications);
@@ -5720,7 +6609,7 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, async (req, res) 
     return renderHrDetailPage(res, {
       application,
       statusCode: 400,
-      error: "Complete the NITA workflow before uploading the joining letter."
+      error: "Complete the NITA workflow before preparing the joining letter."
     });
   }
 
@@ -5766,6 +6655,16 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, async (req, res) 
         security: joiningLetterSecurity
       });
       application.updatedAt = new Date().toISOString();
+      appendApplicationAudit(application, {
+        scope: "application",
+        action: "joining_letter_uploaded",
+        ...getActorInfo(req, "hr_admin"),
+        note: "HR uploaded a joining letter.",
+        at: application.updatedAt,
+        metadata: {
+          originalName: application.joiningLetter?.originalName || req.file.originalname || ""
+        }
+      });
 
       applications[index] = application;
       await writeApplications(applications);
@@ -5786,6 +6685,117 @@ app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, async (req, res) 
         statusCode: 500,
         error: storageError.message || "Failed to store the joining letter."
       });
+    });
+  });
+});
+
+app.post("/hr/applications/:id/joining-letter-template", ensureHrAdmin, async (req, res) => {
+  const selectedTemplate = (req.body.templateKey || JOINING_LETTER_TEMPLATES[0].key).toString().trim();
+  if (!JOINING_LETTER_TEMPLATES.some((template) => template.key === selectedTemplate)) {
+    return res.status(400).send("Invalid joining letter template.");
+  }
+
+  const applications = await readApplications();
+  const index = applications.findIndex((item) => item.id === req.params.id);
+
+  if (index === -1) {
+    return res.status(404).render("not-found");
+  }
+
+  const application = ensureApplicationDefaults(applications[index]);
+
+  if (!HR_VISIBLE_STATUSES.has(application.status)) {
+    return res.status(400).send("Application is not yet in HR review queue.");
+  }
+
+  if (isApplicationFrozen(application)) {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "This application record is frozen. Unfreeze it from department review before continuing the HR workflow."
+    });
+  }
+
+  if (!isAdmittedStatus(application.status)) {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "Admit the application first before generating the joining letter."
+    });
+  }
+
+  if (normalizeNitaWorkflow(application.nitaWorkflow).status !== "Completed") {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "Complete the NITA workflow before generating the joining letter."
+    });
+  }
+
+  return (async () => {
+    const previousJoiningLetter = application.joiningLetter;
+    const generatedAt = new Date().toISOString();
+    const templateFile = await createJoiningLetterTemplatePdf({
+      uploadDir: UPLOAD_DIR,
+      applicant: {
+        ...application,
+        appliedDepartmentLabel: getDepartmentLabel(application.appliedDepartment),
+        periodLabel: getPeriodLabel(application.period),
+        requestedDates: `${application.startDate} to ${application.endDate}`
+      },
+      generatedAt,
+      timeZone: DISPLAY_TIMEZONE,
+      logoPath: COUNTY_LOGO_JPG_FILE,
+      countyName: "County Government of Uasin Gishu",
+      signatoryName: COUNTY_ATTACHMENT_SIGNATORY_NAME,
+      signatoryDesignation: COUNTY_ATTACHMENT_SIGNATORY_DESIGNATION
+    });
+
+    try {
+      application.joiningLetter = await persistUploadedApplicationFile(templateFile, {
+        folder: "joining-letters",
+        uploadedAt: generatedAt,
+        security: {
+          size: templateFile.size,
+          detectedType: "application/pdf",
+          scannedAt: generatedAt,
+          automated: true
+        }
+      });
+    } catch (error) {
+      fileStorage.removeTemporaryFile(templateFile);
+      throw error;
+    }
+
+    application.updatedAt = generatedAt;
+    appendApplicationAudit(application, {
+      scope: "application",
+      action: "joining_letter_generated",
+      ...getActorInfo(req, "hr_admin"),
+      note: `HR generated the ${selectedTemplate} joining letter and published it to the student dashboard.`,
+      at: generatedAt,
+      metadata: {
+        templateKey: selectedTemplate
+      }
+    });
+
+    applications[index] = application;
+    await writeApplications(applications);
+    await sendAndPersistApplicationNotification({
+      req,
+      applications,
+      index,
+      eventType: "joining_letter_ready",
+      initiatedBy: "hr"
+    });
+    Promise.resolve(fileStorage.removeStoredFile(previousJoiningLetter)).catch(() => {});
+
+    return res.redirect(`/hr/applications/${req.params.id}?joiningSaved=1`);
+  })().catch((error) => {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 500,
+      error: error.message || "Failed to generate the joining letter."
     });
   });
 });

@@ -6,6 +6,7 @@
           <div class="actions tight">
             <a class="btn secondary" href="/hr/applications">HR Queue</a>
             <a class="btn secondary" href="/admin/departments">Department Access</a>
+            <a class="btn secondary" href="/hr/audit">Audit Trail</a>
             <a class="btn secondary" href="/admin/reports">Department Report</a>
             <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
             <a class="btn secondary" href="/admin/applications">Back to List</a>
@@ -38,6 +39,8 @@
           <p><strong>Email:</strong> <%= application.email %></p>
           <p><strong>Phone:</strong> <%= application.phone %></p>
           <p><strong>ID Number:</strong> <%= application.idNumber || 'Not provided' %></p>
+          <p><strong>PWD / Special Applicant:</strong> <%= application.disabilityStatus === 'yes' ? 'Yes' : 'No' %></p>
+          <p><strong>Disability Explanation:</strong> <%= application.disabilityStatus === 'yes' ? (application.disabilityReason || 'Not recorded') : 'Not applicable' %></p>
           <p><strong>Institution:</strong> <%= application.institution %></p>
           <p><strong>Course:</strong> <%= application.course %></p>
           <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
@@ -198,6 +201,12 @@
                 <option value="Accepted" <%= application.combinedDocumentReview.status === 'Accepted' ? 'selected' : '' %>>Accepted</option>
                 <option value="Rejected" <%= application.combinedDocumentReview.status === 'Rejected' ? 'selected' : '' %>>Rejected</option>
               </select>
+              <select name="docReason_<%= combinedDocumentDefinition.key %>">
+                <option value="">Select correction reason</option>
+                <% correctionReasonOptions.forEach((option) => { %>
+                  <option value="<%= option.key %>" <%= application.combinedDocumentReview.reasonCode === option.key ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
+              </select>
               <input type="text" name="docComment_<%= combinedDocumentDefinition.key %>" value="<%= application.combinedDocumentReview.comment %>" placeholder="Comment for student (optional)" />
             </label>
             <label class="full-width">
@@ -206,6 +215,12 @@
                 <option value="Pending" <%= application.nitaDocumentReview.status === 'Pending' ? 'selected' : '' %>>Pending</option>
                 <option value="Accepted" <%= application.nitaDocumentReview.status === 'Accepted' ? 'selected' : '' %>>Accepted</option>
                 <option value="Rejected" <%= application.nitaDocumentReview.status === 'Rejected' ? 'selected' : '' %>>Rejected</option>
+              </select>
+              <select name="docReason_<%= nitaDocumentDefinition.key %>">
+                <option value="">Select correction reason</option>
+                <% correctionReasonOptions.forEach((option) => { %>
+                  <option value="<%= option.key %>" <%= application.nitaDocumentReview.reasonCode === option.key ? 'selected' : '' %>><%= option.label %></option>
+                <% }) %>
               </select>
               <input type="text" name="docComment_<%= nitaDocumentDefinition.key %>" value="<%= application.nitaDocumentReview.comment %>" placeholder="Comment for student (optional)" />
             </label>
@@ -217,6 +232,12 @@
                   <option value="Pending" <%= application.documentsReview[document.key].status === 'Pending' ? 'selected' : '' %>>Pending</option>
                   <option value="Accepted" <%= application.documentsReview[document.key].status === 'Accepted' ? 'selected' : '' %>>Accepted</option>
                   <option value="Rejected" <%= application.documentsReview[document.key].status === 'Rejected' ? 'selected' : '' %>>Rejected</option>
+                </select>
+                <select name="docReason_<%= document.key %>">
+                  <option value="">Select correction reason</option>
+                  <% correctionReasonOptions.forEach((option) => { %>
+                    <option value="<%= option.key %>" <%= application.documentsReview[document.key].reasonCode === option.key ? 'selected' : '' %>><%= option.label %></option>
+                  <% }) %>
                 </select>
                 <input type="text" name="docComment_<%= document.key %>" value="<%= application.documentsReview[document.key].comment %>" placeholder="Comment for student (optional)" />
               </label>
@@ -266,6 +287,30 @@
             </form>
           <% } %>
         </div>
+
+        <details class="history-toggle">
+          <summary>
+            Application Audit Trail
+            <span class="history-toggle-meta">
+              <%= application.auditTrail && application.auditTrail.length ? `${application.auditTrail.length} entries` : 'No entries yet' %>
+            </span>
+          </summary>
+
+          <% if (application.auditTrail && application.auditTrail.length) { %>
+            <div class="task-list">
+              <% application.auditTrail.slice(0, 15).forEach((entry) => { %>
+                <div class="summary">
+                  <p><strong><%= entry.action %></strong></p>
+                  <p><strong>When:</strong> <%= formatDate(entry.at) %></p>
+                  <p><strong>By:</strong> <%= entry.actorUsername %> (<%= entry.actorRole %>)</p>
+                  <p><%= entry.note || 'No note recorded.' %></p>
+                </div>
+              <% }) %>
+            </div>
+          <% } else { %>
+            <p>No audit entries recorded yet.</p>
+          <% } %>
+        </details>
       </section>
     </main>
 <%- include("partials/layout-close") %>

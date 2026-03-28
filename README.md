@@ -1,451 +1,471 @@
 # County Attachment Application System
 
-Portal for managing county government attachment applications from student submission through department verification and HR final approval.
+Digital attachment application portal for the County Government of Uasin Gishu. The system manages the workflow from student application, through department review under HR control, to final HR admission and joining-letter release.
 
-## Presentation Summary
+## Handover Status
 
-This project is a digital attachment application portal for the County Government of Uasin Gishu.
+The current system is suitable for:
 
-It was designed to solve the manual attachment application process by:
+- demo and presentation use
+- pilot or controlled deployment
+- hosted operation with MongoDB persistence
 
-- allowing students to apply online
-- allowing HR-controlled department review for applications in each department
-- allowing HR to approve verified applications centrally
-- allowing students to track application progress and download joining letters
+The current system is not yet ready for full county-wide production without the security and governance items listed in `Production-Readiness Gaps`.
 
-In summary, the system moves the process from manual document submission to a structured online workflow.
+## Project Overview
 
-## What To Say During Presentation
+This system was built to replace a manual attachment application process with a structured online workflow.
 
-You can present the system in this order:
+Main users:
 
-1. Problem:
-   - attachment applications are often manual, slow, and difficult to track
-   - students may not know whether their documents were received or approved
-2. Solution:
-   - this portal allows online application, department-level verification, and HR final approval
-3. Main users:
-   - student
-   - department reviewer under HR control
-   - HR
-4. Main benefit:
-   - easier application
-   - easier review
-   - clearer tracking
-   - better control of departmental slots and fairness
+- students applying for county attachment
+- department reviewers operating under HR authorization
+- HR officers managing intake windows, review flow, NITA workflow, communications, and joining letters
 
-## Database Explanation For Presentation
+Main outcomes:
 
-This system now uses MongoDB as its database.
-
-You can explain it like this:
-
-- the first version used JSON files for storage during early development
-- the current version uses MongoDB
-- MongoDB stores:
-  - student applications
-  - portal settings
-  - department access records
-- login sessions
-- MongoDB was chosen so the system can run on a managed database service instead of depending on a local database file
-
-If asked how the application connects to the database, explain:
-
-- the Node.js backend connects directly to MongoDB through the `mongodb` driver
-- the application reads and writes data through a dedicated storage layer
-
-If asked about future growth, explain:
-
-- MongoDB now removes the local database-file dependency from the hosted app
-- for larger production use with stricter relational reporting requirements, PostgreSQL is still a valid future option
-
-## Short Demo Script
-
-You can use this short script:
-
-1. Open the landing page and explain the system purpose.
-2. Open `Apply` and show how a student submits an attachment application.
-3. Mention that the student must choose a department and can later track the application.
-4. Open the HR Portal and show Department Review Access for each department.
-5. Verify one application and explain that verified applications move to the HR queue.
-6. Continue in the HR Portal and show final approval.
-7. Upload the joining letter and return to the student tracking page.
-8. Show that the student can see the status and download the joining letter.
-
-## Current Scope
-
-This project currently covers:
-
-- Public landing page with county branding, shared navigation, and footer.
-- Student application portal.
-- Student self-service dashboard for tracking, correction follow-up, NITA workflow follow-up, and joining letter download.
-- Department review workflow with department-scoped access controlled from the HR portal.
-- HR portal for final approval and joining letter upload.
-- HR management UI for department review records.
-- Reports and analytics pages for HR and department review scope.
-- Period control, department slot control, and institution fairness control.
-- MongoDB storage for applications, settings, department accounts, and login sessions.
-- File storage abstraction with local storage by default and optional Cloudinary cloud storage.
+- online application instead of manual paper submission
+- controlled departmental intake and fairness balancing
+- student self-service tracking
+- centralized HR final decision making
+- persistent hosted storage through MongoDB
 
 ## End-To-End Workflow
 
-1. Student opens `/apply`.
-2. Student fills personal details, institution, course, department, period, dates, uploads one combined scanned document for the main documents, and uploads the NITA document separately.
-3. System generates:
-   - `id`
-   - `placementNumber`
-4. HR opens Department Review Access for a specific department.
-5. Department review only sees applications for that department under HR authorization.
-6. Department review can:
-   - edit applicant details
+1. Student opens the landing page and confirms whether an application window is open.
+2. Student opens `Apply`, accepts the county terms, chooses a department and institution, and completes the application.
+3. Student uploads:
+   - one combined supporting-document file
+   - one separate NITA document
+4. The system generates:
+   - an internal application record
+   - a tracking number based on the student ID number, for example `ATT-12345678`
+   - an automatically county-endorsed NITA document
+5. Student receives notification guidance and can track the application using:
+   - ID number
+   - email used during application
+6. Department review is done from the HR-controlled department access flow.
+7. Department review can:
+   - edit applicant information
    - review documents
    - request corrections
-   - assign placement department
-   - mark valid applications as `Verified`
-7. HR logs in through the HR Portal.
-8. HR only sees applications already in the HR review queue:
-   - `Verified`
-   - `Approved`
-   - `Rejected`
-9. HR uploads the county-signed NITA document for the student.
-10. Student downloads the county-signed NITA document, takes it for stamping, and re-submits the stamped copy through `/track`.
-11. HR confirms the stamped NITA document, then approves or rejects the application.
-12. HR uploads a joining letter for approved students.
-13. Student uses `/track` to:
-   - check status
-   - see comments
-   - re-upload rejected documents
-   - download the county-signed NITA document
-   - re-submit the stamped NITA document
-   - download the joining letter after HR approval
+   - verify or reject applications
+   - freeze or restore records
+8. Verified applications move to the HR queue.
+9. HR manages:
+   - NITA workflow completion
+   - final decision as `Admitted` or `Rejected`
+   - joining-letter upload
+10. Student returns to the dashboard to:
+    - view progress
+    - re-upload corrected documents
+    - download the county-endorsed NITA document
+    - re-upload the stamped NITA document
+    - download the joining letter after admission
 
-## Portals And Navigation
+## Current Live Architecture
 
-The shared top navigation currently provides:
+### Application stack
 
-- `Home` -> landing page `/`
-- `Apply` -> student application page `/apply`
-- `HR Portal` -> HR login path from `HR_PORTAL_PATH`
+- Node.js + Express backend
+- EJS server-rendered views
+- shared layout, county branding, and portal navigation
 
-The interface now includes:
+### Database
 
-- County Government of Uasin Gishu branding in the header
-- Local county logo image with SVG fallback
-- Shared footer across pages
-- Consistent layout and form spacing across public, department review, and HR pages
+- MongoDB is the active database
+- MongoDB stores:
+  - applications
+  - settings
+  - department access records
+  - HR account settings
+  - sessions
 
-## Student Portal
+This means hosted applications now remain available after Render refreshes and redeploys.
 
-### Student application form
+### File storage
 
-The student form collects:
+The system supports two file-storage modes:
 
-- Full name
-- Email address
-- Phone number
-- Institution name
-- Course or program
-- Department applied for
-- Attachment period
-- Start date
-- End date
-- Required cover note / self introduction
-- One combined scanned file containing the main required documents except NITA
-- One separate NITA document upload with school stamp
+- `local`
+  - files are stored on the app filesystem
+  - suitable for local development
+- `cloudinary`
+  - files are stored in Cloudinary
+  - recommended for durable hosted document storage
 
-### Required document bundle
+Documents handled by the system include:
 
-The combined scanned upload is meant to contain:
+- combined application documents
+- initial NITA uploads
+- auto-generated county-endorsed NITA documents
+- stamped NITA re-submissions
+- joining letters
 
-- Passport photo
-- School cover letter
-- Insurance copy
-- National ID or school ID copy
-- A required cover note is typed directly in the form, so a separate application letter is not required
+### Notifications
 
-The separate NITA upload is meant to contain:
+The system includes notification integration through:
 
-- NITA document with school stamp
-- later, HR returns a county-signed version for the student to download
-- the student then takes that document to the NITA office for stamping and re-submits it to HR through the dashboard
+- email via SMTP
+- SMS via Twilio
 
-### Student tracking
+Current practical position:
 
-Students track an application using:
+- email is the primary reliable notification channel
+- SMS provider integration exists, but Kenyan SMS delivery depends on Twilio sender support and production configuration
 
-- Tracking number or placement number
-- Email used during application
+## Functional Modules
 
-From the student dashboard, a student can:
+### 1. Landing page and intake windows
 
-- see whether the application is `Pending`, `Needs Correction`, `Verified`, `Approved`, or `Rejected`
-- see a progress timeline from submission to final decision
-- see reviewer comments and the submitted cover note
-- re-upload rejected documents
-- download the county-signed NITA document when HR uploads it
-- re-submit the stamped NITA document to HR
-- download the joining letter when available
+The landing page presents:
 
-## Department Review Access
+- county-branded introduction
+- live intake runner and deadline countdown
+- application window status
+- quarterly intake windows:
+  - January - March
+  - April - June
+  - July - September
+  - October - December
+- fair-distribution guidance
+- quick application instructions
 
-Department review is opened from the HR portal and stays scoped to the selected department.
+HR controls:
 
-Department review capabilities:
+- open and closed windows
+- application deadline
+- landing runner message
+- department slot capacities
+- institution fairness ratio
 
-- view department applications
-- filter applications
-- edit applicant details
-- assign placement department
-- review uploaded documents
-- request corrections
-- freeze an applicant record
-- mark an application as `Verified`
+### 2. Student application flow
 
-Department review cannot:
+The apply page now enforces this order:
 
-- give final approval
-- upload joining letters
-- bypass department scope
+1. read and accept county terms and conditions
+2. choose department
+3. choose institution
+4. complete the rest of the form
 
-## HR Portal
+The form collects:
 
-HR logs in through a separate HR portal.
+- full name
+- email
+- phone number
+- ID number
+- institution
+- course or program
+- department
+- intake period
+- attachment dates
+- cover note
+- combined supporting document
+- NITA document
 
-HR capabilities:
+The system also records:
 
-- manage period opening and closing
-- manage department slot capacities
-- manage institution fairness ratio
-- review only HR-queue applications
-- approve or reject verified applications
-- upload joining letters for approved students
+- terms acceptance
+- terms acceptance time
+- recorded source/IP
+- terms version
 
-HR queue is limited to:
+### 3. Student tracking flow
 
-- `Verified`
-- `Approved`
-- `Rejected`
+The student tracking/dashboard flow allows a student to:
 
-HR does not process:
+- open the dashboard using ID number and email
+- view current status
+- follow the review timeline
+- see reviewer comments
+- re-upload corrected documents
+- download the county-endorsed NITA document
+- re-upload the stamped NITA document
+- download the joining letter after admission
 
-- `Pending`
-- `Needs Correction`
+### 4. Department review under HR control
 
-## Application Status Model
-
-Application statuses currently used:
-
-- `Pending`
-- `Needs Correction`
-- `Verified`
-- `Approved`
-- `Rejected`
-
-Intended flow:
-
-- `Pending` -> department review
-- `Needs Correction` -> student re-upload
-- `Verified` -> sent to HR queue
-- `Approved` -> student can download joining letter
-- `Rejected` -> final rejection
-
-## Period Windows And Department Capacity
-
-Three attachment windows are implemented:
-
-- `JAN_MAR` -> January to March
-- `APR_JUN` -> April to June
-- `JUL_SEP` -> July to September
-- `OCT_DEC` -> October to December
+Department review is not an independent public portal anymore.
 
 Current behavior:
 
-- HR opens or closes periods
-- students can only apply for an open period
-- slot capacity is controlled per department
-- landing page shows remaining total slots
-- application is blocked if the selected department has no remaining slots
+- department review access is opened from HR
+- the legacy staff path redirects into the HR-controlled flow
+- reviewers only work within the department scope granted by HR
 
-## Institution Name Rule
+Department review capabilities:
 
-Students are required to write institution names in full.
+- review applications by department
+- edit applicant details
+- review submitted documents
+- request corrections
+- verify or reject
+- freeze or restore records
 
-Examples of valid input:
+Department review does not:
 
-- `University of Nairobi`
-- `Moi University`
+- make final HR admission decisions
+- upload joining letters
+- bypass department scope
 
-Examples that should not be used:
+### 5. HR queue, NITA workflow, and joining-letter workflow
 
-- `UON`
-- `MKU`
+HR manages:
 
-Reason:
+- intake windows and deadlines
+- department access records
+- final application queue
+- NITA workflow completion
+- final admission decision
+- joining-letter upload
 
-- institution balancing depends on consistent full names
-- abbreviations would allow the same institution to appear as multiple different entries
+The final decision model is:
 
-## Institution Fairness Balancing
+- `Pending`
+- `Needs Correction`
+- `Verified`
+- `Admitted`
+- `Rejected`
 
-Institution fairness was added to prevent one institution from taking too many slots in one department.
+Important workflow rules:
 
-### How it works
+- only verified applications reach the HR queue
+- HR cannot admit an application before the NITA workflow is completed
+- joining-letter upload happens after admission
 
-- HR sets `Institution Fairness Ratio (%)` in the settings page.
-- The system converts that ratio into a per-department institution limit.
-- Example:
-  - ICT capacity = `10`
-  - fairness ratio = `40`
-  - one institution can take at most `4` ICT slots
+### 6. HR communications and HR account management
 
-### Where it is enforced
+HR can:
 
-- during new student application
-- during admin edit of applicant details
+- access a dedicated communications page
+- broadcast updates to applicant contacts
+- review communication history for an application
+- change HR username
+- change HR password
 
-### Where it is visible
+This gives HR direct operational control without editing environment files after first setup.
 
-- Apply page shows the fairness rule
-- Landing page shows institution distribution and per-department institution count
-- HR settings page allows changing the ratio
+## Operational Guide for HR
 
-## Security And Upload Handling
+### Open or close intake windows
 
-Current upload/security controls:
+1. Sign in to the HR portal.
+2. Open `Period and Slot Settings`.
+3. Open or close the required quarter.
+4. Set the application deadline.
+5. Save the settings.
 
-- 5MB file size limit
-- extension validation
-- MIME validation
-- magic-number signature validation
-- executable file blocking
-- basic EICAR malware signature detection
-- safe download handling
-- upload path safety checks
+### Set the landing runner and deadline
 
-Testing support:
+1. Open `Period and Slot Settings`.
+2. Enter the landing-page runner message.
+3. Set the deadline date.
+4. Save changes.
 
-- `ALLOW_ANY_TEST_UPLOADS=true` relaxes student upload type restrictions for demonstrations
+### Manage department review access
 
-## Branding And UI Work Completed
+1. Open the HR portal.
+2. Go to the department/admin management section.
+3. Create, edit, activate, deactivate, or reset department access records.
 
-The interface has been redesigned from the earlier simple pages to a shared branded layout.
+### Review applications
 
-Completed UI work:
+1. Open `HR Applications Queue`.
+2. Filter or select the application.
+3. Open the application detail page.
+4. Review:
+   - applicant details
+   - review comments
+   - NITA workflow state
+   - communication history
+   - terms acceptance record
 
-- shared header on all pages
-- shared footer on all pages
-- county logo embedded locally
-- navigation bar across student, admin, and HR pages
-- `Home` link added to the navigation bar
-- `Apply` nav entry added
-- Apply page includes a subsection for tracking status and downloading joining letters
-- form spacing and alignment improved
+### Manage the NITA workflow
 
-## Credentials Model
+1. Student uploads an initial NITA document.
+2. System generates a county-endorsed NITA document automatically.
+3. Student downloads it, takes it to NITA, and re-uploads the stamped copy.
+4. HR confirms NITA completion.
+5. HR proceeds to final admission or rejection.
 
-### Department access records
+### Send communications
 
-Department access records are stored in MongoDB.
+1. Open `Communications` in the HR portal.
+2. Choose email, SMS, or both.
+3. Enter the subject and message.
+4. Send the communication.
 
-Default first-run pattern:
+### Upload joining letters
 
-- username format: `<department>_admin`
-- password: value from `DEFAULT_DEPARTMENT_ADMIN_PASSWORD`
-- HR can now create, edit, activate, deactivate, and reset department access records from the portal.
+1. Open an admitted application in the HR queue.
+2. Confirm the NITA workflow is complete.
+3. Upload the joining letter.
+4. Student then downloads the letter from the dashboard.
 
-### HR account
+## Deployment and Environment
 
-HR account uses:
+### Core hosted requirements
 
-- `HR_USERNAME`
-- `HR_PASSWORD`
+The hosted system expects:
 
-### Presentation shortcut
+- Node.js application hosting
+- MongoDB connection
+- environment variables
+- document storage strategy
 
-For demos, the same credentials can be used on both the legacy staff redirect and the HR portal through:
+### Required environment values
 
-- `PRESENTATION_LOGIN_USERNAME`
-- `PRESENTATION_LOGIN_PASSWORD`
+Core:
 
-Do not store real production credentials in `README.md`.
-
-## Departments Implemented
-
-- ICT, E-Governance and Innovation
-- Finance and Economic Planning
-- Health Services
-- Agriculture, Livestock and Fisheries
-- Roads, Transport and Public Works
-- Education, Vocational Training, Youth and Sports
-- Lands, Housing, Physical Planning and Urban Development
-- Water, Irrigation, Environment and Climate Change
-- Trade, Cooperatives, Tourism and Industrialization
-- Public Service Management and Administration
-
-## Data And Storage
-
-Main project data files:
-
-- `MongoDB` -> applications, settings, department access records, and login sessions
-- `uploads/` -> uploaded documents and joining letters when local file storage is active
-
-## Environment Configuration
-
-Use `.env.example` as the template.
-
-Current important keys:
-
-- `PORT`
 - `SESSION_SECRET`
 - `SESSION_COOKIE_MAX_AGE_HOURS`
-- `STORAGE_ROOT`
 - `MONGODB_URI`
 - `MONGODB_DB_NAME`
+- `HR_USERNAME`
+- `HR_PASSWORD`
+- `DEFAULT_DEPARTMENT_ADMIN_PASSWORD`
+- `DISPLAY_TIMEZONE`
+- `HR_PORTAL_PATH`
+- `ADMIN_PORTAL_PATH`
+
+File storage:
+
 - `FILE_STORAGE_PROVIDER`
 - `CLOUDINARY_CLOUD_NAME`
 - `CLOUDINARY_API_KEY`
 - `CLOUDINARY_API_SECRET`
 - `CLOUDINARY_FOLDER`
-- `ADMIN_PORTAL_PATH` for the legacy staff redirect
-- `HR_PORTAL_PATH`
-- `HR_USERNAME`
-- `HR_PASSWORD`
-- `PRESENTATION_LOGIN_USERNAME`
-- `PRESENTATION_LOGIN_PASSWORD`
-- `DEFAULT_DEPARTMENT_ADMIN_PASSWORD`
-- `ALLOW_ANY_TEST_UPLOADS`
 
-### Storage root
+Email notifications:
 
-- Leave `STORAGE_ROOT` empty for local development.
-- For Render with a persistent disk, set `STORAGE_ROOT=/var/data`.
-- The app will store uploaded files inside the configured storage root when local file storage is active.
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_SECURE`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `NOTIFICATIONS_EMAIL_FROM`
 
-### MongoDB
+SMS notifications:
 
-- Set `MONGODB_URI` to your MongoDB connection string.
-- Set `MONGODB_DB_NAME` to the database name you want the app to use.
-- The app will not start if `MONGODB_URI` is missing.
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `TWILIO_FROM_NUMBER`
 
-### File storage
+County NITA defaults:
 
-- `FILE_STORAGE_PROVIDER=local` keeps uploaded files on the server filesystem.
-- `FILE_STORAGE_PROVIDER=cloudinary` moves combined documents, NITA workflow documents, and joining letters to Cloudinary.
-- When Cloudinary is selected, configure:
-  - `CLOUDINARY_CLOUD_NAME`
-  - `CLOUDINARY_API_KEY`
-  - `CLOUDINARY_API_SECRET`
-  - `CLOUDINARY_FOLDER`
-- If Cloudinary is requested but not fully configured, the app falls back to local storage and logs a warning.
+- `COUNTY_ATTACHMENT_PROVIDER_NAME`
+- `COUNTY_ATTACHMENT_PROVIDER_POSTAL_ADDRESS`
+- `COUNTY_ATTACHMENT_PROVIDER_POSTAL_CODE`
+- `COUNTY_ATTACHMENT_PROVIDER_TOWN`
+- `COUNTY_ATTACHMENT_PROVIDER_PHYSICAL_ADDRESS`
+- `COUNTY_ATTACHMENT_PROVIDER_REGION`
+- `COUNTY_ATTACHMENT_PROVIDER_TELEPHONE`
+- `COUNTY_ATTACHMENT_PROVIDER_EMAIL`
+- `COUNTY_ATTACHMENT_PROVIDER_FAX`
+- `COUNTY_ATTACHMENT_OFFICER_IN_CHARGE`
+- `COUNTY_ATTACHMENT_OFFICER_TELEPHONE`
+- `COUNTY_ATTACHMENT_SIGNATORY_NAME`
+- `COUNTY_ATTACHMENT_SIGNATORY_DESIGNATION`
 
-### Session storage
+### What persists after refresh or redeploy
 
-- HR and department review sessions are stored in MongoDB instead of Express MemoryStore.
-- This removes the default session warning and makes session handling consistent with the rest of the system.
-- Session lifetime is controlled by:
-  - `SESSION_COOKIE_MAX_AGE_HOURS`
+With MongoDB configured:
 
-## How To Run
+- applications persist
+- settings persist
+- sessions persist
+- department access records persist
+
+With Cloudinary configured:
+
+- uploaded documents persist
+- generated NITA workflow files persist
+- joining letters persist
+
+If local file storage is used in hosted mode:
+
+- database records may persist through MongoDB
+- files on the host may still be lost if the host uses ephemeral storage
+
+## Production-Readiness Gaps
+
+These items are still required before real county-wide production handover.
+
+### 1. Password hashing
+
+Current state:
+
+- stored HR and department access passwords are now hashed
+- legacy plain-text records are upgraded after successful login
+
+Remaining improvement:
+
+- define a formal password reset and recovery policy
+- rotate bootstrap credentials and secrets during handover
+
+### 2. Rate limiting and login protection
+
+Current state:
+
+- baseline rate limiting now protects HR login and public tracking/verification routes
+
+Remaining improvement:
+
+- review thresholds for county-scale traffic
+- add stronger lockout and monitoring policy
+- harden session and authentication controls
+
+### 3. Audit trail
+
+Current state:
+
+- application audit history now records major workflow changes
+- HR system audit records settings, account, and communication actions
+
+Remaining improvement:
+
+- decide retention policy for audit entries
+- define export/review procedure for county oversight
+
+### 4. Backup and recovery plan
+
+Current issue:
+
+- the system depends on MongoDB and Cloudinary availability, but formal recovery guidance is not yet documented
+
+Required improvement:
+
+- confirm MongoDB backup policy
+- confirm Cloudinary recovery expectations
+- document restore and continuity process
+
+### 5. HR handover and training package
+
+Current issue:
+
+- the product now has enough workflow depth that a short verbal explanation is not enough for real handover
+
+Required improvement:
+
+- provide HR operating instructions
+- provide issue-escalation guidance
+- provide user ownership and support expectations
+
+## Known Constraints
+
+### Twilio / Kenya SMS limitation
+
+SMS integration exists, but Kenyan SMS delivery depends on supported sender configuration and provider rules. Email should be treated as the primary official notification channel unless SMS is validated in production.
+
+### Cloudinary is required for durable hosted files
+
+If hosted deployment uses local file storage instead of Cloudinary, uploaded documents may still be lost on ephemeral hosting environments.
+
+### Credential hardening still needs operations policy
+
+The system now hashes stored HR and department passwords, but production handover still needs secret rotation, reset ownership, and credential-recovery policy.
+
+## Local Run Guide
 
 1. Install dependencies:
 
@@ -454,95 +474,57 @@ npm install
 ```
 
 2. Create `.env` from `.env.example`.
-
-3. Start the server:
+3. Start the application:
 
 ```bash
 npm start
 ```
 
-4. Open the system:
+4. Open:
 
-- Home: `http://localhost:3000`
-- Apply: `http://localhost:3000/apply`
-- Track: `http://localhost:3000/track`
-- HR Portal: `http://localhost:3000/hr-portal`
-- Legacy staff redirect: `http://localhost:3000/staff-portal`
+- `/`
+- `/apply`
+- `/track`
+- `/hr-portal`
 
-## Render Deployment
+## Render Hosting Notes
 
-This repository now includes `render.yaml` for Render deployment.
+For Render:
 
-### Render setup
+- set the MongoDB values
+- set file-storage values
+- set SMTP values if email notifications are required
+- do not rely on local storage unless a persistent disk is available
 
-- Create a Render `Web Service`
-- Connect the GitHub repository
-- Use:
-  - Build command: `npm install`
-  - Start command: `npm start`
-- On paid Render with a persistent disk:
-  - attach the disk mounted at `/var/data`
-  - set `STORAGE_ROOT=/var/data`
-- On free Render without a disk:
-  - leave `STORAGE_ROOT` empty
-  - MongoDB data will still persist, but local uploaded files will not
+If auto-deploy is enabled, GitHub pushes should trigger deployment automatically. Otherwise use `Manual Deploy` and deploy the latest commit.
 
-### Required Render environment values
+## Key File References
 
-- `SESSION_SECRET`
-- `DISPLAY_TIMEZONE`
-- `MONGODB_URI`
-- `MONGODB_DB_NAME`
-- `HR_USERNAME`
-- `HR_PASSWORD`
-- `DEFAULT_DEPARTMENT_ADMIN_PASSWORD`
+For reviewers or maintainers who want to inspect the implementation without scanning the whole codebase:
 
-### Optional Render environment values
+- `server.js`
+  - main application routes, workflow rules, settings, notifications, and status handling
+- `database.js`
+  - MongoDB storage layer and session persistence
+- `notification-service.js`
+  - email and SMS notification integration
+- `file-storage.js`
+  - local versus Cloudinary file handling
+- `county-nita-pdf.js`
+  - automatic county endorsement for Part C of the NITA workflow
+- `views/apply.ejs`
+  - student application experience and terms checkpoint
+- `views/hr-detail.ejs`
+  - HR review page, NITA workflow, and communication history
+- `views/admin-periods.ejs`
+  - intake windows, deadline, runner message, and slot settings
 
-- `PRESENTATION_LOGIN_USERNAME`
-- `PRESENTATION_LOGIN_PASSWORD`
-- `ALLOW_ANY_TEST_UPLOADS`
-- `SESSION_COOKIE_MAX_AGE_HOURS`
-- `FILE_STORAGE_PROVIDER`
-- `CLOUDINARY_CLOUD_NAME`
-- `CLOUDINARY_API_KEY`
-- `CLOUDINARY_API_SECRET`
-- `CLOUDINARY_FOLDER`
+## Handover Note
 
-### Why the disk is still useful
+This project should be handed over as:
 
-The application now stores database data in MongoDB. When local file storage is active, uploaded files still go to the filesystem. Without a persistent disk, redeploys or restarts can remove:
+- a working county attachment workflow system
+- a MongoDB-backed hosted application
+- a system ready for pilot or controlled deployment
 
-- uploaded combined documents
-- uploaded joining letters
-- generated county-endorsed NITA files
-- NITA re-submissions when they are stored locally
-
-If `FILE_STORAGE_PROVIDER=cloudinary` is configured correctly, uploaded documents and joining letters can persist in Cloudinary even when Render local storage is temporary.
-
-## What Has Been Removed
-
-The system was simplified to keep the demo and workflow clear.
-
-Removed or intentionally not active:
-
-- SMS notifications
-- email notification workflow
-- demo notification messaging
-- separate individual document upload as the main flow
-
-## Security Notes
-
-- Keep real credentials only in local `.env`
-- `.env` should not be pushed to GitHub
-- do not expose production usernames/passwords in documentation
-- MongoDB is now the active application database
-- on free Render without a persistent disk, local uploaded files are still temporary unless Cloudinary is used
-
-## Recommended Future Work
-
-- See the full build backlog in [ROADMAP.md](ROADMAP.md)
-- improve hosted MongoDB deployment and backup strategy
-- add audit logs
-- improve institution balancing dashboards per department
-- add stronger production authentication and authorization
+It should not be handed over as fully production-complete until the documented security, audit, backup, and operational hardening items are closed.

@@ -15,6 +15,10 @@
           <p><strong>Assigned Department:</strong> <%= application.assignedDepartment ? getDepartmentLabel(application.assignedDepartment) : 'Not assigned yet' %></p>
           <p><strong>Period:</strong> <%= application.period ? getPeriodLabel(application.period) : 'Not set' %></p>
           <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
+          <p><strong>Disability / Special Applicant:</strong> <%= application.disabilityStatus === 'yes' ? 'Yes' : 'No' %></p>
+          <% if (application.disabilityStatus === 'yes') { %>
+            <p><strong>Recorded Explanation:</strong> <%= application.disabilityReason || 'Not recorded' %></p>
+          <% } %>
           <p><strong>Submitted:</strong> <%= formatDate(application.submittedAt) %></p>
           <p><strong>Terms Accepted:</strong> <%= application.termsAcceptance && application.termsAcceptance.agreed ? `Yes - ${formatDate(application.termsAcceptance.agreedAt)}` : 'Not recorded' %></p>
           <p><strong>Last Updated:</strong> <%= formatDate(application.updatedAt) %></p>

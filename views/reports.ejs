@@ -8,11 +8,12 @@
               <a class="btn secondary" href="/hr/departments">Department Review</a>
               <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
               <a class="btn secondary" href="/hr/applications">HR Queue</a>
+              <a class="btn secondary" href="/hr/audit">Audit Trail</a>
             <% } else { %>
               <a class="btn secondary" href="/admin/departments">Departments</a>
               <a class="btn secondary" href="/admin/applications">Applications</a>
             <% } %>
-            <a class="btn secondary" href="<%= exportPath %>?status=<%= encodeURIComponent(filters.status) %>&period=<%= encodeURIComponent(filters.period) %>&department=<%= encodeURIComponent(filters.department) %>">Export CSV</a>
+            <a class="btn secondary" href="<%= exportPath %>?status=<%= encodeURIComponent(filters.status) %>&period=<%= encodeURIComponent(filters.period) %>&department=<%= encodeURIComponent(filters.department) %>&search=<%= encodeURIComponent(filters.search || '') %>&dateFrom=<%= encodeURIComponent(filters.dateFrom || '') %>&dateTo=<%= encodeURIComponent(filters.dateTo || '') %>">Export CSV</a>
           </div>
         </div>
 
@@ -50,6 +51,21 @@
               </select>
             </label>
           <% } %>
+
+          <label>
+            Search
+            <input type="text" name="search" value="<%= filters.search || '' %>" placeholder="Tracking number, name, email, ID, institution" />
+          </label>
+
+          <label>
+            Submitted from
+            <input type="date" name="dateFrom" value="<%= filters.dateFrom || '' %>" />
+          </label>
+
+          <label>
+            Submitted to
+            <input type="date" name="dateTo" value="<%= filters.dateTo || '' %>" />
+          </label>
 
           <button class="btn" type="submit">Apply Filters</button>
         </form>

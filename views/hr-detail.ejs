@@ -6,6 +6,7 @@
           <div class="actions tight">
             <a class="btn secondary" href="/hr/departments">Department Review</a>
             <a class="btn secondary" href="/hr/communications">Communications</a>
+            <a class="btn secondary" href="/hr/audit">Audit Trail</a>
             <a class="btn secondary" href="/hr/reports">Reports</a>
             <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
             <a class="btn secondary" href="/hr/account">HR Account</a>
@@ -38,6 +39,8 @@
           <p><strong>Name:</strong> <%= application.fullName %></p>
           <p><strong>Email:</strong> <%= application.email %></p>
           <p><strong>Phone:</strong> <%= application.phone %></p>
+          <p><strong>PWD / Special Applicant:</strong> <%= application.disabilityStatus === 'yes' ? 'Yes' : 'No' %></p>
+          <p><strong>Disability Explanation:</strong> <%= application.disabilityStatus === 'yes' ? (application.disabilityReason || 'Not recorded') : 'Not applicable' %></p>
           <p><strong>Institution:</strong> <%= application.institution %></p>
           <p><strong>Course:</strong> <%= application.course %></p>
           <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
@@ -196,23 +199,52 @@
           <% } %>
         </details>
 
-        <h2>Joining Letter Upload (HR Only)</h2>
-        <p>Complete the NITA workflow and set status to <strong>Admitted</strong> first, then upload the joining letter.</p>
-        <form action="/hr/applications/<%= application.id %>/joining-letter" method="post" enctype="multipart/form-data" class="form-grid">
-          <label class="full-width">
-            Joining Letter (PDF only)
-            <input type="file" name="joiningLetter" accept=".pdf,application/pdf" required />
+        <h2>Generate Joining Letter</h2>
+        <p>Complete the NITA workflow and set status to <strong>Admitted</strong> first, then generate the official joining letter. Once generated, it is published immediately for the student to download from the dashboard.</p>
+
+        <form action="/hr/applications/<%= application.id %>/joining-letter-template" method="post" class="form-grid">
+          <label>
+            Template
+            <select name="templateKey" required>
+              <% joiningLetterTemplates.forEach((template) => { %>
+                <option value="<%= template.key %>"><%= template.label %></option>
+              <% }) %>
+            </select>
           </label>
-          <div class="actions full-width">
-            <button class="btn" type="submit">Upload Joining Letter</button>
+          <div class="actions">
+            <button class="btn" type="submit">Generate And Publish Joining Letter</button>
           </div>
         </form>
 
         <% if (application.joiningLetter && application.joiningLetter.filename) { %>
           <div class="actions">
-            <a class="btn secondary" href="/hr/files/<%= application.joiningLetter.filename %>" target="_blank">Download Current Joining Letter</a>
+            <a class="btn secondary" href="/hr/files/<%= application.joiningLetter.filename %>" target="_blank">Download Current Joining Letter For Confirmation</a>
           </div>
         <% } %>
+
+        <details class="history-toggle">
+          <summary>
+            Application Audit Trail
+            <span class="history-toggle-meta">
+              <%= application.auditTrail && application.auditTrail.length ? `${application.auditTrail.length} entries` : 'No entries yet' %>
+            </span>
+          </summary>
+
+          <% if (application.auditTrail && application.auditTrail.length) { %>
+            <div class="task-list">
+              <% application.auditTrail.slice(0, 15).forEach((entry) => { %>
+                <div class="summary">
+                  <p><strong><%= entry.action %></strong></p>
+                  <p><strong>When:</strong> <%= formatDate(entry.at) %></p>
+                  <p><strong>By:</strong> <%= entry.actorUsername %> (<%= entry.actorRole %>)</p>
+                  <p><%= entry.note || 'No note recorded.' %></p>
+                </div>
+              <% }) %>
+            </div>
+          <% } else { %>
+            <p>No audit entries recorded yet.</p>
+          <% } %>
+        </details>
       </section>
     </main>
 <%- include("partials/layout-close") %>
