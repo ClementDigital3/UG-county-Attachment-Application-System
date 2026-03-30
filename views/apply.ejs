@@ -119,27 +119,43 @@
 
             <label>
               Institution *
-              <input
-                id="institutionInput"
-                type="text"
+              <select
+                id="institutionSelect"
                 name="institution"
-                value="<%= formData.institution || '' %>"
-                list="institutionOptions"
-                placeholder="Search or type institution name"
                 required
-                autocomplete="off"
                 <%= formData.acceptedTerms === 'yes' && formData.appliedDepartment && formData.disabilityStatus ? '' : 'disabled' %>
               >
-              <datalist id="institutionOptions">
+                <option value="">Select institution</option>
                 <% institutionGroups.forEach((group) => { %>
-                  <% group.institutions.forEach((institution) => { %>
-                    <option value="<%= institution %>"></option>
-                  <% }) %>
+                  <optgroup label="<%= group.category %>">
+                    <% group.institutions.forEach((institution) => { %>
+                      <option value="<%= institution %>" <%= formData.institution === institution ? 'selected' : '' %>><%= institution %></option>
+                    <% }) %>
+                  </optgroup>
                 <% }) %>
-              </datalist>
+                <option value="<%= otherInstitutionValue %>" <%= formData.institution === otherInstitutionValue ? 'selected' : '' %>>Other - type institution in full</option>
+              </select>
               <span class="field-hint">
-                This field unlocks after you choose the department and applicant category. Universities appear first, then polytechnics, then colleges.
+                Choose from the ranked institution list. If your institution is missing, select <strong>Other</strong> and type the full institution name without abbreviations.
               </span>
+            </label>
+
+            <label
+              id="otherInstitutionLabel"
+              class="full-width <%= formData.institution === otherInstitutionValue ? '' : 'is-hidden' %>"
+            >
+              Other Institution Name *
+              <span class="field-hint">
+                Enter the institution name in full so it can be recorded properly. Do not use abbreviations.
+              </span>
+              <input
+                id="otherInstitutionInput"
+                type="text"
+                name="otherInstitution"
+                value="<%= formData.otherInstitution || '' %>"
+                placeholder="Example: Kenya School of Government"
+                <%= formData.institution === otherInstitutionValue ? 'required' : '' %>
+              />
             </label>
           </div>
 
@@ -358,7 +374,9 @@
       const disabilityStatusSelect = document.getElementById("disabilityStatusSelect");
       const disabilityReasonLabel = document.getElementById("disabilityReasonLabel");
       const disabilityReasonInput = document.getElementById("disabilityReasonInput");
-      const institutionInput = document.getElementById("institutionInput");
+      const institutionSelect = document.getElementById("institutionSelect");
+      const otherInstitutionLabel = document.getElementById("otherInstitutionLabel");
+      const otherInstitutionInput = document.getElementById("otherInstitutionInput");
       const applicationFields = document.getElementById("applicationFields");
       const statusBox = document.getElementById("institutionSlotBox");
       const statusHeading = document.getElementById("institutionStatusHeading");
@@ -366,7 +384,7 @@
       const statusMetrics = document.getElementById("institutionStatusMetrics");
       const submitButton = document.getElementById("applySubmitButton");
 
-      if (!termsCheckbox || !departmentSelect || !disabilityStatusSelect || !disabilityReasonLabel || !disabilityReasonInput || !institutionInput || !applicationFields || !statusBox || !statusHeading || !statusMessage || !statusMetrics || !submitButton) {
+      if (!termsCheckbox || !departmentSelect || !disabilityStatusSelect || !disabilityReasonLabel || !disabilityReasonInput || !institutionSelect || !otherInstitutionLabel || !otherInstitutionInput || !applicationFields || !statusBox || !statusHeading || !statusMessage || !statusMetrics || !submitButton) {
         return;
       }
 
@@ -414,6 +432,17 @@
         disabilityReasonInput.required = isSpecialApplicant;
       }
 
+      function syncInstitutionUi() {
+        const usingOtherInstitution = institutionSelect.value === "<%= otherInstitutionValue %>";
+        otherInstitutionLabel.classList.toggle("is-hidden", !usingOtherInstitution);
+        otherInstitutionInput.required = usingOtherInstitution;
+        otherInstitutionInput.disabled =
+          !termsCheckbox.checked ||
+          !departmentSelect.value.trim() ||
+          !disabilityStatusSelect.value.trim() ||
+          !usingOtherInstitution;
+      }
+
       function renderDefaultState() {
         setTone("muted");
         statusHeading.textContent = "Accept the county terms first.";
@@ -423,8 +452,10 @@
         departmentSelect.disabled = !termsCheckbox.checked;
         disabilityStatusSelect.disabled = !termsCheckbox.checked;
         disabilityReasonInput.disabled = !termsCheckbox.checked || disabilityStatusSelect.value !== "yes";
-        institutionInput.disabled = true;
+        institutionSelect.disabled = true;
+        otherInstitutionInput.disabled = true;
         syncDisabilityUi();
+        syncInstitutionUi();
         setFieldsVisible(false);
       }
 
@@ -437,13 +468,15 @@
         const department = departmentSelect.value.trim();
         const disabilityStatus = disabilityStatusSelect.value.trim();
         const disabilityReason = disabilityReasonInput.value.trim();
-        const institution = institutionInput.value.trim();
+        const institution = institutionSelect.value.trim();
+        const otherInstitution = otherInstitutionInput.value.trim();
 
         departmentSelect.disabled = false;
         disabilityStatusSelect.disabled = false;
         disabilityReasonInput.disabled = disabilityStatus !== "yes";
         syncDisabilityUi();
-        institutionInput.disabled = !department || !disabilityStatus;
+        institutionSelect.disabled = !department || !disabilityStatus;
+        syncInstitutionUi();
 
         if (!disabilityStatus) {
           setTone("muted");
@@ -465,10 +498,6 @@
           return;
         }
 
-        if (!disabilityStatus) {
-          institutionInput.disabled = true;
-        }
-
         if (controller) {
           controller.abort();
         }
@@ -477,7 +506,7 @@
 
         try {
           const response = await fetch(
-            `/api/institution-availability?department=${encodeURIComponent(department)}&institution=${encodeURIComponent(institution)}&disabilityStatus=${encodeURIComponent(disabilityStatus)}&disabilityReason=${encodeURIComponent(disabilityReason)}`,
+            `/api/institution-availability?department=${encodeURIComponent(department)}&institution=${encodeURIComponent(institution)}&otherInstitution=${encodeURIComponent(otherInstitution)}&disabilityStatus=${encodeURIComponent(disabilityStatus)}&disabilityReason=${encodeURIComponent(disabilityReason)}`,
             { signal: controller.signal }
           );
 
@@ -511,7 +540,7 @@
             statusHeading.textContent = "Institution not recognised.";
             statusMessage.textContent =
               data.institutionResolutionError ||
-              "Please choose a recognised institution from the dropdown before continuing.";
+              "Please choose a recognised institution from the dropdown or use Other and type the institution name in full.";
             setFieldsVisible(false);
             return;
           }
@@ -567,8 +596,9 @@
       disabilityStatusSelect.addEventListener("change", refreshAvailability);
       disabilityReasonInput.addEventListener("input", refreshAvailability);
       disabilityReasonInput.addEventListener("change", refreshAvailability);
-      institutionInput.addEventListener("input", refreshAvailability);
-      institutionInput.addEventListener("change", refreshAvailability);
+      institutionSelect.addEventListener("change", refreshAvailability);
+      otherInstitutionInput.addEventListener("input", refreshAvailability);
+      otherInstitutionInput.addEventListener("change", refreshAvailability);
       refreshAvailability();
     })();
   </script>

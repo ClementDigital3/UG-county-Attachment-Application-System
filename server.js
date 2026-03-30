@@ -3370,6 +3370,7 @@ async function renderApplyPage(res, { error = null, formData = {}, statusCode = 
     (formData.institution || "").toString().trim(),
     null,
     {
+      otherInstitution: formData.otherInstitution,
       disabilityStatus: formData.disabilityStatus,
       disabilityReason: formData.disabilityReason
     }
@@ -3389,6 +3390,7 @@ async function renderApplyPage(res, { error = null, formData = {}, statusCode = 
       Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
     departmentOptions: DEPARTMENTS,
     institutionGroups: KENYA_INSTITUTION_GROUPS,
+    otherInstitutionValue: OTHER_INSTITUTION_VALUE,
     applicationRequirements: APPLICATION_REQUIREMENTS,
     applicationTerms: APPLICATION_TERMS,
     canStartApplication,
@@ -3698,6 +3700,7 @@ app.post("/apply", async (req, res) => {
       disabilityStatus,
       disabilityReason,
       institution,
+      otherInstitution,
       course,
       appliedDepartment,
       period,
@@ -3719,6 +3722,7 @@ app.post("/apply", async (req, res) => {
     const finalDisabilityReason = normalizeDisabilityReason(disabilityReason);
     const specialApplicant = isSpecialApplicantStatus(finalDisabilityStatus);
     let finalInstitution = (institution || "").trim();
+    let finalOtherInstitution = (otherInstitution || "").trim();
     let finalCourse = (course || "").trim();
     let finalAppliedDepartment = (appliedDepartment || "").trim();
     let finalPeriod = (period || "").trim();
@@ -3832,7 +3836,7 @@ app.post("/apply", async (req, res) => {
       });
     }
 
-    const resolvedInstitution = resolveInstitutionSelection(finalInstitution);
+    const resolvedInstitution = resolveInstitutionSelection(finalInstitution, finalOtherInstitution);
     if (resolvedInstitution.fullNameError) {
       cleanupUploadedFiles(files);
       return renderApplyPage(res, {
@@ -3842,6 +3846,7 @@ app.post("/apply", async (req, res) => {
       });
     }
     finalInstitution = resolvedInstitution.institution;
+    finalOtherInstitution = resolvedInstitution.isOther ? finalInstitution : "";
 
     const applications = await readApplications();
     const capacitySummary = getCapacitySummary(settings, applications);
