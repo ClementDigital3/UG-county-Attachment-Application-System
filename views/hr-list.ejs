@@ -83,6 +83,7 @@
                 <th>Email</th>
                 <th>Department</th>
                 <th>Period</th>
+                <th>NITA Return</th>
                 <th class="table-status-cell">Status</th>
                 <th class="table-date-cell">Submitted</th>
                 <th class="table-action-cell">Action</th>
@@ -91,7 +92,7 @@
             <tbody>
               <% if (!applications.length) { %>
                 <tr>
-                  <td class="table-empty-state" colspan="9"><strong>No applications found.</strong> Adjust the selected filter and try again.</td>
+                  <td class="table-empty-state" colspan="10"><strong>No applications found.</strong> Adjust the selected filter and try again.</td>
                 </tr>
               <% } %>
 
@@ -103,6 +104,14 @@
                   <td><%= application.email %></td>
                   <td><%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></td>
                   <td><%= application.period ? getPeriodLabel(application.period) : 'Not set' %></td>
+                  <td>
+                    <% if (application.nitaWorkflow.studentResubmissionCount > 0) { %>
+                      <span class="badge verified">Returned</span>
+                      <div class="muted-note">Student re-uploaded stamped NITA</div>
+                    <% } else { %>
+                      <span class="badge pending">Awaiting Student</span>
+                    <% } %>
+                  </td>
                   <td class="table-status-cell"><span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></td>
                   <td class="table-date-cell"><%= formatDate(application.submittedAt) %></td>
                   <td class="table-action-cell"><a href="/hr/applications/<%= application.id %>">Review</a></td>

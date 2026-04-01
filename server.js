@@ -184,16 +184,6 @@ const NITA_RESUBMISSION_DEFINITION = {
   allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
 };
 
-const JOINING_LETTER_FIELD = "joiningLetter";
-const JOINING_LETTER_POLICY = {
-  key: JOINING_LETTER_FIELD,
-  label: "Joining letter",
-  accept: ".pdf,application/pdf",
-  allowedExtensions: new Set([".pdf"]),
-  allowedMimeTypes: new Set(["application/pdf"]),
-  allowedDetectedTypes: new Set(["pdf"])
-};
-
 const REQUIRED_DOCUMENT_FIELDS = DOCUMENT_DEFINITIONS.map((document) => document.key);
 const DOCUMENT_SECURITY_POLICY = Object.fromEntries(
   DOCUMENT_DEFINITIONS.map((document) => [document.key, document])
@@ -203,8 +193,7 @@ const UPLOAD_SECURITY_POLICY = {
   [COMBINED_DOCUMENT_FIELD]: COMBINED_DOCUMENT_DEFINITION,
   [NITA_DOCUMENT_FIELD]: NITA_DOCUMENT_DEFINITION,
   [COUNTY_SIGNED_NITA_FIELD]: COUNTY_SIGNED_NITA_DEFINITION,
-  [NITA_RESUBMISSION_FIELD]: NITA_RESUBMISSION_DEFINITION,
-  [JOINING_LETTER_FIELD]: JOINING_LETTER_POLICY
+  [NITA_RESUBMISSION_FIELD]: NITA_RESUBMISSION_DEFINITION
 };
 
 const HR_USERNAME = process.env.HR_USERNAME || "hr_admin";
@@ -661,7 +650,6 @@ const studentDocumentsUploadMiddleware = upload.fields(
   }))
 );
 
-const joiningLetterUploadMiddleware = upload.single(JOINING_LETTER_FIELD);
 const nitaResubmissionUploadMiddleware = upload.single(NITA_RESUBMISSION_FIELD);
 
 app.set("view engine", "ejs");
@@ -717,7 +705,9 @@ function createDefaultNitaWorkflow() {
   return {
     status: "Pending County Signature",
     comment: "",
-    updatedAt: null
+    updatedAt: null,
+    studentResubmissionCount: 0,
+    studentResubmittedAt: null
   };
 }
 
@@ -806,7 +796,9 @@ function normalizeNitaWorkflow(workflow) {
   return {
     status,
     comment: (workflow?.comment || "").toString().trim(),
-    updatedAt: workflow?.updatedAt || null
+    updatedAt: workflow?.updatedAt || null,
+    studentResubmissionCount: Math.max(0, Number(workflow?.studentResubmissionCount || 0)),
+    studentResubmittedAt: workflow?.studentResubmittedAt || null
   };
 }
 
@@ -4326,7 +4318,9 @@ app.post("/track/resubmit", async (req, res) => {
             status: "Awaiting Student NITA Resubmission",
             comment:
               "County-endorsed NITA document refreshed automatically. Download the updated version, take it to the NITA office for stamping, then re-submit it.",
-            updatedAt: reuploadedAt
+            updatedAt: reuploadedAt,
+            studentResubmissionCount: 0,
+            studentResubmittedAt: null
           };
           continue;
         }
@@ -4524,7 +4518,10 @@ app.post("/track/nita-resubmit", async (req, res) => {
         ...normalizeNitaWorkflow(currentApplication.nitaWorkflow),
         status: "Under HR NITA Review",
         comment: "Student submitted the stamped NITA document for HR review.",
-        updatedAt: submittedAt
+        updatedAt: submittedAt,
+        studentResubmissionCount:
+          normalizeNitaWorkflow(currentApplication.nitaWorkflow).studentResubmissionCount + 1,
+        studentResubmittedAt: submittedAt
       };
       currentApplication.updatedAt = submittedAt;
       appendApplicationAudit(currentApplication, {
@@ -6580,120 +6577,6 @@ app.post("/hr/applications/:id/status", ensureHrAdmin, async (req, res) => {
   return res.redirect(`/hr/applications/${req.params.id}?statusSaved=1`);
 });
 
-app.post("/hr/applications/:id/joining-letter", ensureHrAdmin, async (req, res) => {
-  const applications = await readApplications();
-  const index = applications.findIndex((item) => item.id === req.params.id);
-
-  if (index === -1) {
-    return res.status(404).render("not-found");
-  }
-
-  const application = ensureApplicationDefaults(applications[index]);
-
-  if (!HR_VISIBLE_STATUSES.has(application.status)) {
-    return res.status(400).send("Application is not yet in HR review queue.");
-  }
-
-  if (isApplicationFrozen(application)) {
-    return renderHrDetailPage(res, {
-      application,
-      statusCode: 400,
-      error: "This application record is frozen. Unfreeze it from department review before continuing the HR workflow."
-    });
-  }
-
-  if (!isAdmittedStatus(application.status)) {
-    return renderHrDetailPage(res, {
-      application,
-      statusCode: 400,
-      error: "Admit the application first before uploading a joining letter."
-    });
-  }
-
-  if (normalizeNitaWorkflow(application.nitaWorkflow).status !== "Completed") {
-    return renderHrDetailPage(res, {
-      application,
-      statusCode: 400,
-      error: "Complete the NITA workflow before preparing the joining letter."
-    });
-  }
-
-  return joiningLetterUploadMiddleware(req, res, async (uploadError) => {
-    if (uploadError) {
-      cleanupUploadedFiles(req.files || {});
-      if (req.file && req.file.filename) {
-        removeStoredFile(req.file.filename);
-      }
-
-      return renderHrDetailPage(res, {
-        application,
-        statusCode: 400,
-        error: getUploadErrorMessage(uploadError)
-      });
-    }
-
-    if (!req.file) {
-      return renderHrDetailPage(res, {
-        application,
-        statusCode: 400,
-        error: "Please select a joining letter file to upload."
-      });
-    }
-
-    let joiningLetterSecurity;
-    try {
-      joiningLetterSecurity = scanUploadedFile(req.file);
-    } catch (scanError) {
-      removeStoredFile(req.file.filename);
-      return renderHrDetailPage(res, {
-        application,
-        statusCode: 400,
-        error: scanError.message || "Joining letter security scan failed."
-      });
-    }
-
-    return (async () => {
-      const oldJoiningLetter = application.joiningLetter;
-      application.joiningLetter = await persistUploadedApplicationFile(req.file, {
-        folder: "joining-letters",
-        uploadedAt: new Date().toISOString(),
-        security: joiningLetterSecurity
-      });
-      application.updatedAt = new Date().toISOString();
-      appendApplicationAudit(application, {
-        scope: "application",
-        action: "joining_letter_uploaded",
-        ...getActorInfo(req, "hr_admin"),
-        note: "HR uploaded a joining letter.",
-        at: application.updatedAt,
-        metadata: {
-          originalName: application.joiningLetter?.originalName || req.file.originalname || ""
-        }
-      });
-
-      applications[index] = application;
-      await writeApplications(applications);
-      await sendAndPersistApplicationNotification({
-        req,
-        applications,
-        index,
-        eventType: "joining_letter_ready",
-        initiatedBy: "hr"
-      });
-      Promise.resolve(fileStorage.removeStoredFile(oldJoiningLetter)).catch(() => {});
-
-      return res.redirect(`/hr/applications/${req.params.id}?joiningSaved=1`);
-    })().catch((storageError) => {
-      cleanupUploadedFiles({ [JOINING_LETTER_FIELD]: [req.file] });
-      return renderHrDetailPage(res, {
-        application,
-        statusCode: 500,
-        error: storageError.message || "Failed to store the joining letter."
-      });
-    });
-  });
-});
-
 app.post("/hr/applications/:id/joining-letter-template", ensureHrAdmin, async (req, res) => {
   const selectedTemplate = (req.body.templateKey || JOINING_LETTER_TEMPLATES[0].key).toString().trim();
   if (!JOINING_LETTER_TEMPLATES.some((template) => template.key === selectedTemplate)) {
@@ -6751,9 +6634,7 @@ app.post("/hr/applications/:id/joining-letter-template", ensureHrAdmin, async (r
       generatedAt,
       timeZone: DISPLAY_TIMEZONE,
       logoPath: COUNTY_LOGO_JPG_FILE,
-      countyName: "County Government of Uasin Gishu",
-      signatoryName: COUNTY_ATTACHMENT_SIGNATORY_NAME,
-      signatoryDesignation: COUNTY_ATTACHMENT_SIGNATORY_DESIGNATION
+      countyName: "COUNTY GOVERNMENT OF UASIN GISHU"
     });
 
     try {

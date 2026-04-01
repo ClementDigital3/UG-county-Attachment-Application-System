@@ -143,6 +143,9 @@
               <p><strong>Stamped NITA re-submission:</strong>
                 <%= result.nitaResubmittedDocument && result.nitaResubmittedDocument.filename ? 'Submitted to HR' : 'Not submitted yet' %>
               </p>
+              <p><strong>NITA re-submission marker:</strong>
+                <%= result.nitaWorkflow.studentResubmissionCount > 0 ? `Already returned to HR on ${formatDate(result.nitaWorkflow.studentResubmittedAt)}` : 'Awaiting your stamped NITA re-upload' %>
+              </p>
               <p><strong>NITA workflow status:</strong> <%= result.nitaWorkflow.status %></p>
               <p><strong>Workflow note:</strong> <%= result.nitaWorkflow.comment || 'No NITA workflow note yet.' %></p>
             </div>

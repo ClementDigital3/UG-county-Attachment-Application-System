@@ -55,6 +55,7 @@
           <p><strong>Terms Version:</strong> <%= application.termsAcceptance && application.termsAcceptance.version ? application.termsAcceptance.version : 'Not recorded' %></p>
           <p><strong>Last Updated:</strong> <%= formatDate(application.updatedAt) %></p>
           <p><strong>NITA Workflow:</strong> <%= application.nitaWorkflow.status %></p>
+          <p><strong>NITA Student Return Marker:</strong> <%= application.nitaWorkflow.studentResubmissionCount > 0 ? `Already re-submitted (${application.nitaWorkflow.studentResubmissionCount})` : 'Awaiting student re-upload' %></p>
           <p><strong>Department/HR Comment:</strong> <%= application.reviewerComment || 'No comment yet.' %></p>
         </div>
 
@@ -102,6 +103,9 @@
           </p>
           <p><strong>Stamped NITA re-submission:</strong>
             <%= application.nitaResubmittedDocument && application.nitaResubmittedDocument.filename ? 'Received from student' : 'Not received yet' %>
+          </p>
+          <p><strong>Student re-submission indicator:</strong>
+            <%= application.nitaWorkflow.studentResubmissionCount > 0 ? `Returned to HR on ${formatDate(application.nitaWorkflow.studentResubmittedAt)}` : 'Student has not re-uploaded the stamped NITA document yet' %>
           </p>
           <p><strong>Workflow note:</strong> <%= application.nitaWorkflow.comment || 'No NITA workflow note yet.' %></p>
         </div>
