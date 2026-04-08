@@ -76,7 +76,7 @@
               <% periodOptions.forEach((period) => { %>
                 <label class="checkbox-card">
                   <input type="checkbox" name="openPeriods" value="<%= period.key %>" <%= period.isOpen ? 'checked' : '' %> />
-                  <span><%= period.shortLabel || period.label %></span>
+                  <span><%= period.shortLabel || period.label %> <%= period.quarterLabel ? `(${period.quarterLabel})` : '' %></span>
                 </label>
               <% }) %>
             </div>

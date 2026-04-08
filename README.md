@@ -124,10 +124,10 @@ The landing page presents:
 - live intake runner and deadline countdown
 - application window status
 - quarterly intake windows:
-  - January - March
-  - April - June
-  - July - September
-  - October - December
+  - January - March(3rd Quarter)
+  - April - June(4th Quarter)
+  - July - September(1st Quarter)
+  - October - December(2nd Quarter)
 - fair-distribution guidance
 - quick application instructions
 

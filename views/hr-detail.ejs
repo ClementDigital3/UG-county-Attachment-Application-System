@@ -39,9 +39,10 @@
           <p><strong>Name:</strong> <%= application.fullName %></p>
           <p><strong>Email:</strong> <%= application.email %></p>
           <p><strong>Phone:</strong> <%= application.phone %></p>
-          <p><strong>PWD / Special Applicant:</strong> <%= application.disabilityStatus === 'yes' ? 'Yes' : 'No' %></p>
-          <p><strong>Disability Explanation:</strong> <%= application.disabilityStatus === 'yes' ? (application.disabilityReason || 'Not recorded') : 'Not applicable' %></p>
+          <p><strong>PWD / Special Applicant:</strong> <%= getDisabilityStatusLabel(application.disabilityStatus) %></p>
+          <p><strong>PWD / Special Applicant Explanation:</strong> <%= application.disabilityStatus ? (application.disabilityReason || 'Not recorded') : 'Not applicable' %></p>
           <p><strong>Institution:</strong> <%= application.institution %></p>
+          <p><strong>Course Level:</strong> <%= getCourseLevelLabel(application.courseLevel) %></p>
           <p><strong>Course:</strong> <%= application.course %></p>
           <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
           <p><strong>Assigned Department:</strong> <%= application.assignedDepartment ? getDepartmentLabel(application.assignedDepartment) : 'Not assigned' %></p>

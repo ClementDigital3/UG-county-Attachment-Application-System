@@ -140,7 +140,7 @@
         <div class="landing-window-grid">
           <% periodOptions.forEach((period) => { %>
             <article class="landing-window-card <%= period.isOpen ? 'is-open' : 'is-closed' %>">
-              <strong><%= period.shortLabel || period.label %></strong>
+              <strong><%= period.label %> <%= period.quarterLabel ? `(${period.quarterLabel})` : '' %></strong>
               <span><%= period.isOpen ? 'Applications are ongoing' : 'Closed until HR opens this quarter' %></span>
             </article>
           <% }) %>

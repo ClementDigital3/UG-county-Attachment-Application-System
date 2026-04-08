@@ -55,6 +55,15 @@ const CORRECTION_REASON_OPTIONS = [
 const JOINING_LETTER_TEMPLATES = [
   { key: "standard_county", label: "Standard County Attachment Joining Letter" }
 ];
+const COURSE_LEVEL_OPTIONS = [
+  { key: "degree", label: "Degree" },
+  { key: "diploma", label: "Diploma" },
+  { key: "certificate", label: "Certificate" },
+  { key: "artisan", label: "Artisan" }
+];
+const COURSE_LEVEL_LABELS = Object.fromEntries(
+  COURSE_LEVEL_OPTIONS.map((option) => [option.key, option.label])
+);
 const INSTITUTION_CATEGORY_PRIORITY = {
   "Public Universities": 1,
   "Private Universities": 2,
@@ -76,10 +85,10 @@ const RATE_LIMIT_CONFIG = {
 };
 
 const PERIODS = [
-  { key: "JAN_MAR", label: "January - March", shortLabel: "Jan - Mar" },
-  { key: "APR_JUN", label: "April - June", shortLabel: "Apr - Jun" },
-  { key: "JUL_SEP", label: "July - September", shortLabel: "Jul - Sep" },
-  { key: "OCT_DEC", label: "October - December", shortLabel: "Oct - Dec" }
+  { key: "JAN_MAR", label: "January - March", shortLabel: "Jan - Mar", quarterLabel: "3rd Quarter" },
+  { key: "APR_JUN", label: "April - June", shortLabel: "Apr - Jun", quarterLabel: "4th Quarter" },
+  { key: "JUL_SEP", label: "July - September", shortLabel: "Jul - Sep", quarterLabel: "1st Quarter" },
+  { key: "OCT_DEC", label: "October - December", shortLabel: "Oct - Dec", quarterLabel: "2nd Quarter" }
 ];
 
 const LEGACY_PERIOD_LABELS = {
@@ -912,15 +921,44 @@ function normalizeTermsAcceptanceRecord(record) {
 
 function normalizeDisabilityStatus(value) {
   const normalized = (value || "").toString().trim().toLowerCase();
-  return normalized === "yes" ? "yes" : "no";
+  if (normalized === "yes" || normalized === "pwd") {
+    return "pwd";
+  }
+
+  if (normalized === "special" || normalized === "special_applicant") {
+    return "special";
+  }
+
+  return "";
 }
 
 function normalizeDisabilityReason(value) {
   return (value || "").toString().trim().replace(/\s+/g, " ");
 }
 
+function normalizeCourseLevel(value) {
+  const normalized = (value || "").toString().trim().toLowerCase();
+  return COURSE_LEVEL_LABELS[normalized] ? normalized : "";
+}
+
+function getCourseLevelLabel(value) {
+  const normalized = normalizeCourseLevel(value);
+  return COURSE_LEVEL_LABELS[normalized] || "Not set";
+}
+
+function getDisabilityStatusLabel(value) {
+  switch (normalizeDisabilityStatus(value)) {
+    case "pwd":
+      return "PWD applicant";
+    case "special":
+      return "Special applicant";
+    default:
+      return "Normal applicant";
+  }
+}
+
 function isSpecialApplicantStatus(value) {
-  return normalizeDisabilityStatus(value) === "yes";
+  return ["pwd", "special"].includes(normalizeDisabilityStatus(value));
 }
 
 function isSpecialApplicantApplication(application) {
@@ -964,6 +1002,8 @@ function ensureApplicationDefaults(application) {
     status: normalizeApplicationStatus(application.status),
     placementNumber: getTrackingNumber(application),
     idNumber: (application.idNumber || "").toString(),
+    course: (application.course || "").toString().trim(),
+    courseLevel: normalizeCourseLevel(application.courseLevel),
     disabilityStatus: normalizeDisabilityStatus(application.disabilityStatus),
     disabilityReason: normalizeDisabilityReason(application.disabilityReason),
     appliedDepartment,
@@ -1542,11 +1582,12 @@ function getPeriodOptions(settings) {
 }
 
 function getPeriodLabel(periodKey) {
-  return (
-    PERIODS.find((period) => period.key === periodKey)?.label ||
-    LEGACY_PERIOD_LABELS[periodKey] ||
-    periodKey
-  );
+  const period = PERIODS.find((item) => item.key === periodKey);
+  if (period) {
+    return period.quarterLabel ? `${period.label} (${period.quarterLabel})` : period.label;
+  }
+
+  return LEGACY_PERIOD_LABELS[periodKey] || periodKey;
 }
 
 function getPeriodShortLabel(periodKey) {
@@ -1888,6 +1929,7 @@ function buildDepartmentReportRows(applications, settings, scopedDepartment = nu
     return {
       ...department,
       capacity,
+      ordinaryApplications: ordinaryDepartmentApplications.length,
       applications: departmentApplications.length,
       approved,
       verified,
@@ -1934,6 +1976,91 @@ function buildInstitutionReportRows(applications, scopedDepartment = null, limit
     .slice(0, Math.max(1, limit));
 }
 
+function buildInstitutionDistributionRows(applications, scopedDepartment = null) {
+  const filtered = scopedDepartment
+    ? applications.filter((application) => application.appliedDepartment === scopedDepartment)
+    : applications;
+  const buckets = new Map();
+
+  filtered.forEach((application) => {
+    const institution = (application.institution || "").toString().trim();
+    const key = normalizeInstitutionName(institution);
+    if (!key) {
+      return;
+    }
+
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        institution,
+        applicants: 0
+      });
+    }
+
+    buckets.get(key).applicants += 1;
+  });
+
+  return Array.from(buckets.values()).sort(
+    (a, b) => b.applicants - a.applicants || a.institution.localeCompare(b.institution)
+  );
+}
+
+function buildCourseLevelDistributionRows(applications) {
+  const rows = COURSE_LEVEL_OPTIONS.map((option) => ({
+    key: option.key,
+    label: option.label,
+    applicants: applications.filter(
+      (application) => normalizeCourseLevel(application.courseLevel) === option.key
+    ).length
+  }));
+  const notSetCount = applications.filter(
+    (application) => !normalizeCourseLevel(application.courseLevel)
+  ).length;
+
+  if (notSetCount > 0) {
+    rows.push({
+      key: "not_set",
+      label: "Not set",
+      applicants: notSetCount
+    });
+  }
+
+  return rows;
+}
+
+function buildDepartmentReportTotals(rows) {
+  const totals = rows.reduce(
+    (summary, row) => {
+      summary.capacity += Number(row.capacity || 0);
+      summary.ordinaryApplications += Number(row.ordinaryApplications || 0);
+      summary.applications += Number(row.applications || 0);
+      summary.verified += Number(row.verified || 0);
+      summary.approved += Number(row.approved || 0);
+      summary.pending += Number(row.pending || 0);
+      summary.remaining += Number(row.remaining || 0);
+      return summary;
+    },
+    {
+      capacity: 0,
+      ordinaryApplications: 0,
+      applications: 0,
+      verified: 0,
+      approved: 0,
+      pending: 0,
+      remaining: 0
+    }
+  );
+
+  return {
+    ...totals,
+    fillRate:
+      totals.capacity > 0 ? Math.round((totals.ordinaryApplications / totals.capacity) * 100) : 0
+  };
+}
+
+function buildSimpleDistributionTotals(rows, key = "applicants") {
+  return rows.reduce((sum, row) => sum + Number(row?.[key] || 0), 0);
+}
+
 function buildAnalyticsSummary(applications, settings, scopedDepartment = null) {
   const filtered = scopedDepartment
     ? applications.filter((application) => application.appliedDepartment === scopedDepartment)
@@ -1956,6 +2083,11 @@ function buildAnalyticsSummary(applications, settings, scopedDepartment = null) 
     )
     : 0;
 
+  const departmentSummary = buildDepartmentReportRows(filtered, settings, scopedDepartment);
+  const institutionSummary = buildInstitutionReportRows(filtered, scopedDepartment, 12);
+  const institutionDistribution = buildInstitutionDistributionRows(filtered, scopedDepartment);
+  const courseLevelSummary = buildCourseLevelDistributionRows(filtered);
+
   return {
     applications: filtered,
     totals: {
@@ -1969,13 +2101,22 @@ function buildAnalyticsSummary(applications, settings, scopedDepartment = null) 
     },
     statusSummary: buildStatusSummary(filtered),
     periodSummary: buildPeriodSummary(filtered),
-    departmentSummary: buildDepartmentReportRows(filtered, settings, scopedDepartment),
-    institutionSummary: buildInstitutionReportRows(filtered, scopedDepartment, 12),
+    departmentSummary,
+    departmentTotals: buildDepartmentReportTotals(departmentSummary),
+    institutionSummary,
+    institutionDistribution,
+    institutionDistributionTotal: buildSimpleDistributionTotals(institutionDistribution),
+    courseLevelSummary,
+    courseLevelTotal: buildSimpleDistributionTotals(courseLevelSummary),
     recentApplications: filtered
       .slice()
       .sort((a, b) => new Date(b.updatedAt || b.submittedAt) - new Date(a.updatedAt || a.submittedAt))
       .slice(0, 8)
   };
+}
+
+function escapeCsvCell(value) {
+  return `"${String(value ?? "").replace(/"/g, '""')}"`;
 }
 
 function convertApplicationsToCsv(applications) {
@@ -1986,6 +2127,7 @@ function convertApplicationsToCsv(applications) {
     "Email",
     "Phone",
     "Institution",
+    "Course Level",
     "Course",
     "Applied Department",
     "Assigned Department",
@@ -2002,6 +2144,7 @@ function convertApplicationsToCsv(applications) {
     application.email || "",
     application.phone || "",
     application.institution || "",
+    getCourseLevelLabel(application.courseLevel),
     application.course || "",
     getDepartmentLabel(application.appliedDepartment || ""),
     getDepartmentLabel(application.assignedDepartment || ""),
@@ -2014,9 +2157,67 @@ function convertApplicationsToCsv(applications) {
   return [headers, ...rows]
     .map((row) =>
       row
-        .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+        .map((value) => escapeCsvCell(value))
         .join(",")
     )
+    .join("\n");
+}
+
+function convertDistributionReportToCsv({
+  analytics,
+  title,
+  filters
+}) {
+  const filterSummary = [
+    `Status: ${filters.status || "All"}`,
+    `Period: ${filters.period || "All"}`,
+    `Department: ${filters.department || "All"}`,
+    `Search: ${filters.search || "None"}`,
+    `Submitted from: ${filters.dateFrom || "Any"}`,
+    `Submitted to: ${filters.dateTo || "Any"}`
+  ].join(" | ");
+
+  const csvSections = [
+    [title],
+    ["Generated At", formatDate(new Date().toISOString())],
+    ["Applied Filters", filterSummary],
+    [],
+    ["Department Distribution"],
+    ["Department", "Capacity", "Applications", "Verified", "Admitted", "Pending", "Remaining", "Fill Rate"],
+    ...analytics.departmentSummary.map((row) => [
+      row.label,
+      row.capacity,
+      row.applications,
+      row.verified,
+      row.approved,
+      row.pending,
+      row.remaining,
+      `${row.fillRate}%`
+    ]),
+    [
+      "TOTAL",
+      analytics.departmentTotals.capacity,
+      analytics.departmentTotals.applications,
+      analytics.departmentTotals.verified,
+      analytics.departmentTotals.approved,
+      analytics.departmentTotals.pending,
+      analytics.departmentTotals.remaining,
+      `${analytics.departmentTotals.fillRate}%`
+    ],
+    [],
+    ["Institution Distribution"],
+    ["Institution", "Applicants"],
+    ...analytics.institutionDistribution.map((row) => [row.institution, row.applicants]),
+    ["TOTAL", analytics.institutionDistributionTotal],
+    [],
+    ["Course Level Distribution"],
+    ["Course Level", "Applicants"],
+    ...analytics.courseLevelSummary.map((row) => [row.label, row.applicants]),
+    ["TOTAL", analytics.courseLevelTotal]
+  ];
+
+  return csvSections
+    .map((row) => row.map((value) => escapeCsvCell(value)).join(","))
     .join("\n");
 }
 
@@ -3546,6 +3747,9 @@ app.locals.hrPortalPath = HR_PORTAL_PATH;
 app.locals.documentDefinitions = getViewDocumentDefinitions();
 app.locals.getStatusClass = getStatusClass;
 app.locals.getDepartmentLabel = getDepartmentLabel;
+app.locals.getDisabilityStatusLabel = getDisabilityStatusLabel;
+app.locals.getCourseLevelLabel = getCourseLevelLabel;
+app.locals.courseLevelOptions = COURSE_LEVEL_OPTIONS;
 app.locals.fileStorageProvider = fileStorage.provider;
 
 app.use((req, res, next) => {
@@ -3691,9 +3895,12 @@ app.post("/apply", async (req, res) => {
       idNumber,
       disabilityStatus,
       disabilityReason,
+      pwdReason,
+      specialApplicantReason,
       institution,
       otherInstitution,
       course,
+      courseLevel,
       appliedDepartment,
       period,
       startDate,
@@ -3709,13 +3916,20 @@ app.post("/apply", async (req, res) => {
     let finalEmail = (email || "").trim().toLowerCase();
     let finalPhone = (phone || "").trim();
     let finalIdNumber = (idNumber || "").trim();
-    const rawDisabilityStatus = (disabilityStatus || "").toString().trim().toLowerCase();
     const finalDisabilityStatus = normalizeDisabilityStatus(disabilityStatus);
-    const finalDisabilityReason = normalizeDisabilityReason(disabilityReason);
+    const finalPwdReason = normalizeDisabilityReason(pwdReason || disabilityReason);
+    const finalSpecialApplicantReason = normalizeDisabilityReason(specialApplicantReason || disabilityReason);
+    let finalDisabilityReason =
+      finalDisabilityStatus === "pwd"
+        ? finalPwdReason
+        : finalDisabilityStatus === "special"
+          ? finalSpecialApplicantReason
+          : normalizeDisabilityReason(disabilityReason);
     const specialApplicant = isSpecialApplicantStatus(finalDisabilityStatus);
     let finalInstitution = (institution || "").trim();
     let finalOtherInstitution = (otherInstitution || "").trim();
     let finalCourse = (course || "").trim();
+    let finalCourseLevel = normalizeCourseLevel(courseLevel);
     let finalAppliedDepartment = (appliedDepartment || "").trim();
     let finalPeriod = (period || "").trim();
     let finalStartDate = (startDate || "").trim();
@@ -3730,6 +3944,7 @@ app.post("/apply", async (req, res) => {
       finalIdNumber,
       finalInstitution,
       finalCourse,
+      finalCourseLevel,
       finalAppliedDepartment,
       finalPeriod,
       finalStartDate,
@@ -3762,22 +3977,17 @@ app.post("/apply", async (req, res) => {
       });
     }
 
-    if (!["yes", "no"].includes(rawDisabilityStatus)) {
-      cleanupUploadedFiles(files);
-      return renderApplyPage(res, {
-        statusCode: 400,
-        error: "Please choose whether you are applying as a normal applicant or a PWD / special applicant.",
-        formData
-      });
-    }
-
     if (specialApplicant && !finalDisabilityReason) {
       cleanupUploadedFiles(files);
       return renderApplyPage(res, {
         statusCode: 400,
-        error: "Please explain the disability or special condition before continuing with the application.",
+        error: "Please explain the PWD or special-applicant reason before continuing with the application.",
         formData
       });
+    }
+
+    if (!specialApplicant) {
+      finalDisabilityReason = "";
     }
 
     const coverNoteError = getCoverNoteError(finalCoverNote);
@@ -3943,6 +4153,7 @@ app.post("/apply", async (req, res) => {
         disabilityReason: finalDisabilityReason,
         institution: finalInstitution,
         course: finalCourse,
+        courseLevel: finalCourseLevel,
         appliedDepartment: finalAppliedDepartment,
         assignedDepartment: "",
         period: finalPeriod,
@@ -5354,6 +5565,7 @@ function renderReportsPage(res, {
   title,
   actionPath,
   exportPath,
+  distributionExportPath,
   applications,
   filters,
   departmentOptions,
@@ -5372,6 +5584,7 @@ function renderReportsPage(res, {
     analytics,
     actionPath,
     exportPath,
+    distributionExportPath,
     formatDate,
     getPeriodLabel,
     getDepartmentLabel,
@@ -5392,6 +5605,7 @@ app.get("/hr/reports", ensureHrAdmin, async (req, res) => {
     title: "HR Reports and Analytics",
     actionPath: "/hr/reports",
     exportPath: "/hr/reports/export.csv",
+    distributionExportPath: "/hr/reports/distribution-report.csv",
     applications,
     filters,
     departmentOptions: DEPARTMENTS,
@@ -5410,6 +5624,27 @@ app.get("/hr/reports/export.csv", ensureHrAdmin, async (req, res) => {
 
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", 'attachment; filename="hr-report.csv"');
+  return res.send(csv);
+});
+
+app.get("/hr/reports/distribution-report.csv", ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  const settings = await readSettings();
+  const filters = getReportFilterState({
+    query: req.query,
+    allowDepartmentFilter: true
+  });
+  const applications = filterApplicationsForReports(await readApplications(), filters);
+  const scopedDepartment = filters.department !== "All" ? filters.department : null;
+  const analytics = buildAnalyticsSummary(applications, settings, scopedDepartment);
+  const csv = convertDistributionReportToCsv({
+    analytics,
+    title: "HR Distribution Report",
+    filters
+  });
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename=\"hr-distribution-report.csv\"');
   return res.send(csv);
 });
 
@@ -5562,6 +5797,7 @@ app.get("/admin/reports", ensureDepartmentAdmin, async (req, res) => {
     title: "Department Reports and Analytics",
     actionPath: "/admin/reports",
     exportPath: "/admin/reports/export.csv",
+    distributionExportPath: "/admin/reports/distribution-report.csv",
     applications,
     filters,
     departmentOptions: scopedDepartment
@@ -5586,6 +5822,30 @@ app.get("/admin/reports/export.csv", ensureDepartmentAdmin, async (req, res) => 
 
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", 'attachment; filename="department-report.csv"');
+  return res.send(csv);
+});
+
+app.get("/admin/reports/distribution-report.csv", ensureDepartmentAdmin, async (req, res) => {
+  const scopedDepartment = getAdminScopeDepartment(req);
+  if (!scopedDepartment) {
+    return res.redirect("/hr/reports");
+  }
+  const settings = await readSettings();
+  const filters = getReportFilterState({
+    query: req.query,
+    allowDepartmentFilter: false,
+    forcedDepartment: scopedDepartment || "All"
+  });
+  const applications = filterApplicationsForReports(filterApplicationsForAdmin(req, await readApplications()), filters);
+  const analytics = buildAnalyticsSummary(applications, settings, scopedDepartment);
+  const csv = convertDistributionReportToCsv({
+    analytics,
+    title: "Department Distribution Report",
+    filters
+  });
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename=\"department-distribution-report.csv\"');
   return res.send(csv);
 });
 
@@ -6072,6 +6332,7 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, async (req, res)
     idNumber,
     institution,
     course,
+    courseLevel,
     appliedDepartment,
     period,
     startDate,
@@ -6106,6 +6367,7 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, async (req, res)
     idNumber,
     institution,
     course,
+    courseLevel,
     appliedDepartment,
     period,
     startDate,
@@ -6127,6 +6389,7 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, async (req, res)
     idNumber: (idNumber || "").trim(),
     institution: (institution || "").trim(),
     course: (course || "").trim(),
+    courseLevel: normalizeCourseLevel(courseLevel),
     appliedDepartment,
     period,
     startDate,
@@ -6242,6 +6505,7 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, async (req, res)
         "idNumber",
         "institution",
         "course",
+        "courseLevel",
         "appliedDepartment",
         "period",
         "startDate",

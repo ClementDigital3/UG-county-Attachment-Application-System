@@ -39,9 +39,10 @@
           <p><strong>Email:</strong> <%= application.email %></p>
           <p><strong>Phone:</strong> <%= application.phone %></p>
           <p><strong>ID Number:</strong> <%= application.idNumber || 'Not provided' %></p>
-          <p><strong>PWD / Special Applicant:</strong> <%= application.disabilityStatus === 'yes' ? 'Yes' : 'No' %></p>
-          <p><strong>Disability Explanation:</strong> <%= application.disabilityStatus === 'yes' ? (application.disabilityReason || 'Not recorded') : 'Not applicable' %></p>
+          <p><strong>PWD / Special Applicant:</strong> <%= getDisabilityStatusLabel(application.disabilityStatus) %></p>
+          <p><strong>PWD / Special Applicant Explanation:</strong> <%= application.disabilityStatus ? (application.disabilityReason || 'Not recorded') : 'Not applicable' %></p>
           <p><strong>Institution:</strong> <%= application.institution %></p>
+          <p><strong>Course Level:</strong> <%= getCourseLevelLabel(application.courseLevel) %></p>
           <p><strong>Course:</strong> <%= application.course %></p>
           <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
           <p><strong>Period:</strong> <%= application.period ? getPeriodLabel(application.period) : 'Not set' %></p>
@@ -95,6 +96,18 @@
           </label>
 
           <label>
+            Course Level *
+            <select name="courseLevel" required>
+              <option value="">Select course level</option>
+              <% courseLevelOptions.forEach((option) => { %>
+                <option value="<%= option.key %>" <%= application.courseLevel === option.key ? 'selected' : '' %>>
+                  <%= option.label %>
+                </option>
+              <% }) %>
+            </select>
+          </label>
+
+          <label>
             Applied Department *
             <select name="appliedDepartment" required>
               <option value="">Select department</option>
@@ -112,7 +125,7 @@
               <option value="">Select period</option>
               <% periodOptions.forEach((period) => { %>
                 <option value="<%= period.key %>" <%= application.period === period.key ? 'selected' : '' %>>
-                  <%= period.label %> (<%= period.isOpen ? 'Open' : 'Closed' %>)
+                  <%= period.label %> <%= period.quarterLabel ? `(${period.quarterLabel})` : '' %> - <%= period.isOpen ? 'Open' : 'Closed' %>
                 </option>
               <% }) %>
             </select>

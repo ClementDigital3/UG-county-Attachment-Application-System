@@ -11,12 +11,14 @@
         <div class="summary">
           <p><strong>Tracking Number:</strong> <%= application.placementNumber || application.id %></p>
           <p><strong>Name:</strong> <%= application.fullName %></p>
+          <p><strong>Course Level:</strong> <%= getCourseLevelLabel(application.courseLevel) %></p>
+          <p><strong>Course / Program:</strong> <%= application.course || 'Not set' %></p>
           <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
           <p><strong>Assigned Department:</strong> <%= application.assignedDepartment ? getDepartmentLabel(application.assignedDepartment) : 'Not assigned yet' %></p>
           <p><strong>Period:</strong> <%= application.period ? getPeriodLabel(application.period) : 'Not set' %></p>
           <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
-          <p><strong>Disability / Special Applicant:</strong> <%= application.disabilityStatus === 'yes' ? 'Yes' : 'No' %></p>
-          <% if (application.disabilityStatus === 'yes') { %>
+          <p><strong>PWD / Special Applicant:</strong> <%= getDisabilityStatusLabel(application.disabilityStatus) %></p>
+          <% if (application.disabilityStatus) { %>
             <p><strong>Recorded Explanation:</strong> <%= application.disabilityReason || 'Not recorded' %></p>
           <% } %>
           <p><strong>Submitted:</strong> <%= formatDate(application.submittedAt) %></p>

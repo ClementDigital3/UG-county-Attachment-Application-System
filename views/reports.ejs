@@ -13,6 +13,7 @@
               <a class="btn secondary" href="/admin/departments">Departments</a>
               <a class="btn secondary" href="/admin/applications">Applications</a>
             <% } %>
+            <a class="btn secondary" href="<%= distributionExportPath %>?status=<%= encodeURIComponent(filters.status) %>&period=<%= encodeURIComponent(filters.period) %>&department=<%= encodeURIComponent(filters.department) %>&search=<%= encodeURIComponent(filters.search || '') %>&dateFrom=<%= encodeURIComponent(filters.dateFrom || '') %>&dateTo=<%= encodeURIComponent(filters.dateTo || '') %>">Export Distribution CSV</a>
             <a class="btn secondary" href="<%= exportPath %>?status=<%= encodeURIComponent(filters.status) %>&period=<%= encodeURIComponent(filters.period) %>&department=<%= encodeURIComponent(filters.department) %>&search=<%= encodeURIComponent(filters.search || '') %>&dateFrom=<%= encodeURIComponent(filters.dateFrom || '') %>&dateTo=<%= encodeURIComponent(filters.dateTo || '') %>">Export CSV</a>
           </div>
         </div>
@@ -35,7 +36,7 @@
             <select name="period">
               <option value="All" <%= filters.period === 'All' ? 'selected' : '' %>>All periods</option>
               <% periodOptions.forEach((period) => { %>
-                <option value="<%= period.key %>" <%= filters.period === period.key ? 'selected' : '' %>><%= period.label %></option>
+                <option value="<%= period.key %>" <%= filters.period === period.key ? 'selected' : '' %>><%= period.label %> <%= period.quarterLabel ? `(${period.quarterLabel})` : '' %></option>
               <% }) %>
             </select>
           </label>
@@ -145,6 +146,20 @@
                 </tr>
               <% }) %>
             </tbody>
+            <% if (analytics.departmentSummary.length) { %>
+              <tfoot>
+                <tr>
+                  <th>Total</th>
+                  <th class="table-count-cell"><%= analytics.departmentTotals.capacity %></th>
+                  <th class="table-count-cell"><%= analytics.departmentTotals.applications %></th>
+                  <th class="table-count-cell"><%= analytics.departmentTotals.verified %></th>
+                  <th class="table-count-cell"><%= analytics.departmentTotals.approved %></th>
+                  <th class="table-count-cell"><%= analytics.departmentTotals.pending %></th>
+                  <th class="table-count-cell"><%= analytics.departmentTotals.remaining %></th>
+                  <th class="table-count-cell"><%= analytics.departmentTotals.fillRate %>%</th>
+                </tr>
+              </tfoot>
+            <% } %>
           </table>
         </div>
       </section>
@@ -162,32 +177,71 @@
       </section>
 
       <section class="card">
-        <h2>Top Institutions</h2>
+        <h2>Institution Distribution</h2>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Institution</th>
-                <th class="table-count-cell">Total</th>
-                <th class="table-count-cell">Verified</th>
-                <th class="table-count-cell">Admitted</th>
+                <th class="table-count-cell">Applicants</th>
               </tr>
             </thead>
             <tbody>
-              <% if (!analytics.institutionSummary.length) { %>
+              <% if (!analytics.institutionDistribution.length) { %>
                 <tr>
-                  <td class="table-empty-state" colspan="4"><strong>No institution data available.</strong> Change the selected filter to see matching records.</td>
+                  <td class="table-empty-state" colspan="2"><strong>No institution data available.</strong> Change the selected filter to see matching records.</td>
                 </tr>
               <% } %>
-              <% analytics.institutionSummary.forEach((row) => { %>
+              <% analytics.institutionDistribution.forEach((row) => { %>
                 <tr>
                   <td><%= row.institution %></td>
-                  <td class="table-count-cell"><%= row.total %></td>
-                  <td class="table-count-cell"><%= row.verified %></td>
-                  <td class="table-count-cell"><%= row.approved %></td>
+                  <td class="table-count-cell"><%= row.applicants %></td>
                 </tr>
               <% }) %>
             </tbody>
+            <% if (analytics.institutionDistribution.length) { %>
+              <tfoot>
+                <tr>
+                  <th>Total</th>
+                  <th class="table-count-cell"><%= analytics.institutionDistributionTotal %></th>
+                </tr>
+              </tfoot>
+            <% } %>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Course Level Distribution</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Course Level</th>
+                <th class="table-count-cell">Applicants</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (!analytics.courseLevelSummary.length) { %>
+                <tr>
+                  <td class="table-empty-state" colspan="2"><strong>No course-level data available.</strong> New applications with course levels will appear here.</td>
+                </tr>
+              <% } %>
+              <% analytics.courseLevelSummary.forEach((row) => { %>
+                <tr>
+                  <td><%= row.label %></td>
+                  <td class="table-count-cell"><%= row.applicants %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+            <% if (analytics.courseLevelSummary.length) { %>
+              <tfoot>
+                <tr>
+                  <th>Total</th>
+                  <th class="table-count-cell"><%= analytics.courseLevelTotal %></th>
+                </tr>
+              </tfoot>
+            <% } %>
           </table>
         </div>
       </section>
