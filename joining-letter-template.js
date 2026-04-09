@@ -97,6 +97,26 @@ function drawWrappedText(page, text, {
   return currentY;
 }
 
+function drawCenteredText(page, text, {
+  centerX,
+  y,
+  font,
+  fontSize = BODY_FONT_SIZE,
+  color = rgb(0, 0, 0)
+}) {
+  const value = (text || "").toString();
+  const width = font.widthOfTextAtSize(value, fontSize);
+  const x = centerX - width / 2;
+  page.drawText(value, {
+    x,
+    y,
+    size: fontSize,
+    font,
+    color
+  });
+  return y - fontSize;
+}
+
 function drawLabelValueLine(page, {
   label,
   value,
@@ -198,45 +218,40 @@ async function createJoiningLetterTemplatePdf({
   const applicantIdNumber = sanitizeText(applicant.idNumber);
   const referenceNumber = `UGC/PSM/HR/T&D/${sanitizeText(applicant.placementNumber || applicant.id, "ATT")}`;
   const declarationSentence = `I ${applicantName} ID/No ${applicantIdNumber} hereby declare that I have read and understood the conditions set out in this letter dated ${generatedDateLabel} and hereby agree to abide by the conditions.`;
+  const headerCenterX = pageWidth / 2;
 
   let currentY = page.getHeight() - PAGE_MARGIN;
 
   if (logoImage) {
-    const logo = logoImage.scaleToFit(62, 62);
+    const logo = logoImage.scaleToFit(68, 68);
     page.drawImage(logoImage, {
       x: PAGE_MARGIN,
-      y: currentY - logo.height + 8,
+      y: currentY - logo.height + 10,
       width: logo.width,
       height: logo.height
     });
   }
 
-  page.drawText("REPUBLIC OF KENYA", {
-    x: PAGE_MARGIN + 86,
-    y: currentY - 8,
-    size: 14,
+  drawCenteredText(page, "REPUBLIC OF KENYA", {
+    centerX: headerCenterX,
+    y: currentY - 4,
     font: boldFont,
-    color: rgb(0, 0, 0)
+    fontSize: 13
   });
-  page.drawText(countyName, {
-    x: PAGE_MARGIN + 46,
-    y: currentY - 28,
-    size: 15,
+  drawCenteredText(page, countyName, {
+    centerX: headerCenterX,
+    y: currentY - 24,
     font: boldFont,
-    color: rgb(0, 0, 0)
+    fontSize: 15
   });
-
-  currentY -= 76;
-
-  page.drawText("PUBLIC SERVICE MANAGEMENT", {
-    x: PAGE_MARGIN,
-    y: currentY,
-    size: 13,
+  drawCenteredText(page, "PUBLIC SERVICE MANAGEMENT", {
+    centerX: headerCenterX,
+    y: currentY - 45,
     font: boldFont,
-    color: rgb(0, 0, 0)
+    fontSize: 12
   });
 
-  currentY -= 30;
+  currentY -= 82;
 
   page.drawText(`OUR REF: ${referenceNumber}`, {
     x: PAGE_MARGIN,

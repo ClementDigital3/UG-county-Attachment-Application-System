@@ -29,8 +29,12 @@ const FILE_TYPE_HEADERS = {
   pdf: Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d]), // %PDF-
   png: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
   jpeg: Buffer.from([0xff, 0xd8, 0xff]),
+  zip: Buffer.from([0x50, 0x4b, 0x03, 0x04]),
   exe: Buffer.from([0x4d, 0x5a]) // MZ
 };
+const DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PDF_ONLY_ACCEPT = ".pdf,application/pdf";
+const PDF_DOCX_ACCEPT = `.pdf,.docx,application/pdf,${DOCX_MIME_TYPE}`;
 
 const EICAR_SIGNATURE =
   "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
@@ -114,42 +118,42 @@ const DOCUMENT_DEFINITIONS = [
   {
     key: "passportPhoto",
     label: "Sized Passport Photo",
-    accept: ".jpg,.jpeg,.png,image/jpeg,image/png",
-    allowedExtensions: new Set([".jpg", ".jpeg", ".png"]),
-    allowedMimeTypes: new Set(["image/jpeg", "image/png"]),
-    allowedDetectedTypes: new Set(["jpeg", "png"])
+    accept: PDF_DOCX_ACCEPT,
+    allowedExtensions: new Set([".pdf", ".docx"]),
+    allowedMimeTypes: new Set(["application/pdf", DOCX_MIME_TYPE]),
+    allowedDetectedTypes: new Set(["pdf", "docx"])
   },
   {
     key: "applicationLetter",
     label: "Application Letter",
-    accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
-    allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
-    allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
-    allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
+    accept: PDF_DOCX_ACCEPT,
+    allowedExtensions: new Set([".pdf", ".docx"]),
+    allowedMimeTypes: new Set(["application/pdf", DOCX_MIME_TYPE]),
+    allowedDetectedTypes: new Set(["pdf", "docx"])
   },
   {
     key: "schoolCoverLetter",
     label: "School Cover Letter",
-    accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
-    allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
-    allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
-    allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
+    accept: PDF_DOCX_ACCEPT,
+    allowedExtensions: new Set([".pdf", ".docx"]),
+    allowedMimeTypes: new Set(["application/pdf", DOCX_MIME_TYPE]),
+    allowedDetectedTypes: new Set(["pdf", "docx"])
   },
   {
     key: "insuranceCopy",
     label: "Insurance Copy",
-    accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
-    allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
-    allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
-    allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
+    accept: PDF_DOCX_ACCEPT,
+    allowedExtensions: new Set([".pdf", ".docx"]),
+    allowedMimeTypes: new Set(["application/pdf", DOCX_MIME_TYPE]),
+    allowedDetectedTypes: new Set(["pdf", "docx"])
   },
   {
     key: "idCopyBothSides",
     label: "Copy of Both Sides of National ID / School ID",
-    accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
-    allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
-    allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
-    allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
+    accept: PDF_DOCX_ACCEPT,
+    allowedExtensions: new Set([".pdf", ".docx"]),
+    allowedMimeTypes: new Set(["application/pdf", DOCX_MIME_TYPE]),
+    allowedDetectedTypes: new Set(["pdf", "docx"])
   }
 ];
 
@@ -157,40 +161,40 @@ const COMBINED_DOCUMENT_FIELD = "combinedDocuments";
 const COMBINED_DOCUMENT_DEFINITION = {
   key: COMBINED_DOCUMENT_FIELD,
   label: "Combined Scanned Document (All Required Documents Except NITA)",
-  accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
-  allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
-  allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
-  allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
+  accept: PDF_DOCX_ACCEPT,
+  allowedExtensions: new Set([".pdf", ".docx"]),
+  allowedMimeTypes: new Set(["application/pdf", DOCX_MIME_TYPE]),
+  allowedDetectedTypes: new Set(["pdf", "docx"])
 };
 
 const NITA_DOCUMENT_FIELD = "nitaDocument";
 const NITA_DOCUMENT_DEFINITION = {
   key: NITA_DOCUMENT_FIELD,
   label: "NITA Document With School Stamp",
-  accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
-  allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
-  allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
-  allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
+  accept: PDF_ONLY_ACCEPT,
+  allowedExtensions: new Set([".pdf"]),
+  allowedMimeTypes: new Set(["application/pdf"]),
+  allowedDetectedTypes: new Set(["pdf"])
 };
 
 const COUNTY_SIGNED_NITA_FIELD = "countySignedNitaDocument";
 const COUNTY_SIGNED_NITA_DEFINITION = {
   key: COUNTY_SIGNED_NITA_FIELD,
   label: "County-Endorsed NITA Document",
-  accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
-  allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
-  allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
-  allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
+  accept: PDF_ONLY_ACCEPT,
+  allowedExtensions: new Set([".pdf"]),
+  allowedMimeTypes: new Set(["application/pdf"]),
+  allowedDetectedTypes: new Set(["pdf"])
 };
 
 const NITA_RESUBMISSION_FIELD = "nitaResubmittedDocument";
 const NITA_RESUBMISSION_DEFINITION = {
   key: NITA_RESUBMISSION_FIELD,
   label: "NITA Document Re-Submitted After NITA Office Stamping",
-  accept: ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png",
-  allowedExtensions: new Set([".pdf", ".jpg", ".jpeg", ".png"]),
-  allowedMimeTypes: new Set(["application/pdf", "image/jpeg", "image/png"]),
-  allowedDetectedTypes: new Set(["pdf", "jpeg", "png"])
+  accept: PDF_ONLY_ACCEPT,
+  allowedExtensions: new Set([".pdf"]),
+  allowedMimeTypes: new Set(["application/pdf"]),
+  allowedDetectedTypes: new Set(["pdf"])
 };
 
 const REQUIRED_DOCUMENT_FIELDS = DOCUMENT_DEFINITIONS.map((document) => document.key);
@@ -2751,7 +2755,26 @@ function detectFileTypeFromHeader(headerBuffer) {
     return "jpeg";
   }
 
+  if (headerBuffer.subarray(0, FILE_TYPE_HEADERS.zip.length).equals(FILE_TYPE_HEADERS.zip)) {
+    return "zip";
+  }
+
   return "unknown";
+}
+
+function isDocxFileBuffer(buffer) {
+  if (!buffer || buffer.length < FILE_TYPE_HEADERS.zip.length) {
+    return false;
+  }
+
+  if (!buffer.subarray(0, FILE_TYPE_HEADERS.zip.length).equals(FILE_TYPE_HEADERS.zip)) {
+    return false;
+  }
+
+  return (
+    buffer.includes(Buffer.from("[Content_Types].xml", "utf-8")) &&
+    buffer.includes(Buffer.from("word/", "utf-8"))
+  );
 }
 
 function getPngDimensions(buffer) {
@@ -2895,12 +2918,22 @@ function scanUploadedFile(file) {
 
   const fileBuffer = fs.readFileSync(safePath);
   const detectedType = detectFileTypeFromHeader(fileBuffer.subarray(0, 16));
+  const isDocxUpload =
+    ext === ".docx" || (file.mimetype || "").toLowerCase() === DOCX_MIME_TYPE;
+  let validatedType = detectedType;
 
   if (detectedType === "exe") {
     throw new Error(`${policy.label} failed security scan: executable content detected.`);
   }
 
-  if (!policy.allowedDetectedTypes.has(detectedType)) {
+  if (isDocxUpload) {
+    if (detectedType !== "zip" || !isDocxFileBuffer(fileBuffer)) {
+      throw new Error(`${policy.label} must be a valid DOCX document.`);
+    }
+    validatedType = "docx";
+  }
+
+  if (!policy.allowedDetectedTypes.has(validatedType)) {
     throw new Error(`${policy.label} failed file signature validation.`);
   }
 
@@ -2928,12 +2961,12 @@ function scanUploadedFile(file) {
 
   const sha256 = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
-  return {
-    size: stats.size,
-    detectedType,
-    sha256,
-    dimensions,
-    scannedAt: new Date().toISOString()
+    return {
+      size: stats.size,
+      detectedType: validatedType,
+      sha256,
+      dimensions,
+      scannedAt: new Date().toISOString()
   };
 }
 

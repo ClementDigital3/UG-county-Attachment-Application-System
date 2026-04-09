@@ -170,7 +170,7 @@
                 <label class="full-width">
                   <%= nitaResubmissionDefinition.label %> *
                   <span class="field-hint">
-                    Upload the same county-endorsed NITA document after it has been stamped at the NITA office.
+                    Upload the same county-endorsed NITA document as a PDF after it has been stamped at the NITA office.
                   </span>
                   <input type="file" name="<%= nitaResubmissionDefinition.key %>" accept="<%= nitaResubmissionDefinition.accept %>" required />
                 </label>
@@ -226,9 +226,9 @@
               <% rejectedDocuments.forEach((document) => { %>
                 <label class="full-width">
                   <%= document.label %> *
-                  <% if (document.key === 'passportPhoto') { %>
-                    <span class="field-hint">Any clear image size is allowed.</span>
-                  <% } %>
+                  <span class="field-hint">
+                    <%= document.key === nitaResubmissionDefinition.key || document.key === 'nitaDocument' ? 'Upload the corrected document as a PDF.' : 'Upload the corrected document as a PDF or DOCX file.' %>
+                  </span>
                   <input type="file" name="<%= document.key %>" accept="<%= document.accept %>" required />
                 </label>
               <% }) %>
