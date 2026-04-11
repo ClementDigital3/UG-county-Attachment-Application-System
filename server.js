@@ -1579,10 +1579,28 @@ function getApplicationStoredFileByFilename(application, filename) {
 }
 
 function getPeriodOptions(settings) {
-  return PERIODS.map((period) => ({
-    ...period,
-    isOpen: Boolean(settings.openPeriods[period.key])
-  }));
+  const deadlineDate = resolveDeadlineDate(settings?.applicationDeadline || "");
+  const deadlinePassed = Boolean(deadlineDate && Date.now() >= deadlineDate.getTime());
+
+  return PERIODS.map((period) => {
+    const isConfiguredOpen = Boolean(settings?.openPeriods?.[period.key]);
+    const isDeadlineClosed = isConfiguredOpen && deadlinePassed;
+    const isOpen = isConfiguredOpen && !deadlinePassed;
+
+    return {
+      ...period,
+      isConfiguredOpen,
+      deadlinePassed,
+      isDeadlineClosed,
+      isOpen,
+      statusLabel: isOpen ? "Open" : isDeadlineClosed ? "Closed by deadline" : "Closed",
+      publicStatusLabel: isOpen
+        ? "Applications are ongoing"
+        : isDeadlineClosed
+          ? "Closed because the deadline has been reached"
+          : "Closed until HR opens this quarter"
+    };
+  });
 }
 
 function getPeriodLabel(periodKey) {
@@ -1627,17 +1645,29 @@ function resolveDeadlineDate(deadlineInput) {
 function buildLandingRunner(settings) {
   const periodOptions = getPeriodOptions(settings);
   const openPeriods = periodOptions.filter((period) => period.isOpen);
+  const configuredOpenPeriods = periodOptions.filter((period) => period.isConfiguredOpen);
   const customText = (settings?.landingTickerText || "").toString().trim();
   const deadline = (settings?.applicationDeadline || "").toString().trim();
   const deadlineDate = resolveDeadlineDate(deadline);
-  const hasCountdown = openPeriods.length > 0 && Boolean(deadlineDate);
+  const deadlinePassed = Boolean(deadlineDate && Date.now() >= deadlineDate.getTime());
+  const isDeadlineClosed = deadlinePassed && configuredOpenPeriods.length > 0;
+  const hasCountdown = openPeriods.length > 0 && Boolean(deadlineDate) && !deadlinePassed;
   const openPeriodText = openPeriods.length
     ? openPeriods.map((period) => period.shortLabel || period.label).join(" | ")
     : "No active attachment window";
 
   const message = openPeriods.length
     ? customText || `Attachment applications are ongoing. Apply within the active county window.`
-    : `Attachment applications are currently closed. Watch this board for the next county window.`;
+    : isDeadlineClosed
+      ? `The application deadline has been reached. This intake is now closed until HR opens the next county window.`
+      : `Attachment applications are currently closed. Watch this board for the next county window.`;
+
+  const deadlineLabel = deadlineDate ? formatDate(deadlineDate.toISOString()) : "To be announced";
+  const deadlineHint = deadlineDate
+    ? deadlinePassed
+      ? `Deadline reached: ${deadlineLabel}`
+      : `Deadline: ${deadlineLabel}`
+    : "To be announced";
 
   return {
     isOpen: openPeriods.length > 0,
@@ -1645,9 +1675,12 @@ function buildLandingRunner(settings) {
     openPeriodText,
     message,
     deadline,
+    deadlinePassed,
+    isDeadlineClosed,
     hasCountdown,
     deadlineIso: hasCountdown ? deadlineDate.toISOString() : "",
-    deadlineLabel: hasCountdown ? formatDate(deadlineDate.toISOString()) : "To be announced"
+    deadlineLabel,
+    deadlineHint
   };
 }
 

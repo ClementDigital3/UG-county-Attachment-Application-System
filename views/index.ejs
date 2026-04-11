@@ -42,12 +42,12 @@
                 </div>
               </div>
               <small data-countdown-hint>
-                <%= landingRunner.hasCountdown ? `Deadline: ${landingRunner.deadlineLabel}` : 'To be announced' %>
+                <%= landingRunner.deadlineHint %>
               </small>
             </div>
             <span class="landing-runner-tag">
               <span class="landing-runner-tag-dot"></span>
-              <%= landingRunner.isOpen ? 'Applications open' : 'Applications closed' %>
+              <%= landingRunner.isOpen ? 'Applications open' : landingRunner.isDeadlineClosed ? 'Closed by deadline' : 'Applications closed' %>
             </span>
           </div>
         </div>
@@ -141,7 +141,7 @@
           <% periodOptions.forEach((period) => { %>
             <article class="landing-window-card <%= period.isOpen ? 'is-open' : 'is-closed' %>">
               <strong><%= period.label %> <%= period.quarterLabel ? `(${period.quarterLabel})` : '' %></strong>
-              <span><%= period.isOpen ? 'Applications are ongoing' : 'Closed until HR opens this quarter' %></span>
+              <span><%= period.publicStatusLabel %></span>
             </article>
           <% }) %>
         </div>

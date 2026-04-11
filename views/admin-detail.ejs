@@ -125,7 +125,7 @@
               <option value="">Select period</option>
               <% periodOptions.forEach((period) => { %>
                 <option value="<%= period.key %>" <%= application.period === period.key ? 'selected' : '' %>>
-                  <%= period.label %> <%= period.quarterLabel ? `(${period.quarterLabel})` : '' %> - <%= period.isOpen ? 'Open' : 'Closed' %>
+                  <%= period.label %> <%= period.quarterLabel ? `(${period.quarterLabel})` : '' %> - <%= period.statusLabel %>
                 </option>
               <% }) %>
             </select>

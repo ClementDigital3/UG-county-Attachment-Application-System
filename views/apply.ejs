@@ -326,7 +326,7 @@
                     <%= formData.period === period.key ? 'selected' : '' %>
                     <%= !period.isOpen ? 'disabled' : '' %>
                   >
-                    <%= period.label %> <%= period.quarterLabel ? `(${period.quarterLabel})` : '' %> - <%= period.isOpen ? 'Open' : 'Closed' %>
+                    <%= period.label %> <%= period.quarterLabel ? `(${period.quarterLabel})` : '' %> - <%= period.statusLabel %>
                   </option>
                 <% }) %>
               </select>
