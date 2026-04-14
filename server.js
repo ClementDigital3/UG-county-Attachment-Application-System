@@ -68,6 +68,7 @@ const COURSE_LEVEL_OPTIONS = [
 const COURSE_LEVEL_LABELS = Object.fromEntries(
   COURSE_LEVEL_OPTIONS.map((option) => [option.key, option.label])
 );
+//comment
 const INSTITUTION_CATEGORY_PRIORITY = {
   "Public Universities": 1,
   "Private Universities": 2,
