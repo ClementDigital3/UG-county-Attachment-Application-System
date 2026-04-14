@@ -519,12 +519,3 @@ For reviewers or maintainers who want to inspect the implementation without scan
 - `views/admin-periods.ejs`
   - intake windows, deadline, runner message, and slot settings
 
-## Handover Note
-
-This project should be handed over as:
-
-- a working county attachment workflow system
-- a MongoDB-backed hosted application
-- a system ready for pilot or controlled deployment
-
-It should not be handed over as fully production-complete until the documented security, audit, backup, and operational hardening items are closed.
