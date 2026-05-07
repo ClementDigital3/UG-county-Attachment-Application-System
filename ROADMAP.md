@@ -7,7 +7,7 @@ This roadmap now reflects the current state of the County Attachment Application
 Implemented:
 
 - MongoDB migration for applications, settings, department access records, and sessions
-- Cloud file storage abstraction with Cloudinary support
+- MongoDB GridFS document storage for uploads and generated files
 - Student application portal
 - Student self-service dashboard
 - HR-controlled department review flow
@@ -25,7 +25,6 @@ Partially implemented or operationally limited:
 
 - email notifications depend on SMTP configuration
 - SMS notifications depend on Twilio and valid production sender support for Kenya
-- Cloudinary durability depends on proper environment configuration
 
 ## Top Priority Before Real County Production Use
 
@@ -108,7 +107,6 @@ Why it matters:
 Expected work:
 
 - confirm MongoDB backup process
-- confirm Cloudinary recovery expectations
 - document restore steps and ownership
 
 ### 5. HR handover and operating guide
@@ -229,7 +227,7 @@ Goal:
 
 - MongoDB is the current active application database.
 - Sessions are also stored in MongoDB.
-- Cloudinary should be treated as the preferred hosted file-storage path.
+- Uploaded and generated documents are stored in MongoDB GridFS.
 - Email is the most reliable notification channel in the current system.
 - SMS support exists in the codebase, but Kenyan production delivery depends on provider/sender readiness.
 - The system is currently suitable for demo, pilot, and controlled deployment.

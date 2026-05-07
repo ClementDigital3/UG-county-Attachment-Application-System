@@ -85,14 +85,15 @@ This means hosted applications now remain available after Render refreshes and r
 
 ### File storage
 
-The system supports two file-storage modes:
+The system stores uploaded and generated documents in `MongoDB GridFS`.
 
-- `local`
-  - files are stored on the app filesystem
-  - suitable for local development
-- `cloudinary`
-  - files are stored in Cloudinary
-  - recommended for durable hosted document storage
+- MongoDB remains the single storage backend for:
+  - application data
+  - settings
+  - sessions
+  - uploaded files
+  - generated PDFs
+- `STORAGE_ROOT` is only used as a temporary upload workspace before files are moved into GridFS.
 
 Documents handled by the system include:
 
@@ -330,11 +331,7 @@ Core:
 
 File storage:
 
-- `FILE_STORAGE_PROVIDER`
-- `CLOUDINARY_CLOUD_NAME`
-- `CLOUDINARY_API_KEY`
-- `CLOUDINARY_API_SECRET`
-- `CLOUDINARY_FOLDER`
+- `STORAGE_ROOT`
 
 Email notifications:
 
@@ -375,17 +372,9 @@ With MongoDB configured:
 - settings persist
 - sessions persist
 - department access records persist
-
-With Cloudinary configured:
-
 - uploaded documents persist
 - generated NITA workflow files persist
 - joining letters persist
-
-If local file storage is used in hosted mode:
-
-- database records may persist through MongoDB
-- files on the host may still be lost if the host uses ephemeral storage
 
 ## Production-Readiness Gaps
 
@@ -431,12 +420,11 @@ Remaining improvement:
 
 Current issue:
 
-- the system depends on MongoDB and Cloudinary availability, but formal recovery guidance is not yet documented
+- the system depends on MongoDB availability, but formal recovery guidance is not yet documented
 
 Required improvement:
 
 - confirm MongoDB backup policy
-- confirm Cloudinary recovery expectations
 - document restore and continuity process
 
 ### 5. HR handover and training package
@@ -456,10 +444,6 @@ Required improvement:
 ### Twilio / Kenya SMS limitation
 
 SMS integration exists, but Kenyan SMS delivery depends on supported sender configuration and provider rules. Email should be treated as the primary official notification channel unless SMS is validated in production.
-
-### Cloudinary is required for durable hosted files
-
-If hosted deployment uses local file storage instead of Cloudinary, uploaded documents may still be lost on ephemeral hosting environments.
 
 ### Credential hardening still needs operations policy
 
@@ -492,9 +476,7 @@ npm start
 For Render:
 
 - set the MongoDB values
-- set file-storage values
 - set SMTP values if email notifications are required
-- do not rely on local storage unless a persistent disk is available
 
 If auto-deploy is enabled, GitHub pushes should trigger deployment automatically. Otherwise use `Manual Deploy` and deploy the latest commit.
 
@@ -509,7 +491,7 @@ For reviewers or maintainers who want to inspect the implementation without scan
 - `notification-service.js`
   - email and SMS notification integration
 - `file-storage.js`
-  - local versus Cloudinary file handling
+  - MongoDB GridFS document storage and download handling
 - `county-nita-pdf.js`
   - automatic county endorsement for Part C of the NITA workflow
 - `views/apply.ejs`
@@ -518,4 +500,3 @@ For reviewers or maintainers who want to inspect the implementation without scan
   - HR review page, NITA workflow, and communication history
 - `views/admin-periods.ejs`
   - intake windows, deadline, runner message, and slot settings
-

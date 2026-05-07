@@ -1,5 +1,6 @@
 const crypto = require("crypto");
-const { MongoClient } = require("mongodb");
+const fs = require("fs");
+const { GridFSBucket, MongoClient, ObjectId } = require("mongodb");
 
 const DEFAULT_MONGODB_DB_NAME = "attachment_application_system";
 
@@ -88,6 +89,9 @@ async function createDatabase({
   const departmentAdminsCollection = db.collection("department_admins");
   const applicationsCollection = db.collection("applications");
   const sessionsCollection = db.collection("sessions");
+  const filesBucket = new GridFSBucket(db, {
+    bucketName: "application_files"
+  });
 
   await Promise.all([
     applicationsCollection.createIndex({ status: 1 }, { name: "idx_applications_status" }),
@@ -211,6 +215,89 @@ async function createDatabase({
     await sessionsCollection.deleteOne({ _id: sid });
   }
 
+  async function writeStoredFile({
+    localPath,
+    filename,
+    originalName,
+    mimeType,
+    folder,
+    extension
+  }) {
+    const safeLocalPath = (localPath || "").toString().trim();
+    if (!safeLocalPath || !fs.existsSync(safeLocalPath)) {
+      throw new Error("Stored file source path was not found.");
+    }
+
+    const stats = await fs.promises.stat(safeLocalPath);
+    const fileId = new ObjectId();
+    const uploadStream = filesBucket.openUploadStreamWithId(
+      fileId,
+      (filename || originalName || fileId.toString()).toString(),
+      {
+        contentType: (mimeType || "application/octet-stream").toString(),
+        metadata: {
+          originalName: (originalName || filename || fileId.toString()).toString(),
+          folder: (folder || "applications").toString(),
+          extension: (extension || "").toString()
+        }
+      }
+    );
+
+    await new Promise((resolve, reject) => {
+      fs.createReadStream(safeLocalPath)
+        .on("error", reject)
+        .pipe(uploadStream)
+        .on("error", reject)
+        .on("finish", resolve);
+    });
+
+    return {
+      storage: "mongodb",
+      fileId: fileId.toString(),
+      filename: (filename || originalName || fileId.toString()).toString(),
+      originalName: (originalName || filename || fileId.toString()).toString(),
+      mimeType: (mimeType || "application/octet-stream").toString(),
+      size: Number(stats.size || 0),
+      extension: (extension || "").toString()
+    };
+  }
+
+  async function openStoredFile(fileId) {
+    const normalizedId = (fileId || "").toString().trim();
+    if (!normalizedId || !ObjectId.isValid(normalizedId)) {
+      return null;
+    }
+
+    const objectId = new ObjectId(normalizedId);
+    const fileDocument = await db.collection("application_files.files").findOne({ _id: objectId });
+    if (!fileDocument) {
+      return null;
+    }
+
+    return {
+      fileDocument,
+      stream: filesBucket.openDownloadStream(objectId)
+    };
+  }
+
+  async function deleteStoredFile(fileId) {
+    const normalizedId = (fileId || "").toString().trim();
+    if (!normalizedId || !ObjectId.isValid(normalizedId)) {
+      return false;
+    }
+
+    try {
+      await filesBucket.delete(new ObjectId(normalizedId));
+      return true;
+    } catch (error) {
+      if (error?.message?.includes("FileNotFound")) {
+        return false;
+      }
+
+      throw error;
+    }
+  }
+
   async function initializeDefaults() {
     const [settingsRow, departmentAdminCount] = await Promise.all([
       settingsCollection.findOne({ _id: "portal_settings" }, { projection: { _id: 1 } }),
@@ -240,7 +327,10 @@ async function createDatabase({
     readSession,
     writeSession,
     deleteSession,
-    pruneExpiredSessions
+    pruneExpiredSessions,
+    writeStoredFile,
+    openStoredFile,
+    deleteStoredFile
   };
 }
 

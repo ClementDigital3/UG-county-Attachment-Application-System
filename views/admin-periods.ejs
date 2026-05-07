@@ -39,7 +39,7 @@
         <% } %>
 
         <div class="summary">
-          <p><strong>Current document storage:</strong> <%= fileStorageProvider === 'cloudinary' ? 'Cloudinary cloud storage' : 'Local server storage' %></p>
+          <p><strong>Current document storage:</strong> <%= fileStorageProvider === 'mongodb' ? 'MongoDB GridFS document storage' : 'Legacy compatibility mode' %></p>
           <% if (fileStorageWarning) { %>
             <p><strong>Storage warning:</strong> <%= fileStorageWarning %></p>
           <% } %>

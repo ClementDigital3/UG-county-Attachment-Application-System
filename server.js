@@ -222,11 +222,6 @@ const DISPLAY_TIMEZONE = process.env.DISPLAY_TIMEZONE || "Africa/Nairobi";
 const ALLOW_ANY_TEST_UPLOADS = process.env.ALLOW_ANY_TEST_UPLOADS === "true";
 const DEFAULT_DEPARTMENT_ADMIN_PASSWORD =
   process.env.DEFAULT_DEPARTMENT_ADMIN_PASSWORD || "change_me";
-const FILE_STORAGE_PROVIDER = process.env.FILE_STORAGE_PROVIDER || "local";
-const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || "";
-const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || "";
-const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || "";
-const CLOUDINARY_FOLDER = process.env.CLOUDINARY_FOLDER || "attachment-application-system";
 const SMTP_HOST = process.env.SMTP_HOST || "";
 const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const SMTP_SECURE = process.env.SMTP_SECURE || "false";
@@ -549,11 +544,7 @@ const databasePromise = createDatabase({
 
 const fileStorage = createFileStorage({
   uploadDir: UPLOAD_DIR,
-  provider: FILE_STORAGE_PROVIDER,
-  cloudinaryCloudName: CLOUDINARY_CLOUD_NAME,
-  cloudinaryApiKey: CLOUDINARY_API_KEY,
-  cloudinaryApiSecret: CLOUDINARY_API_SECRET,
-  cloudinaryFolder: CLOUDINARY_FOLDER
+  databasePromise
 });
 
 const notificationService = createNotificationService({
@@ -863,16 +854,16 @@ function normalizeStoredFileEntry(entry) {
   }
 
   const safeFilename = path.basename((entry.filename || "").toString());
+  const storage = entry.storage === "mongodb" || entry.fileId ? "mongodb" : "local";
+
   return {
-    storage: entry.storage === "cloudinary" ? "cloudinary" : "local",
+    storage,
+    fileId: (entry.fileId || "").toString() || null,
     filename: safeFilename,
     originalName: (entry.originalName || safeFilename).toString(),
     mimeType: (entry.mimeType || "").toString(),
     size: Number(entry.size || 0),
     extension: (entry.extension || path.extname(entry.originalName || safeFilename)).toString(),
-    cloudUrl: (entry.cloudUrl || "").toString() || null,
-    publicId: (entry.publicId || "").toString() || null,
-    resourceType: (entry.resourceType || "").toString() || null,
     uploadedAt: entry.uploadedAt || null,
     security: entry.security || null
   };
@@ -7052,7 +7043,7 @@ async function startServer() {
     console.log(`Attachment application system running on http://localhost:${PORT}`);
     console.log(`Department review redirect: http://localhost:${PORT}${ADMIN_PORTAL_PATH} -> ${HR_PORTAL_PATH}`);
     console.log(`HR portal entry: http://localhost:${PORT}${HR_PORTAL_PATH}`);
-    console.log(`Storage root: ${STORAGE_ROOT}`);
+    console.log(`Upload temp root: ${UPLOAD_DIR}`);
     console.log(`MongoDB database: ${MONGODB_DB_NAME}`);
     console.log(`MongoDB connection configured: ${MONGODB_URI ? "yes" : "no"}`);
     console.log("Session store: MongoDB");
@@ -7065,15 +7056,7 @@ async function startServer() {
     if (storageWarning) {
       console.warn(storageWarning);
     }
-
-    if (process.env.NODE_ENV === "production" && !process.env.STORAGE_ROOT) {
-      console.warn(
-        "Persistent storage warning: STORAGE_ROOT is not set. Uploaded files, database data, and sessions will reset on ephemeral hosting."
-      );
-    }
   });
 }
 
 startServer();
-
-

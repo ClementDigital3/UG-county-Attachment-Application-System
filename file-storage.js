@@ -1,173 +1,49 @@
-const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-
-function createCloudinarySignature(parameters, apiSecret) {
-  const payload = Object.keys(parameters)
-    .filter((key) => parameters[key] !== undefined && parameters[key] !== null && parameters[key] !== "")
-    .sort()
-    .map((key) => `${key}=${parameters[key]}`)
-    .join("&");
-
-  return crypto.createHash("sha1").update(`${payload}${apiSecret}`).digest("hex");
-}
 
 function getFileExtension(originalName) {
   return path.extname((originalName || "").toString()).toLowerCase();
 }
 
-function ensureBlobConstructor() {
-  if (typeof Blob === "undefined") {
-    throw new Error("Blob is not available in this Node.js runtime. Cloud storage requires Node 18+.");
-  }
+function createLocalEntry(file) {
+  const safeFilename = path.basename((file?.filename || file?.originalname || "").toString());
+  return {
+    storage: "local",
+    filename: safeFilename,
+    originalName: (file?.originalname || file?.originalName || safeFilename).toString(),
+    mimeType: (file?.mimetype || file?.mimeType || "").toString(),
+    size: Number(file?.size || 0),
+    extension: getFileExtension(file?.originalname || file?.originalName || safeFilename)
+  };
 }
 
 function createFileStorage({
   uploadDir,
-  provider,
-  cloudinaryCloudName,
-  cloudinaryApiKey,
-  cloudinaryApiSecret,
-  cloudinaryFolder
+  databasePromise
 }) {
-  const requestedProvider = (provider || "local").toString().trim().toLowerCase();
-  const hasCloudinaryConfig =
-    Boolean(cloudinaryCloudName) &&
-    Boolean(cloudinaryApiKey) &&
-    Boolean(cloudinaryApiSecret) &&
-    typeof fetch === "function";
-
-  const activeProvider =
-    requestedProvider === "cloudinary" && hasCloudinaryConfig ? "cloudinary" : "local";
-
-  function getProviderWarning() {
-    if (requestedProvider !== "cloudinary") {
-      return null;
-    }
-
-    if (activeProvider === "cloudinary") {
-      return null;
-    }
-
-    return "Cloudinary storage was requested but is not fully configured. Falling back to local file storage.";
-  }
-
-  async function uploadToCloudinary(file, { folder = "applications" } = {}) {
-    ensureBlobConstructor();
-
-    if (!file?.path || !fs.existsSync(file.path)) {
-      throw new Error("Uploaded file is missing on disk before cloud transfer.");
-    }
-
-    const timestamp = Math.floor(Date.now() / 1000);
-    const baseFolder = (cloudinaryFolder || "attachment-application-system").replace(/\/+$/, "");
-    const finalFolder = `${baseFolder}/${folder}`.replace(/\/+/g, "/");
-    const publicId = `${finalFolder}/${path.parse(file.filename || file.originalname || "upload").name}`;
-    const uploadParams = {
-      folder: finalFolder,
-      public_id: path.parse(file.filename || file.originalname || "upload").name,
-      timestamp
-    };
-    const signature = createCloudinarySignature(uploadParams, cloudinaryApiSecret);
-    const endpoint = `https://api.cloudinary.com/v1_1/${cloudinaryCloudName}/auto/upload`;
-    const buffer = fs.readFileSync(file.path);
-    const formData = new FormData();
-
-    formData.append(
-      "file",
-      new Blob([buffer], { type: file.mimetype || "application/octet-stream" }),
-      file.originalname || file.filename || "upload"
-    );
-    formData.append("api_key", cloudinaryApiKey);
-    formData.append("timestamp", String(timestamp));
-    formData.append("folder", finalFolder);
-    formData.append("public_id", path.parse(file.filename || file.originalname || "upload").name);
-    formData.append("signature", signature);
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      body: formData
-    });
-
-    if (!response.ok) {
-      const responseText = await response.text();
-      throw new Error(`Cloud upload failed: ${response.status} ${responseText}`.trim());
-    }
-
-    const payload = await response.json();
-    return {
-      storage: "cloudinary",
-      filename: (file.filename || file.originalname || "").toString(),
-      originalName: file.originalname || path.basename(file.path),
-      mimeType: file.mimetype || "",
-      size: Number(file.size || payload.bytes || 0),
-      extension: getFileExtension(file.originalname),
-      cloudUrl: payload.secure_url,
-      publicId: payload.public_id || publicId,
-      resourceType: payload.resource_type || "raw",
-      version: payload.version || null
-    };
-  }
-
-  function createLocalEntry(file) {
-    return {
-      storage: "local",
-      filename: (file.filename || "").toString(),
-      originalName: file.originalname || path.basename(file.filename || ""),
-      mimeType: file.mimetype || "",
-      size: Number(file.size || 0),
-      extension: getFileExtension(file.originalname)
-    };
-  }
-
-  async function persistUploadedFile(file, options = {}) {
+  async function persistUploadedFile(file, { folder = "applications" } = {}) {
     if (!file) {
       return null;
     }
 
-    if (activeProvider === "cloudinary") {
-      try {
-        return await uploadToCloudinary(file, options);
-      } finally {
-        removeTemporaryFile(file);
+    const safeLocalPath = (file.path || "").toString().trim();
+
+    try {
+      if (!safeLocalPath || !fs.existsSync(safeLocalPath)) {
+        throw new Error("Uploaded file is missing on disk before MongoDB storage.");
       }
-    }
 
-    return createLocalEntry(file);
-  }
-
-  async function deleteCloudinaryAsset(fileEntry) {
-    if (!fileEntry?.publicId) {
-      return;
-    }
-
-    const resourceType = (fileEntry.resourceType || "raw").toString();
-    const timestamp = Math.floor(Date.now() / 1000);
-    const signature = createCloudinarySignature(
-      {
-        invalidate: "true",
-        public_id: fileEntry.publicId,
-        timestamp
-      },
-      cloudinaryApiSecret
-    );
-
-    const endpoint = `https://api.cloudinary.com/v1_1/${cloudinaryCloudName}/${resourceType}/destroy`;
-    const body = new URLSearchParams();
-    body.set("public_id", fileEntry.publicId);
-    body.set("timestamp", String(timestamp));
-    body.set("api_key", cloudinaryApiKey);
-    body.set("invalidate", "true");
-    body.set("signature", signature);
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      body
-    });
-
-    if (!response.ok) {
-      const responseText = await response.text();
-      throw new Error(`Cloud delete failed: ${response.status} ${responseText}`.trim());
+      const database = await databasePromise;
+      return await database.writeStoredFile({
+        localPath: safeLocalPath,
+        filename: (file.filename || file.originalname || "upload").toString(),
+        originalName: (file.originalname || file.filename || "upload").toString(),
+        mimeType: (file.mimetype || "application/octet-stream").toString(),
+        folder,
+        extension: getFileExtension(file.originalname || file.filename)
+      });
+    } finally {
+      removeTemporaryFile(file);
     }
   }
 
@@ -189,12 +65,13 @@ function createFileStorage({
       return;
     }
 
-    if (fileEntry.storage === "cloudinary") {
-      await deleteCloudinaryAsset(fileEntry);
+    if (fileEntry.storage === "mongodb" && fileEntry.fileId) {
+      const database = await databasePromise;
+      await database.deleteStoredFile(fileEntry.fileId);
       return;
     }
 
-    const safeFilename = path.basename(fileEntry.filename || "");
+    const safeFilename = path.basename((fileEntry.filename || "").toString());
     if (!safeFilename) {
       return;
     }
@@ -211,7 +88,7 @@ function createFileStorage({
     }
   }
 
-  function sendStoredFile(res, fileEntry, { downloadName } = {}) {
+  async function sendStoredFile(res, fileEntry, { downloadName } = {}) {
     if (!fileEntry) {
       return res.status(404).send("File not found");
     }
@@ -219,11 +96,49 @@ function createFileStorage({
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "no-store");
 
-    if (fileEntry.storage === "cloudinary" && fileEntry.cloudUrl) {
-      return res.redirect(fileEntry.cloudUrl);
+    if (fileEntry.storage === "mongodb" && fileEntry.fileId) {
+      const database = await databasePromise;
+      const opened = await database.openStoredFile(fileEntry.fileId);
+
+      if (!opened?.stream) {
+        return res.status(404).send("File not found");
+      }
+
+      const resolvedName =
+        (downloadName || fileEntry.originalName || opened.fileDocument?.filename || "download").toString();
+      const contentType =
+        (fileEntry.mimeType || opened.fileDocument?.contentType || "application/octet-stream").toString();
+
+      res.type(contentType);
+      res.attachment(resolvedName);
+
+      return await new Promise((resolve, reject) => {
+        const stream = opened.stream;
+        let finished = false;
+
+        function finish(result) {
+          if (!finished) {
+            finished = true;
+            resolve(result);
+          }
+        }
+
+        stream.on("error", (error) => {
+          if (!res.headersSent) {
+            finish(res.status(404).send("File not found"));
+            return;
+          }
+
+          reject(error);
+        });
+
+        res.on("finish", () => finish(undefined));
+        res.on("close", () => finish(undefined));
+        stream.pipe(res);
+      });
     }
 
-    const safeFilename = path.basename(fileEntry.filename || "");
+    const safeFilename = path.basename((fileEntry.filename || "").toString());
     const localPath = path.join(uploadDir, safeFilename);
 
     if (!safeFilename || !fs.existsSync(localPath)) {
@@ -234,16 +149,20 @@ function createFileStorage({
   }
 
   return {
-    provider: activeProvider,
-    requestedProvider,
-    getProviderWarning,
+    provider: "mongodb",
+    requestedProvider: "mongodb",
+    getProviderWarning() {
+      return null;
+    },
     persistUploadedFile,
     removeStoredFile,
     removeTemporaryFile,
-    sendStoredFile
+    sendStoredFile,
+    createLocalEntry
   };
 }
 
 module.exports = {
-  createFileStorage
+  createFileStorage,
+  createLocalEntry
 };
