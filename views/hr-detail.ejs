@@ -6,6 +6,7 @@
           <div class="actions tight">
             <a class="btn secondary" href="/hr/departments">Department Review</a>
             <a class="btn secondary" href="/hr/communications">Communications</a>
+            <a class="btn secondary" href="/hr/supervisors">Supervisors</a>
             <a class="btn secondary" href="/hr/audit">Audit Trail</a>
             <a class="btn secondary" href="/hr/reports">Reports</a>
             <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
@@ -159,6 +160,55 @@
             <button class="btn" type="submit">Save HR Decision</button>
           </div>
         </form>
+
+        <h2>Supervisor Assignment</h2>
+        <p>Once a student is admitted, HR can attach a county supervisor from the main HR staff directory and later export the assignment sheet for printing.</p>
+
+        <% if (application.supervisorAssignment) { %>
+          <div class="summary">
+            <p><strong>Assigned Supervisor:</strong> <%= application.supervisorAssignment.fullName %></p>
+            <p><strong>Employee Number:</strong> <%= application.supervisorAssignment.employeeNumber || 'Not recorded' %></p>
+            <p><strong>Department:</strong> <%= application.supervisorAssignment.department ? getDepartmentLabel(application.supervisorAssignment.department) : 'Not recorded' %></p>
+            <p><strong>Job Title:</strong> <%= application.supervisorAssignment.jobTitle || 'Not recorded' %></p>
+            <p><strong>Work Station:</strong> <%= application.supervisorAssignment.workStation || 'Not recorded' %></p>
+            <p><strong>Email:</strong> <%= application.supervisorAssignment.email || 'Not recorded' %></p>
+            <p><strong>Phone:</strong> <%= application.supervisorAssignment.phone || 'Not recorded' %></p>
+            <p><strong>Assigned:</strong> <%= formatDate(application.supervisorAssignment.assignedAt) %></p>
+            <p><strong>Assigned By:</strong> <%= application.supervisorAssignment.assignedBy || 'HR' %></p>
+          </div>
+        <% } else { %>
+          <p>No county supervisor assigned yet.</p>
+        <% } %>
+
+        <% if (application.status === 'Admitted') { %>
+          <form action="/hr/applications/<%= application.id %>/supervisor" method="post" class="form-grid">
+            <label class="full-width">
+              County Supervisor
+              <select name="supervisorId">
+                <option value="">Clear supervisor assignment</option>
+                <% supervisorOptions.forEach((supervisor) => { %>
+                  <option value="<%= supervisor.supervisorId %>" <%= application.supervisorAssignment && application.supervisorAssignment.supervisorId === supervisor.supervisorId ? 'selected' : '' %>>
+                    <%= supervisor.fullName %>
+                    <% if (supervisor.employeeNumber) { %> - <%= supervisor.employeeNumber %><% } %>
+                    <% if (supervisor.department) { %> - <%= getDepartmentLabel(supervisor.department) %><% } %>
+                    <% if (supervisor.workStation) { %> - <%= supervisor.workStation %><% } %>
+                    (Assigned: <%= supervisor.assignedStudents %>)
+                  </option>
+                <% }) %>
+              </select>
+              <% if (!supervisorOptions.length) { %>
+                <span class="field-hint">No active supervisors are available for this department yet. Sync the supervisor directory first.</span>
+              <% } %>
+            </label>
+
+            <div class="actions full-width">
+              <button class="btn" type="submit"><%= application.supervisorAssignment ? 'Update Supervisor Assignment' : 'Assign Supervisor' %></button>
+              <a class="btn secondary" href="/hr/supervisors">Open Supervisor Directory</a>
+            </div>
+          </form>
+        <% } else { %>
+          <p class="muted-note">Supervisor assignment becomes available after HR changes the final status to <strong>Admitted</strong>.</p>
+        <% } %>
 
         <h2>Student Communication History</h2>
         <p>General HR broadcasts and workflow-triggered notifications for this student appear below. Use the main HR Communications page to send updates to all applicant contacts.</p>

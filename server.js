@@ -231,6 +231,24 @@ const NOTIFICATIONS_EMAIL_FROM = process.env.NOTIFICATIONS_EMAIL_FROM || "";
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const TWILIO_FROM_NUMBER = process.env.TWILIO_FROM_NUMBER || "";
+const HR_SUPERVISOR_API_URL = process.env.HR_SUPERVISOR_API_URL || "";
+const HR_SUPERVISOR_API_TOKEN = process.env.HR_SUPERVISOR_API_TOKEN || "";
+const HR_SUPERVISOR_API_HEADER = process.env.HR_SUPERVISOR_API_HEADER || "Authorization";
+const HR_SUPERVISOR_API_TOKEN_PREFIX = process.env.HR_SUPERVISOR_API_TOKEN_PREFIX || "Bearer";
+const DEMO_SUPERVISOR_RECORD = {
+  supervisorId: "demo-supervisor-001",
+  employeeNumber: "UGC-HR-001",
+  fullName: "Janet Kibor",
+  department: "",
+  jobTitle: "Human Resource Officer",
+  email: "janet.kibor@uasingishu.go.ke",
+  phone: "0700000001",
+  workStation: "County Headquarters",
+  isActive: true,
+  canSupervise: true,
+  maxStudents: 5,
+  source: "demo-seed"
+};
 const COUNTY_ATTACHMENT_PROVIDER_NAME =
   process.env.COUNTY_ATTACHMENT_PROVIDER_NAME || "County Government of Uasin Gishu";
 const COUNTY_ATTACHMENT_PROVIDER_POSTAL_ADDRESS =
@@ -519,6 +537,8 @@ function createDefaultSettings() {
     institutionMaxSharePercent: DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
     landingTickerText: "Attachment application dates will appear here once HR opens the next county window.",
     applicationDeadline: "",
+    supervisorsDirectory: [],
+    supervisorsLastSyncedAt: "",
     communicationBroadcasts: [],
     systemAuditTrail: [],
     departmentCapacities,
@@ -990,6 +1010,117 @@ function normalizeBroadcastHistory(history) {
     .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
 }
 
+function readSupervisorString(...values) {
+  for (const value of values) {
+    const normalized = (value || "").toString().trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return "";
+}
+
+function normalizeSupervisorDepartment(value) {
+  const raw = (value || "").toString().trim();
+  if (!raw) {
+    return "";
+  }
+
+  if (isValidDepartment(raw)) {
+    return raw;
+  }
+
+  const matched = DEPARTMENTS.find(
+    (department) => department.label.toLowerCase() === raw.toLowerCase()
+  );
+  return matched ? matched.key : raw;
+}
+
+function normalizeSupervisorRecord(entry) {
+  const supervisorId = readSupervisorString(
+    entry?.supervisorId,
+    entry?.staffId,
+    entry?.employeeId,
+    entry?.id,
+    entry?.employeeNumber,
+    entry?.payrollNumber
+  );
+  const employeeNumber = readSupervisorString(
+    entry?.employeeNumber,
+    entry?.payrollNumber,
+    entry?.staffNumber,
+    entry?.staffNo
+  );
+  const fullName = readSupervisorString(entry?.fullName, entry?.name);
+
+  if (!supervisorId && !employeeNumber && !fullName) {
+    return null;
+  }
+
+  return {
+    supervisorId: supervisorId || employeeNumber || fullName,
+    employeeNumber,
+    fullName: fullName || supervisorId || employeeNumber,
+    department: normalizeSupervisorDepartment(
+      readSupervisorString(entry?.department, entry?.departmentKey, entry?.departmentName)
+    ),
+    jobTitle: readSupervisorString(entry?.jobTitle, entry?.designation, entry?.position, entry?.role),
+    email: readSupervisorString(entry?.email, entry?.workEmail),
+    phone: readSupervisorString(entry?.phone, entry?.mobile, entry?.telephone),
+    workStation: readSupervisorString(entry?.workStation, entry?.station, entry?.office, entry?.location),
+    isActive: entry?.isActive === false || Number(entry?.isActive) === 0 ? false : true,
+    canSupervise: entry?.canSupervise === false || Number(entry?.canSupervise) === 0 ? false : true,
+    maxStudents: Math.max(0, Number(entry?.maxStudents || 0)),
+    source: readSupervisorString(entry?.source, "hr-api"),
+    updatedAt: readSupervisorString(entry?.updatedAt, new Date().toISOString())
+  };
+}
+
+function normalizeSupervisorDirectory(entries) {
+  const seen = new Set();
+
+  return (Array.isArray(entries) ? entries : [])
+    .map((entry) => normalizeSupervisorRecord(entry))
+    .filter((entry) => {
+      if (!entry) {
+        return false;
+      }
+
+      const key = `${entry.supervisorId}::${entry.employeeNumber}::${entry.fullName}`.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => {
+      const departmentA = getDepartmentLabel(a.department || a.department);
+      const departmentB = getDepartmentLabel(b.department || b.department);
+      return `${departmentA} ${a.fullName}`.localeCompare(`${departmentB} ${b.fullName}`, "en", {
+        sensitivity: "base"
+      });
+    });
+}
+
+function normalizeSupervisorAssignment(record) {
+  if (!record) {
+    return null;
+  }
+
+  const normalized = normalizeSupervisorRecord(record);
+  if (!normalized) {
+    return null;
+  }
+
+  return {
+    ...normalized,
+    assignedAt: readSupervisorString(record?.assignedAt, new Date().toISOString()),
+    assignedBy: readSupervisorString(record?.assignedBy, record?.assignedByUsername, "hr")
+  };
+}
+
 function ensureApplicationDefaults(application) {
   const appliedDepartment = application.appliedDepartment || application.department || "";
 
@@ -1015,6 +1146,7 @@ function ensureApplicationDefaults(application) {
     nitaResubmittedDocument: normalizeStoredFileEntry(application.nitaResubmittedDocument),
     nitaWorkflow: normalizeNitaWorkflow(application.nitaWorkflow),
     joiningLetter: normalizeStoredFileEntry(application.joiningLetter),
+    supervisorAssignment: normalizeSupervisorAssignment(application.supervisorAssignment),
     notificationHistory: normalizeNotificationHistory(application.notificationHistory),
     termsAcceptance: normalizeTermsAcceptanceRecord(application.termsAcceptance),
     auditTrail: normalizeAuditTrail(application.auditTrail),
@@ -1066,6 +1198,8 @@ async function readSettings() {
     .toString()
     .trim();
   normalized.applicationDeadline = (parsed?.applicationDeadline || "").toString().trim();
+  normalized.supervisorsDirectory = normalizeSupervisorDirectory(parsed?.supervisorsDirectory);
+  normalized.supervisorsLastSyncedAt = (parsed?.supervisorsLastSyncedAt || "").toString().trim();
   normalized.communicationBroadcasts = normalizeBroadcastHistory(parsed?.communicationBroadcasts);
   normalized.systemAuditTrail = normalizeAuditTrail(
     parsed?.systemAuditTrail,
@@ -1086,6 +1220,8 @@ async function writeSettings(settings) {
         ? settings.hrAccount.password
         : hashPassword((settings?.hrAccount?.password || "").toString())
     },
+    supervisorsDirectory: normalizeSupervisorDirectory(settings?.supervisorsDirectory),
+    supervisorsLastSyncedAt: (settings?.supervisorsLastSyncedAt || "").toString().trim(),
     systemAuditTrail: normalizeAuditTrail(settings?.systemAuditTrail, SYSTEM_AUDIT_TRAIL_LIMIT)
   };
   await database.writeSettings(safeSettings);
@@ -2160,6 +2296,10 @@ function convertApplicationsToCsv(applications) {
     "Course",
     "Applied Department",
     "Assigned Department",
+    "Supervisor Name",
+    "Supervisor Employee Number",
+    "Supervisor Department",
+    "Supervisor Work Station",
     "Period",
     "Status",
     "Submitted At",
@@ -2177,6 +2317,12 @@ function convertApplicationsToCsv(applications) {
     application.course || "",
     getDepartmentLabel(application.appliedDepartment || ""),
     getDepartmentLabel(application.assignedDepartment || ""),
+    application.supervisorAssignment?.fullName || "",
+    application.supervisorAssignment?.employeeNumber || "",
+    application.supervisorAssignment?.department
+      ? getDepartmentLabel(application.supervisorAssignment.department)
+      : "",
+    application.supervisorAssignment?.workStation || "",
     getPeriodLabel(application.period || ""),
     application.status || "",
     application.submittedAt || "",
@@ -2189,6 +2335,59 @@ function convertApplicationsToCsv(applications) {
         .map((value) => escapeCsvCell(value))
         .join(",")
     )
+    .join("\n");
+}
+
+function convertSupervisorAssignmentsToCsv(applications) {
+  const headers = [
+    "Tracking Number",
+    "Student Name",
+    "ID Number",
+    "Institution",
+    "Course Level",
+    "Course",
+    "Applied Department",
+    "Attachment Period",
+    "Start Date",
+    "End Date",
+    "Supervisor Name",
+    "Supervisor Employee Number",
+    "Supervisor Department",
+    "Supervisor Job Title",
+    "Supervisor Work Station",
+    "Supervisor Email",
+    "Supervisor Phone",
+    "Assigned At"
+  ];
+
+  const rows = (Array.isArray(applications) ? applications : [])
+    .map((item) => ensureApplicationDefaults(item))
+    .filter((application) => application.supervisorAssignment)
+    .map((application) => [
+      getTrackingNumber(application),
+      application.fullName || "",
+      application.idNumber || "",
+      application.institution || "",
+      getCourseLevelLabel(application.courseLevel),
+      application.course || "",
+      getDepartmentLabel(application.appliedDepartment || ""),
+      getPeriodLabel(application.period || ""),
+      application.startDate || "",
+      application.endDate || "",
+      application.supervisorAssignment?.fullName || "",
+      application.supervisorAssignment?.employeeNumber || "",
+      application.supervisorAssignment?.department
+        ? getDepartmentLabel(application.supervisorAssignment.department)
+        : "",
+      application.supervisorAssignment?.jobTitle || "",
+      application.supervisorAssignment?.workStation || "",
+      application.supervisorAssignment?.email || "",
+      application.supervisorAssignment?.phone || "",
+      application.supervisorAssignment?.assignedAt || ""
+    ]);
+
+  return [headers, ...rows]
+    .map((row) => row.map((value) => escapeCsvCell(value)).join(","))
     .join("\n");
 }
 
@@ -3265,6 +3464,113 @@ function getTrackingRateLimitKey(req) {
   return `track:${ip}:${email || "unknown"}:${idNumber || "unknown"}`;
 }
 
+function buildSupervisorApiHeaders() {
+  const headers = {
+    Accept: "application/json"
+  };
+
+  if (HR_SUPERVISOR_API_TOKEN) {
+    const headerName = (HR_SUPERVISOR_API_HEADER || "Authorization").toString().trim();
+    const prefix = (HR_SUPERVISOR_API_TOKEN_PREFIX || "Bearer").toString().trim();
+    headers[headerName] = prefix ? `${prefix} ${HR_SUPERVISOR_API_TOKEN}` : HR_SUPERVISOR_API_TOKEN;
+  }
+
+  return headers;
+}
+
+function extractSupervisorApiRecords(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload?.data)) {
+    return payload.data;
+  }
+
+  if (Array.isArray(payload?.supervisors)) {
+    return payload.supervisors;
+  }
+
+  if (Array.isArray(payload?.staff)) {
+    return payload.staff;
+  }
+
+  if (Array.isArray(payload?.results)) {
+    return payload.results;
+  }
+
+  return [];
+}
+
+async function fetchSupervisorsFromHrApi() {
+  if (!HR_SUPERVISOR_API_URL) {
+    throw new Error("HR supervisor API URL is not configured.");
+  }
+
+  const response = await fetch(HR_SUPERVISOR_API_URL, {
+    method: "GET",
+    headers: buildSupervisorApiHeaders()
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Supervisor API sync failed: ${response.status} ${body}`.trim());
+  }
+
+  const payload = await response.json();
+  const supervisors = normalizeSupervisorDirectory(extractSupervisorApiRecords(payload));
+
+  if (!supervisors.length) {
+    throw new Error("Supervisor API returned no valid supervisor records.");
+  }
+
+  return supervisors;
+}
+
+function countSupervisorAssignments(applications) {
+  return (Array.isArray(applications) ? applications : []).reduce((acc, item) => {
+    const application = ensureApplicationDefaults(item);
+    const supervisorId = (application.supervisorAssignment?.supervisorId || "").toString().trim();
+    if (!supervisorId) {
+      return acc;
+    }
+
+    acc[supervisorId] = (acc[supervisorId] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+function createSupervisorAssignmentSummary(supervisors, applications) {
+  const assignmentCounts = countSupervisorAssignments(applications);
+
+  return normalizeSupervisorDirectory(supervisors).map((supervisor) => ({
+    ...supervisor,
+    assignedStudents: assignmentCounts[supervisor.supervisorId] || 0
+  }));
+}
+
+function getSupervisorSelectionOptions(supervisors, application, applications) {
+  const assignmentCounts = countSupervisorAssignments(applications);
+  const departmentKey = application.assignedDepartment || application.appliedDepartment || "";
+  const options = normalizeSupervisorDirectory(supervisors)
+    .filter((supervisor) => supervisor.isActive && supervisor.canSupervise)
+    .filter((supervisor) => !departmentKey || !supervisor.department || supervisor.department === departmentKey)
+    .map((supervisor) => ({
+      ...supervisor,
+      assignedStudents: assignmentCounts[supervisor.supervisorId] || 0
+    }));
+
+  const currentAssignment = normalizeSupervisorAssignment(application?.supervisorAssignment);
+  if (currentAssignment && !options.some((entry) => entry.supervisorId === currentAssignment.supervisorId)) {
+    options.unshift({
+      ...currentAssignment,
+      assignedStudents: assignmentCounts[currentAssignment.supervisorId] || 0
+    });
+  }
+
+  return options;
+}
+
 function matchesApplicationSearch(application, searchQuery) {
   const query = (searchQuery || "").toString().trim().toLowerCase();
   if (!query) {
@@ -3727,13 +4033,21 @@ async function renderAdminDetailPage(res, {
   });
 }
 
-function renderHrDetailPage(res, {
+async function renderHrDetailPage(res, {
   application,
   error = null,
   notice = null,
   statusCode = 200
 }) {
   const normalized = ensureApplicationDefaults(application);
+  const settings = await readSettings();
+  const applications = await readApplications();
+  const supervisorOptions = getSupervisorSelectionOptions(
+    settings.supervisorsDirectory,
+    normalized,
+    applications
+  );
+
   return res.status(statusCode).render("hr-detail", {
     application: normalized,
     notice,
@@ -3749,7 +4063,38 @@ function renderHrDetailPage(res, {
     combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION,
     nitaDocumentDefinition: NITA_DOCUMENT_DEFINITION,
     countySignedNitaDefinition: COUNTY_SIGNED_NITA_DEFINITION,
-    nitaResubmissionDefinition: NITA_RESUBMISSION_DEFINITION
+    nitaResubmissionDefinition: NITA_RESUBMISSION_DEFINITION,
+    supervisorOptions
+  });
+}
+
+async function renderHrSupervisorsPage(res, {
+  error = null,
+  notice = null,
+  statusCode = 200
+} = {}) {
+  const settings = await readSettings();
+  const applications = await readApplications();
+  const supervisors = createSupervisorAssignmentSummary(settings.supervisorsDirectory, applications);
+  const assignedApplications = applications
+    .map((item) => ensureApplicationDefaults(item))
+    .filter((application) => application.supervisorAssignment)
+    .sort((a, b) => {
+      const left = `${a.supervisorAssignment?.fullName || ""} ${a.fullName || ""}`;
+      const right = `${b.supervisorAssignment?.fullName || ""} ${b.fullName || ""}`;
+      return left.localeCompare(right, "en", { sensitivity: "base" });
+    });
+
+  return res.status(statusCode).render("hr-supervisors", {
+    error,
+    notice,
+    apiConfigured: Boolean(HR_SUPERVISOR_API_URL),
+    supervisors,
+    assignedApplications,
+    supervisorsLastSyncedAt: settings.supervisorsLastSyncedAt || "",
+    formatDate,
+    getDepartmentLabel,
+    getPeriodLabel
   });
 }
 
@@ -5323,6 +5668,101 @@ app.get("/hr/audit", ensureHrAdmin, async (req, res) => {
   return renderHrAuditPage(res);
 });
 
+app.get("/hr/supervisors", ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  let notice = null;
+
+  if (req.query.synced === "1") {
+    const count = Math.max(0, Number(req.query.count || 0));
+    notice =
+      count > 0
+        ? `Supervisor directory synced successfully. ${count} supervisor record${count === 1 ? "" : "s"} ready for assignment.`
+        : "Supervisor directory synced successfully.";
+  } else if (req.query.demo === "1") {
+    notice = "One demo supervisor record is now available for assignment testing.";
+  }
+
+  return renderHrSupervisorsPage(res, { notice });
+});
+
+app.post("/hr/supervisors/sync", ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+
+  try {
+    const supervisors = await fetchSupervisorsFromHrApi();
+    const settings = await readSettings();
+    const syncedAt = new Date().toISOString();
+
+    settings.supervisorsDirectory = supervisors;
+    settings.supervisorsLastSyncedAt = syncedAt;
+    settings.updatedAt = syncedAt;
+    appendSettingsAudit(settings, {
+      scope: "settings",
+      action: "supervisors_synced",
+      ...getActorInfo(req, "hr_admin"),
+      note: `HR synced ${supervisors.length} supervisor record${supervisors.length === 1 ? "" : "s"} from the main HR system API.`,
+      at: syncedAt,
+      metadata: {
+        supervisorCount: supervisors.length,
+        apiConfigured: Boolean(HR_SUPERVISOR_API_URL)
+      }
+    });
+    await writeSettings(settings);
+
+    return res.redirect(`/hr/supervisors?synced=1&count=${supervisors.length}`);
+  } catch (error) {
+    return renderHrSupervisorsPage(res, {
+      statusCode: 500,
+      error: error.message || "Failed to sync supervisors from the HR system API."
+    });
+  }
+});
+
+app.get("/hr/supervisors/assignments.csv", ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  const applications = await readApplications();
+  const csv = convertSupervisorAssignmentsToCsv(applications);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="hr-supervisor-assignments-${new Date().toISOString().slice(0, 10)}.csv"`
+  );
+  return res.send(csv);
+});
+
+app.post("/hr/supervisors/demo", ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  const settings = await readSettings();
+  const currentDirectory = normalizeSupervisorDirectory(settings.supervisorsDirectory);
+  const createdAt = new Date().toISOString();
+  const withoutDemoRecord = currentDirectory.filter(
+    (entry) => entry.supervisorId !== DEMO_SUPERVISOR_RECORD.supervisorId
+  );
+  settings.supervisorsDirectory = normalizeSupervisorDirectory([
+    ...withoutDemoRecord,
+    {
+      ...DEMO_SUPERVISOR_RECORD,
+      updatedAt: createdAt
+    }
+  ]);
+  settings.supervisorsLastSyncedAt = settings.supervisorsLastSyncedAt || createdAt;
+  settings.updatedAt = createdAt;
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "demo_supervisor_created",
+    ...getActorInfo(req, "hr_admin"),
+    note: "HR loaded one demo supervisor record for assignment workflow testing.",
+    at: createdAt,
+    metadata: {
+      supervisorId: DEMO_SUPERVISOR_RECORD.supervisorId,
+      employeeNumber: DEMO_SUPERVISOR_RECORD.employeeNumber
+    }
+  });
+  await writeSettings(settings);
+
+  return res.redirect("/hr/supervisors?demo=1");
+});
+
 app.post("/hr/account/password", ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
   const previousSettings = await readSettings();
@@ -6721,6 +7161,10 @@ app.get("/hr/applications/:id", ensureHrAdmin, async (req, res) => {
   const notice =
     req.query.nitaCompleted === "1"
         ? "HR confirmed the stamped NITA document."
+        : req.query.supervisorSaved === "1"
+      ? "Supervisor assigned successfully."
+        : req.query.supervisorCleared === "1"
+      ? "Supervisor assignment cleared."
         : req.query.joiningSaved === "1"
       ? "Joining letter generated successfully."
         : req.query.statusSaved === "1"
@@ -6802,6 +7246,105 @@ app.post("/hr/applications/:id/nita-complete", ensureHrAdmin, async (req, res) =
   });
 
   return res.redirect(`/hr/applications/${req.params.id}?nitaCompleted=1`);
+});
+
+app.post("/hr/applications/:id/supervisor", ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  const selectedSupervisorId = (req.body.supervisorId || "").toString().trim();
+  const applications = await readApplications();
+  const index = applications.findIndex((item) => item.id === req.params.id);
+
+  if (index === -1) {
+    return res.status(404).render("not-found");
+  }
+
+  const application = ensureApplicationDefaults(applications[index]);
+
+  if (!HR_VISIBLE_STATUSES.has(application.status)) {
+    return res.status(400).send("Application is not yet in HR review queue.");
+  }
+
+  if (isApplicationFrozen(application)) {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "This application record is frozen. Unfreeze it from department review before continuing the HR workflow."
+    });
+  }
+
+  if (!isAdmittedStatus(application.status)) {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "Admit the student first before assigning a county supervisor."
+    });
+  }
+
+  const settings = await readSettings();
+  const availableSupervisors = getSupervisorSelectionOptions(
+    settings.supervisorsDirectory,
+    application,
+    applications
+  );
+  const matchedSupervisor = selectedSupervisorId
+    ? availableSupervisors.find((entry) => entry.supervisorId === selectedSupervisorId)
+    : null;
+
+  if (selectedSupervisorId && !matchedSupervisor) {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "Select a valid active supervisor from the current HR supervisor directory."
+    });
+  }
+
+  const previousAssignment = application.supervisorAssignment;
+  const nextSupervisorId = matchedSupervisor?.supervisorId || "";
+
+  if (!nextSupervisorId && !previousAssignment) {
+    return renderHrDetailPage(res, {
+      application,
+      statusCode: 400,
+      error: "Select a supervisor from the list first. If the list is empty, load the demo supervisor or sync the HR supervisor directory."
+    });
+  }
+
+  if ((previousAssignment?.supervisorId || "") === nextSupervisorId) {
+    return res.redirect(`/hr/applications/${req.params.id}?supervisorSaved=1`);
+  }
+
+  const updatedAt = new Date().toISOString();
+
+  application.supervisorAssignment = matchedSupervisor
+    ? normalizeSupervisorAssignment({
+      ...matchedSupervisor,
+      assignedAt: updatedAt,
+      assignedBy: req.session?.adminUsername || "hr"
+    })
+    : null;
+  application.updatedAt = updatedAt;
+  appendApplicationAudit(application, {
+    scope: "application",
+    action: matchedSupervisor ? "supervisor_assigned" : "supervisor_assignment_cleared",
+    ...getActorInfo(req, "hr_admin"),
+    note: matchedSupervisor
+      ? `HR assigned supervisor ${matchedSupervisor.fullName} to the admitted student.`
+      : "HR cleared the assigned supervisor from this admitted student record.",
+    at: updatedAt,
+    metadata: {
+      previousSupervisorId: previousAssignment?.supervisorId || "",
+      previousSupervisorName: previousAssignment?.fullName || "",
+      newSupervisorId: matchedSupervisor?.supervisorId || "",
+      newSupervisorName: matchedSupervisor?.fullName || ""
+    }
+  });
+
+  applications[index] = application;
+  await writeApplications(applications);
+
+  return res.redirect(
+    `/hr/applications/${req.params.id}?${matchedSupervisor ? "supervisorSaved=1" : "supervisorCleared=1"}`
+  );
 });
 
 app.post("/hr/applications/:id/status", ensureHrAdmin, async (req, res) => {

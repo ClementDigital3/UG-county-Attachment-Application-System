@@ -1,0 +1,142 @@
+<%- include("partials/layout-open", { pageTitle: "HR Supervisors", activePortal: "hr" }) %>
+<main class="container wide">
+      <section class="card">
+        <div class="row-between">
+          <h1>HR Supervisors</h1>
+          <div class="actions tight">
+            <a class="btn secondary" href="/hr/departments">Department Review</a>
+            <a class="btn secondary" href="/hr/communications">Communications</a>
+            <a class="btn secondary" href="/hr/audit">Audit Trail</a>
+            <a class="btn secondary" href="/hr/reports">Reports</a>
+            <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+            <a class="btn secondary" href="/hr/account">HR Account</a>
+            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+            <a class="btn secondary" href="/hr/applications">Back to HR Queue</a>
+            <form action="/hr/logout" method="post">
+              <button class="btn secondary" type="submit">Logout</button>
+            </form>
+          </div>
+        </div>
+
+        <% if (error) { %>
+          <div class="alert"><%= error %></div>
+        <% } %>
+
+        <% if (notice) { %>
+          <div class="notice"><%= notice %></div>
+        <% } %>
+
+        <div class="summary">
+          <p><strong>API Status:</strong> <%= apiConfigured ? 'Configured' : 'Not configured' %></p>
+          <p><strong>Last Sync:</strong> <%= supervisorsLastSyncedAt ? formatDate(supervisorsLastSyncedAt) : 'No sync recorded yet' %></p>
+          <p><strong>Supervisor Records:</strong> <%= supervisors.length %></p>
+          <p><strong>Assigned Students:</strong> <%= assignedApplications.length %></p>
+        </div>
+
+        <div class="actions">
+          <form action="/hr/supervisors/sync" method="post">
+            <button class="btn" type="submit">Sync Supervisors From HR API</button>
+          </form>
+          <form action="/hr/supervisors/demo" method="post">
+            <button class="btn secondary" type="submit">Load One Demo Supervisor</button>
+          </form>
+          <a class="btn secondary" href="/hr/supervisors/assignments.csv">Download Assignment CSV</a>
+        </div>
+
+        <% if (!apiConfigured) { %>
+          <p class="muted-note">Add `HR_SUPERVISOR_API_URL` and the related token settings in the environment before using live supervisor sync.</p>
+        <% } %>
+
+        <h2>Supervisor Directory</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Employee Number</th>
+                <th>Department</th>
+                <th>Job Title</th>
+                <th>Work Station</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th class="table-count-cell">Assigned Students</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (!supervisors.length) { %>
+                <tr>
+                  <td class="table-empty-state" colspan="8"><strong>No supervisors are loaded yet.</strong> Sync the HR directory to bring staff supervisors into this portal.</td>
+                </tr>
+              <% } %>
+
+              <% supervisors.forEach((supervisor) => { %>
+                <tr>
+                  <td>
+                    <strong><%= supervisor.fullName %></strong>
+                    <% if (!supervisor.canSupervise || !supervisor.isActive) { %>
+                      <div class="muted-note">
+                        <%= !supervisor.isActive ? 'Inactive record' : 'Not available for assignment' %>
+                      </div>
+                    <% } %>
+                  </td>
+                  <td><%= supervisor.employeeNumber || 'Not recorded' %></td>
+                  <td><%= supervisor.department ? getDepartmentLabel(supervisor.department) : 'Any department' %></td>
+                  <td><%= supervisor.jobTitle || 'Not recorded' %></td>
+                  <td><%= supervisor.workStation || 'Not recorded' %></td>
+                  <td><%= supervisor.email || 'Not recorded' %></td>
+                  <td><%= supervisor.phone || 'Not recorded' %></td>
+                  <td class="table-count-cell"><%= supervisor.assignedStudents %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+
+        <h2>Current Student Assignments</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tracking Number</th>
+                <th>Student</th>
+                <th>Institution</th>
+                <th>Department</th>
+                <th>Period</th>
+                <th>Supervisor</th>
+                <th>Assigned At</th>
+                <th class="table-action-cell">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (!assignedApplications.length) { %>
+                <tr>
+                  <td class="table-empty-state" colspan="8"><strong>No students have been assigned supervisors yet.</strong> Admit a student, then assign a supervisor from the HR application detail page.</td>
+                </tr>
+              <% } %>
+
+              <% assignedApplications.forEach((application) => { %>
+                <tr>
+                  <td><%= application.placementNumber || application.id %></td>
+                  <td><%= application.fullName %></td>
+                  <td><%= application.institution || 'Not recorded' %></td>
+                  <td><%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></td>
+                  <td><%= application.period ? getPeriodLabel(application.period) : 'Not set' %></td>
+                  <td>
+                    <strong><%= application.supervisorAssignment.fullName %></strong>
+                    <div class="muted-note">
+                      <%= application.supervisorAssignment.employeeNumber || 'No employee number' %>
+                      <% if (application.supervisorAssignment.workStation) { %>
+                        - <%= application.supervisorAssignment.workStation %>
+                      <% } %>
+                    </div>
+                  </td>
+                  <td><%= formatDate(application.supervisorAssignment.assignedAt) %></td>
+                  <td class="table-action-cell"><a href="/hr/applications/<%= application.id %>">Review</a></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+<%- include("partials/layout-close") %>
