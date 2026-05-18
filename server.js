@@ -86,6 +86,11 @@ const RATE_LIMIT_CONFIG = {
     windowMs: 10 * 60 * 1000,
     maxAttempts: 8,
     blockMs: 15 * 60 * 1000
+  },
+  portalAssistant: {
+    windowMs: 10 * 60 * 1000,
+    maxAttempts: 18,
+    blockMs: 20 * 60 * 1000
   }
 };
 
@@ -235,6 +240,8 @@ const HR_SUPERVISOR_API_URL = process.env.HR_SUPERVISOR_API_URL || "";
 const HR_SUPERVISOR_API_TOKEN = process.env.HR_SUPERVISOR_API_TOKEN || "";
 const HR_SUPERVISOR_API_HEADER = process.env.HR_SUPERVISOR_API_HEADER || "Authorization";
 const HR_SUPERVISOR_API_TOKEN_PREFIX = process.env.HR_SUPERVISOR_API_TOKEN_PREFIX || "Bearer";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+const OPENAI_ASSISTANT_MODEL = process.env.OPENAI_ASSISTANT_MODEL || "gpt-5.4-mini";
 const DEMO_SUPERVISOR_RECORD = {
   supervisorId: "demo-supervisor-001",
   employeeNumber: "UGC-HR-001",
@@ -580,6 +587,7 @@ const notificationService = createNotificationService({
 });
 const hrLoginRateLimiter = createRateLimiter(RATE_LIMIT_CONFIG.hrLogin);
 const studentTrackingRateLimiter = createRateLimiter(RATE_LIMIT_CONFIG.studentTracking);
+const portalAssistantRateLimiter = createRateLimiter(RATE_LIMIT_CONFIG.portalAssistant);
 
 class MongoSessionStore extends session.Store {
   constructor(dbPromise) {
@@ -3464,6 +3472,209 @@ function getTrackingRateLimitKey(req) {
   return `track:${ip}:${email || "unknown"}:${idNumber || "unknown"}`;
 }
 
+function getPortalAssistantRateLimitKey(req) {
+  const ip = getRequestIpAddress(req) || "unknown";
+  const page = (req.body?.pageContext || "").toString().trim().toLowerCase();
+  return `portal-assistant:${ip}:${page || "general"}`;
+}
+
+function normalizePortalAssistantHistory(history) {
+  return (Array.isArray(history) ? history : [])
+    .map((entry) => ({
+      role: (entry?.role || "").toString().trim().toLowerCase(),
+      content: (entry?.content || "").toString().trim().replace(/\s+/g, " ")
+    }))
+    .filter((entry) => ["user", "assistant"].includes(entry.role) && entry.content)
+    .slice(-6);
+}
+
+function getPortalAssistantSnapshot(settings) {
+  const periodSummary = getPeriodOptions(settings)
+    .map(
+      (period) =>
+        `- ${getPeriodLabel(period.key)}: ${period.statusLabel}. ${period.publicStatusLabel}.`
+    )
+    .join("\n");
+  const departmentsSummary = DEPARTMENTS.map((department) => `- ${department.label}`).join("\n");
+  const requirementsSummary = APPLICATION_REQUIREMENTS.map((item) => `- ${item}`).join("\n");
+
+  return {
+    periodSummary,
+    departmentsSummary,
+    requirementsSummary,
+    deadline: (settings?.applicationDeadline || "").toString().trim() || "Not set",
+    institutionFairnessPercent:
+      Number(settings?.institutionMaxSharePercent || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT) ||
+      DEFAULT_INSTITUTION_MAX_SHARE_PERCENT
+  };
+}
+
+function buildPortalAssistantSystemPrompt(snapshot) {
+  return [
+    "You are the Uasin Gishu County Attachment Portal Assistant.",
+    "Help students and applicants use the county attachment portal clearly and briefly.",
+    "Only answer questions about this portal, application requirements, deadlines, tracking, NITA workflow, joining letters, departments, and attachment process guidance.",
+    "Do not claim to access private student records, hidden HR decisions, or application outcomes.",
+    "If a question needs account-specific information, direct the user to the Track Application page or HR portal.",
+    "If you are unsure, say so plainly and point the user to the correct portal step.",
+    "Keep answers concise, practical, and friendly.",
+    "",
+    `Current application deadline setting: ${snapshot.deadline}.`,
+    `Institution fairness limit: ${snapshot.institutionFairnessPercent}% per department.`,
+    "",
+    "Current period status:",
+    snapshot.periodSummary,
+    "",
+    "County departments:",
+    snapshot.departmentsSummary,
+    "",
+    "Application requirements:",
+    snapshot.requirementsSummary,
+    "",
+    "Workflow summary:",
+    "- Student submits the application with the combined document and separate NITA document.",
+    "- Department review verifies or requests correction.",
+    "- HR takes over after department verification.",
+    "- Student downloads the county-endorsed NITA form, gets it stamped, and re-uploads it.",
+    "- HR confirms the stamped NITA stage.",
+    "- HR may admit the student and publish the joining letter."
+  ].join("\n");
+}
+
+function buildPortalAssistantFallback(message, snapshot) {
+  const prompt = (message || "").toString().trim().toLowerCase();
+
+  if (!prompt) {
+    return "Ask me about applying, required documents, open periods, NITA steps, joining letters, or how to track your application.";
+  }
+
+  if (/(document|upload|requirement|passport|insurance|cover letter|nita)/.test(prompt)) {
+    return [
+      "To apply, prepare the following:",
+      snapshot.requirementsSummary,
+      "",
+      "Make sure the NITA document is uploaded separately from the combined document."
+    ].join("\n");
+  }
+
+  if (/(deadline|period|open|close|quarter)/.test(prompt)) {
+    return [
+      `Current application deadline setting: ${snapshot.deadline}.`,
+      "Current period status:",
+      snapshot.periodSummary
+    ].join("\n");
+  }
+
+  if (/(track|status|joining letter|admitted|admission|verified)/.test(prompt)) {
+    return "Use the Track Application page with your tracking number or ID number and email to see your current status, NITA workflow, and joining-letter availability.";
+  }
+
+  if (/(pwd|special applicant|disability)/.test(prompt)) {
+    return "PWD and special applicants can continue with the application, but the portal requires a clear explanation of the condition or special reason before submission.";
+  }
+
+  if (/(department|which department|where can i apply|institution)/.test(prompt)) {
+    return [
+      "You first choose a department, then choose your institution before completing the rest of the form.",
+      "Available county departments include:",
+      snapshot.departmentsSummary
+    ].join("\n");
+  }
+
+  if (/(nita|stamp|stamped)/.test(prompt)) {
+    return "After submission, the portal generates the county-endorsed NITA document. Download it, get it stamped through the NITA office workflow, then upload the stamped version back through the student dashboard so HR can complete that stage.";
+  }
+
+  return "I can help with application requirements, department selection, period availability, NITA workflow, joining letters, and tracking your application. Ask me one of those and I’ll guide you.";
+}
+
+function extractResponsesApiText(payload) {
+  const direct = (payload?.output_text || "").toString().trim();
+  if (direct) {
+    return direct;
+  }
+
+  const outputItems = Array.isArray(payload?.output) ? payload.output : [];
+  const textParts = [];
+  outputItems.forEach((item) => {
+    const contentItems = Array.isArray(item?.content) ? item.content : [];
+    contentItems.forEach((content) => {
+      const candidate =
+        (content?.text || content?.output_text || content?.value || "").toString().trim();
+      if (candidate) {
+        textParts.push(candidate);
+      }
+    });
+  });
+
+  return textParts.join("\n\n").trim();
+}
+
+async function generatePortalAssistantReply({ message, history, pageContext, snapshot }) {
+  if (!OPENAI_API_KEY) {
+    return {
+      reply: buildPortalAssistantFallback(message, snapshot),
+      provider: "local-fallback"
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: OPENAI_ASSISTANT_MODEL,
+        max_output_tokens: 350,
+        input: [
+          {
+            role: "system",
+            content: [{ type: "input_text", text: buildPortalAssistantSystemPrompt(snapshot) }]
+          },
+          ...normalizePortalAssistantHistory(history).map((entry) => ({
+            role: entry.role,
+            content: [{ type: "input_text", text: entry.content }]
+          })),
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: `Page context: ${(pageContext || "general").toString().trim() || "general"}\nUser question: ${message}`
+              }
+            ]
+          }
+        ]
+      }),
+      signal: controller.signal
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const providerMessage =
+        payload?.error?.message || `OpenAI request failed with status ${response.status}.`;
+      throw new Error(providerMessage);
+    }
+
+    const reply = extractResponsesApiText(payload);
+    if (!reply) {
+      throw new Error("The assistant did not return any text.");
+    }
+
+    return {
+      reply,
+      provider: "openai"
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function buildSupervisorApiHeaders() {
   const headers = {
     Accept: "application/json"
@@ -4275,6 +4486,59 @@ app.get("/api/institution-suggestions", async (req, res) => {
     typedQuery: query,
     ...suggestions
   });
+});
+
+app.post("/api/assistant/chat", async (req, res) => {
+  const rateLimitKey = getPortalAssistantRateLimitKey(req);
+  const rateLimitState = portalAssistantRateLimiter.check(rateLimitKey);
+
+  if (!rateLimitState.allowed) {
+    return res.status(429).json({
+      error: `Too many assistant requests. Try again in ${formatRetryWindow(rateLimitState.retryAfterMs)}.`
+    });
+  }
+
+  const message = (req.body?.message || "").toString().trim().replace(/\s+/g, " ");
+  const pageContext = (req.body?.pageContext || "").toString().trim().slice(0, 80);
+  const history = normalizePortalAssistantHistory(req.body?.history);
+
+  if (!message) {
+    portalAssistantRateLimiter.fail(rateLimitKey);
+    return res.status(400).json({
+      error: "Enter a question before sending it to the assistant."
+    });
+  }
+
+  if (message.length > 1200) {
+    portalAssistantRateLimiter.fail(rateLimitKey);
+    return res.status(400).json({
+      error: "Keep each assistant question under 1,200 characters."
+    });
+  }
+
+  const settings = await readSettings();
+  const snapshot = getPortalAssistantSnapshot(settings);
+
+  try {
+    const result = await generatePortalAssistantReply({
+      message,
+      history,
+      pageContext,
+      snapshot
+    });
+    portalAssistantRateLimiter.reset(rateLimitKey);
+    return res.json({
+      reply: result.reply,
+      provider: result.provider,
+      model: result.provider === "openai" ? OPENAI_ASSISTANT_MODEL : "local-fallback"
+    });
+  } catch (error) {
+    const fallbackReply = buildPortalAssistantFallback(message, snapshot);
+    return res.status(200).json({
+      reply: `${fallbackReply}\n\nNote: Live AI assistant is temporarily unavailable, so this answer came from the portal fallback helper.`,
+      provider: "local-fallback"
+    });
+  }
 });
 
 app.post("/apply", async (req, res) => {

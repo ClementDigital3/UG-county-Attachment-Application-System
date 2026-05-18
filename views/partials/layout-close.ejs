@@ -62,6 +62,78 @@
         </div>
       </footer>
 
+      <% if (footerPortal !== 'hr') { %>
+        <div class="portal-assistant" data-portal-assistant>
+          <button
+            class="portal-assistant-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="portalAssistantPanel"
+            data-portal-assistant-toggle
+          >
+            <span class="portal-assistant-avatar-wrap" aria-hidden="true">
+              <img class="portal-assistant-avatar" src="/county-assistant-lady.svg" alt="" />
+            </span>
+            <span class="portal-assistant-toggle-copy">
+              <span class="portal-assistant-toggle-kicker">AI Help</span>
+              <strong>Ask County Assistant</strong>
+            </span>
+          </button>
+
+          <section
+            id="portalAssistantPanel"
+            class="portal-assistant-panel"
+            hidden
+            aria-label="County portal assistant"
+          >
+            <div class="portal-assistant-panel-head">
+              <div class="portal-assistant-panel-title">
+                <span class="portal-assistant-panel-avatar-wrap" aria-hidden="true">
+                  <img class="portal-assistant-panel-avatar" src="/county-assistant-lady.svg" alt="" />
+                </span>
+                <div>
+                  <span class="portal-assistant-panel-kicker">County Portal Guide</span>
+                  <h2>Attachment Help Assistant</h2>
+                </div>
+              </div>
+              <button class="portal-assistant-close" type="button" data-portal-assistant-close aria-label="Close assistant">
+                &times;
+              </button>
+            </div>
+
+            <div class="portal-assistant-quick-actions"> 
+              <button type="button" class="portal-assistant-chip" data-assistant-prompt="What documents do I need before applying?">Required documents</button>
+              <button type="button" class="portal-assistant-chip" data-assistant-prompt="Which attachment periods are currently open?">Open periods</button>
+              <button type="button" class="portal-assistant-chip" data-assistant-prompt="Explain the NITA workflow after application submission.">NITA workflow</button>
+              <button type="button" class="portal-assistant-chip" data-assistant-prompt="How do I track my application status and joining letter?">Track application</button>
+            </div>
+
+            <div class="portal-assistant-thread" data-portal-assistant-thread>
+              <article class="portal-assistant-bubble is-assistant">
+                Hello. I can help with attachment requirements, deadlines, departments, NITA steps, and how to track your application.
+              </article>
+            </div>
+
+            <form class="portal-assistant-form" data-portal-assistant-form>
+              <label class="sr-only" for="portalAssistantInput">Ask the county assistant</label>
+              <textarea
+                id="portalAssistantInput"
+                name="message"
+                rows="3"
+                maxlength="1200"
+                placeholder="Ask about applying, required documents, NITA, deadlines, or tracking..."
+                data-portal-assistant-input
+                required
+              ></textarea>
+              <div class="portal-assistant-form-row">
+                <small class="portal-assistant-status" data-portal-assistant-status>Portal-aware assistant ready.</small>
+                <button class="btn" type="submit" data-portal-assistant-send>Send</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      <% } %>
+
     </div>
     <script>
       (() => {
@@ -188,5 +260,127 @@
         }
       })();
     </script>
+    <% if (footerPortal !== 'hr') { %>
+      <script>
+        (() => {
+          const widget = document.querySelector("[data-portal-assistant]");
+          if (!widget) {
+            return;
+          }
+
+          const toggle = widget.querySelector("[data-portal-assistant-toggle]");
+          const panel = document.getElementById("portalAssistantPanel");
+          const closeButton = widget.querySelector("[data-portal-assistant-close]");
+          const thread = widget.querySelector("[data-portal-assistant-thread]");
+          const form = widget.querySelector("[data-portal-assistant-form]");
+          const input = widget.querySelector("[data-portal-assistant-input]");
+          const sendButton = widget.querySelector("[data-portal-assistant-send]");
+          const status = widget.querySelector("[data-portal-assistant-status]");
+          const quickPrompts = widget.querySelectorAll("[data-assistant-prompt]");
+          const history = [];
+
+          function setOpen(isOpen) {
+            panel.hidden = !isOpen;
+            toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+            if (isOpen) {
+              window.setTimeout(() => input && input.focus(), 50);
+            }
+          }
+
+          function setBusy(isBusy, text) {
+            if (sendButton) {
+              sendButton.disabled = isBusy;
+            }
+            if (input) {
+              input.disabled = isBusy;
+            }
+            if (status) {
+              status.textContent = text || (isBusy ? "Assistant is thinking..." : "Portal-aware assistant ready.");
+            }
+          }
+
+          function appendBubble(role, text) {
+            const bubble = document.createElement("article");
+            bubble.className = `portal-assistant-bubble ${role === "user" ? "is-user" : "is-assistant"}`;
+            bubble.textContent = text;
+            thread.appendChild(bubble);
+            thread.scrollTop = thread.scrollHeight;
+          }
+
+          async function sendMessage(message) {
+            const trimmed = (message || "").trim();
+            if (!trimmed) {
+              return;
+            }
+
+            setOpen(true);
+            appendBubble("user", trimmed);
+            history.push({ role: "user", content: trimmed });
+            if (history.length > 6) {
+              history.splice(0, history.length - 6);
+            }
+            if (input) {
+              input.value = "";
+            }
+            setBusy(true, "Assistant is thinking...");
+
+            try {
+              const response = await fetch("/api/assistant/chat", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  message: trimmed,
+                  history,
+                  pageContext: `${document.body.dataset.portal || "public"}:${window.location.pathname}`
+                })
+              });
+
+              const payload = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                throw new Error(payload.error || "Assistant request failed.");
+              }
+
+              const reply = (payload.reply || "").toString().trim() || "I could not prepare an answer right now.";
+              appendBubble("assistant", reply);
+              history.push({ role: "assistant", content: reply });
+              if (history.length > 6) {
+                history.splice(0, history.length - 6);
+              }
+              setBusy(false, payload.provider === "openai" ? "Live AI response complete." : "Fallback portal guidance used.");
+            } catch (error) {
+              appendBubble("assistant", error.message || "The assistant is unavailable right now. Please try again shortly.");
+              setBusy(false, "Assistant unavailable right now.");
+            }
+          }
+
+          if (toggle) {
+            toggle.addEventListener("click", () => setOpen(panel.hidden));
+          }
+          if (closeButton) {
+            closeButton.addEventListener("click", () => setOpen(false));
+          }
+          if (form) {
+            form.addEventListener("submit", (event) => {
+              event.preventDefault();
+              sendMessage(input ? input.value : "");
+            });
+          }
+          if (input) {
+            input.addEventListener("keydown", (event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage(input.value);
+              }
+            });
+          }
+          quickPrompts.forEach((button) => {
+            button.addEventListener("click", () => sendMessage(button.dataset.assistantPrompt || ""));
+          });
+        })();
+      </script>
+    <% } %>
   </body>
 </html>
+
