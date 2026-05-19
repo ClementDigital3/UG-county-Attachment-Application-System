@@ -241,7 +241,7 @@ const HR_SUPERVISOR_API_TOKEN = process.env.HR_SUPERVISOR_API_TOKEN || "";
 const HR_SUPERVISOR_API_HEADER = process.env.HR_SUPERVISOR_API_HEADER || "Authorization";
 const HR_SUPERVISOR_API_TOKEN_PREFIX = process.env.HR_SUPERVISOR_API_TOKEN_PREFIX || "Bearer";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-const OPENAI_ASSISTANT_MODEL = process.env.OPENAI_ASSISTANT_MODEL || "gpt-5.4-mini";
+const OPENAI_ASSISTANT_MODEL = process.env.OPENAI_ASSISTANT_MODEL || "gpt-5.5";
 const DEMO_SUPERVISOR_RECORD = {
   supervisorId: "demo-supervisor-001",
   employeeNumber: "UGC-HR-001",
@@ -3512,12 +3512,14 @@ function getPortalAssistantSnapshot(settings) {
 function buildPortalAssistantSystemPrompt(snapshot) {
   return [
     "You are the Uasin Gishu County Attachment Portal Assistant.",
-    "Help students and applicants use the county attachment portal clearly and briefly.",
-    "Only answer questions about this portal, application requirements, deadlines, tracking, NITA workflow, joining letters, departments, and attachment process guidance.",
+    "You are a real general-purpose AI assistant embedded inside the county attachment portal.",
+    "Help students and applicants with the county attachment portal clearly and briefly, but you may also answer ordinary general questions when asked.",
+    "When the question is about the portal, use the county portal context below as your source of truth.",
+    "When the question is unrelated to the portal, answer normally and honestly using general knowledge.",
     "Do not claim to access private student records, hidden HR decisions, or application outcomes.",
     "If a question needs account-specific information, direct the user to the Track Application page or HR portal.",
     "If you are unsure, say so plainly and point the user to the correct portal step.",
-    "Keep answers concise, practical, and friendly.",
+    "Keep answers concise, practical, friendly, and easy to understand.",
     "",
     `Current application deadline setting: ${snapshot.deadline}.`,
     `Institution fairness limit: ${snapshot.institutionFairnessPercent}% per department.`,
@@ -3585,7 +3587,7 @@ function buildPortalAssistantFallback(message, snapshot) {
     return "After submission, the portal generates the county-endorsed NITA document. Download it, get it stamped through the NITA office workflow, then upload the stamped version back through the student dashboard so HR can complete that stage.";
   }
 
-  return "I can help with application requirements, department selection, period availability, NITA workflow, joining letters, and tracking your application. Ask me one of those and I’ll guide you.";
+  return "I can answer general questions when the live AI connection is available. Right now my built-in fallback mainly covers the county attachment portal, such as application requirements, department selection, period availability, NITA workflow, joining letters, and tracking.";
 }
 
 function extractResponsesApiText(payload) {
@@ -4533,6 +4535,7 @@ app.post("/api/assistant/chat", async (req, res) => {
       model: result.provider === "openai" ? OPENAI_ASSISTANT_MODEL : "local-fallback"
     });
   } catch (error) {
+    console.error("Portal assistant live AI request failed.", error);
     const fallbackReply = buildPortalAssistantFallback(message, snapshot);
     return res.status(200).json({
       reply: `${fallbackReply}\n\nNote: Live AI assistant is temporarily unavailable, so this answer came from the portal fallback helper.`,
@@ -7867,3 +7870,4 @@ async function startServer() {
 }
 
 startServer();
+

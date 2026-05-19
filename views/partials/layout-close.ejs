@@ -92,8 +92,8 @@
                   <img class="portal-assistant-panel-avatar" src="/county-assistant-lady.svg" alt="" />
                 </span>
                 <div>
-                  <span class="portal-assistant-panel-kicker">County Portal Guide</span>
-                  <h2>Attachment Help Assistant</h2>
+                  <span class="portal-assistant-panel-kicker">County AI Assistant</span>
+                  <h2>Ask County Assistant</h2>
                 </div>
               </div>
               <button class="portal-assistant-close" type="button" data-portal-assistant-close aria-label="Close assistant">
@@ -110,7 +110,7 @@
 
             <div class="portal-assistant-thread" data-portal-assistant-thread>
               <article class="portal-assistant-bubble is-assistant">
-                Hello. I can help with attachment requirements, deadlines, departments, NITA steps, and how to track your application.
+                Hello. I can help with county attachment questions, and I can also answer general questions when the live AI connection is available.
               </article>
             </div>
 
@@ -121,12 +121,12 @@
                 name="message"
                 rows="3"
                 maxlength="1200"
-                placeholder="Ask about applying, required documents, NITA, deadlines, or tracking..."
+                placeholder="Ask about the portal or any normal question..."
                 data-portal-assistant-input
                 required
               ></textarea>
               <div class="portal-assistant-form-row">
-                <small class="portal-assistant-status" data-portal-assistant-status>Portal-aware assistant ready.</small>
+                <small class="portal-assistant-status" data-portal-assistant-status>County assistant ready.</small>
                 <button class="btn" type="submit" data-portal-assistant-send>Send</button>
               </div>
             </form>
@@ -295,7 +295,7 @@
               input.disabled = isBusy;
             }
             if (status) {
-              status.textContent = text || (isBusy ? "Assistant is thinking..." : "Portal-aware assistant ready.");
+              status.textContent = text || (isBusy ? "Assistant is thinking..." : "County assistant ready.");
             }
           }
 
