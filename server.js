@@ -215,18 +215,24 @@ const UPLOAD_SECURITY_POLICY = {
   [NITA_RESUBMISSION_FIELD]: NITA_RESUBMISSION_DEFINITION
 };
 
-const HR_USERNAME = process.env.HR_USERNAME || "hr_admin";
-const HR_PASSWORD = process.env.HR_PASSWORD || "hr123";
+const DEFAULT_HR_USERNAME = "hr_admin";
+const DEFAULT_HR_PASSWORD = "hr123";
+const DEFAULT_SESSION_SECRET = "change-this-secret";
+const DEFAULT_DEPARTMENT_ADMIN_PASSWORD_VALUE = "change_me";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+const HR_USERNAME = process.env.HR_USERNAME || DEFAULT_HR_USERNAME;
+const HR_PASSWORD = process.env.HR_PASSWORD || DEFAULT_HR_PASSWORD;
 const PRESENTATION_LOGIN_USERNAME = process.env.PRESENTATION_LOGIN_USERNAME || "";
 const PRESENTATION_LOGIN_PASSWORD = process.env.PRESENTATION_LOGIN_PASSWORD || "";
-const SESSION_SECRET = process.env.SESSION_SECRET || "change-this-secret";
+const SESSION_SECRET = process.env.SESSION_SECRET || DEFAULT_SESSION_SECRET;
 const SESSION_COOKIE_MAX_AGE_HOURS = Number(process.env.SESSION_COOKIE_MAX_AGE_HOURS || 12);
 const ADMIN_PORTAL_PATH = process.env.ADMIN_PORTAL_PATH || "/staff-portal";
 const HR_PORTAL_PATH = process.env.HR_PORTAL_PATH || "/hr-portal";
 const DISPLAY_TIMEZONE = process.env.DISPLAY_TIMEZONE || "Africa/Nairobi";
 const ALLOW_ANY_TEST_UPLOADS = process.env.ALLOW_ANY_TEST_UPLOADS === "true";
 const DEFAULT_DEPARTMENT_ADMIN_PASSWORD =
-  process.env.DEFAULT_DEPARTMENT_ADMIN_PASSWORD || "change_me";
+  process.env.DEFAULT_DEPARTMENT_ADMIN_PASSWORD || DEFAULT_DEPARTMENT_ADMIN_PASSWORD_VALUE;
 const SMTP_HOST = process.env.SMTP_HOST || "";
 const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
 const SMTP_SECURE = process.env.SMTP_SECURE || "false";
@@ -256,6 +262,77 @@ const DEMO_SUPERVISOR_RECORD = {
   maxStudents: 5,
   source: "demo-seed"
 };
+
+function validateSecurityConfiguration() {
+  const unsafeDefaults = [];
+
+  if (SESSION_SECRET === DEFAULT_SESSION_SECRET || SESSION_SECRET.length < 32) {
+    unsafeDefaults.push("SESSION_SECRET must be a unique value of at least 32 characters");
+  }
+
+  if (HR_PASSWORD === DEFAULT_HR_PASSWORD || HR_PASSWORD === "change_hr_password") {
+    unsafeDefaults.push("HR_PASSWORD must be changed from the default placeholder");
+  }
+
+  if (
+    DEFAULT_DEPARTMENT_ADMIN_PASSWORD === DEFAULT_DEPARTMENT_ADMIN_PASSWORD_VALUE ||
+    DEFAULT_DEPARTMENT_ADMIN_PASSWORD === "change_me"
+  ) {
+    unsafeDefaults.push("DEFAULT_DEPARTMENT_ADMIN_PASSWORD must be changed from the default placeholder");
+  }
+
+  if (!unsafeDefaults.length) {
+    return;
+  }
+
+  const message = `Security configuration needs attention: ${unsafeDefaults.join("; ")}.`;
+  if (IS_PRODUCTION) {
+    throw new Error(message);
+  }
+
+  console.warn(message);
+}
+
+function applySecurityHeaders(req, res, next) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-Permitted-Cross-Domain-Policies", "none");
+  res.setHeader("Content-Security-Policy", "frame-ancestors 'self'; base-uri 'self'; object-src 'none'");
+
+  if (req.secure || req.headers["x-forwarded-proto"] === "https") {
+    res.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+  }
+
+  next();
+}
+
+function enforceSameOriginWrites(req, res, next) {
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+    return next();
+  }
+
+  const origin = req.get("origin") || "";
+  const referer = req.get("referer") || "";
+  const source = origin || referer;
+
+  if (!source) {
+    return next();
+  }
+
+  try {
+    const sourceUrl = new URL(source);
+    const requestHost = (req.get("host") || "").toLowerCase();
+    if (sourceUrl.host.toLowerCase() === requestHost) {
+      return next();
+    }
+  } catch {
+    return res.status(403).send("Invalid request origin.");
+  }
+
+  return res.status(403).send("Invalid request origin.");
+}
+
 const COUNTY_ATTACHMENT_PROVIDER_NAME =
   process.env.COUNTY_ATTACHMENT_PROVIDER_NAME || "County Government of Uasin Gishu";
 const COUNTY_ATTACHMENT_PROVIDER_POSTAL_ADDRESS =
@@ -689,12 +766,16 @@ app.set("view engine", "ejs");
 app.set("views", VIEWS_DIR);
 app.set("trust proxy", 1);
 
+validateSecurityConfiguration();
+app.use(applySecurityHeaders);
+app.use(enforceSameOriginWrites);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(PUBLIC_DIR));
 app.use(
   session({
     store: sessionStore,
+    name: "ugc_attachment.sid",
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
@@ -702,7 +783,7 @@ app.use(
       maxAge: Math.max(1, SESSION_COOKIE_MAX_AGE_HOURS) * 60 * 60 * 1000,
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production"
+      secure: IS_PRODUCTION
     }
   })
 );
@@ -1293,6 +1374,22 @@ function isPresentationLogin(usernameInput, passwordInput) {
   }
 
   return username === configuredUsername && password === configuredPassword;
+}
+
+function establishAdminSession(req, sessionData) {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      Object.entries(sessionData).forEach(([key, value]) => {
+        req.session[key] = value;
+      });
+      resolve();
+    });
+  });
 }
 
 function normalizeDepartmentAdminUser(user) {
@@ -5659,11 +5756,13 @@ app.post(HR_PORTAL_PATH, async (req, res) => {
 
   if (isPresentationLogin(username, password)) {
     hrLoginRateLimiter.reset(rateLimitKey);
-    req.session.isAdmin = true;
-    req.session.adminUsername = normalizeAdminUsername(username);
-    req.session.adminRole = "hr_admin";
-    req.session.adminDepartment = null;
-    req.session.adminScopeDepartment = null;
+    await establishAdminSession(req, {
+      isAdmin: true,
+      adminUsername: normalizeAdminUsername(username),
+      adminRole: "hr_admin",
+      adminDepartment: null,
+      adminScopeDepartment: null
+    });
     return res.redirect("/hr/applications");
   }
 
@@ -5677,11 +5776,13 @@ app.post(HR_PORTAL_PATH, async (req, res) => {
   }
 
   hrLoginRateLimiter.reset(rateLimitKey);
-  req.session.isAdmin = true;
-  req.session.adminUsername = adminUser.username;
-  req.session.adminRole = "hr_admin";
-  req.session.adminDepartment = null;
-  req.session.adminScopeDepartment = null;
+  await establishAdminSession(req, {
+    isAdmin: true,
+    adminUsername: adminUser.username,
+    adminRole: "hr_admin",
+    adminDepartment: null,
+    adminScopeDepartment: null
+  });
   return res.redirect("/hr/applications");
 });
 

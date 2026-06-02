@@ -163,19 +163,24 @@ Expected work:
 
 ### 3. Security Hardening
 
-Status: required
+Status: partially implemented
 
 Why it matters:
 
 - public-facing systems need stronger request and session protection
 
+What is now in place:
+
+- production startup blocks weak default secrets
+- sessions regenerate after successful HR login
+- session cookies use a project-specific name
+- baseline browser security headers are applied
+- cross-origin state-changing requests are rejected when origin data is present
+
 Expected work:
 
-- remove weak fallback secrets
-- regenerate sessions after login
-- add CSRF protection for state-changing forms
-- add security headers through middleware such as Helmet
 - review public application/document routes
+- add full CSRF tokens for state-changing forms
 - tune rate limiting for production traffic
 
 ### 4. Backup and Restore
