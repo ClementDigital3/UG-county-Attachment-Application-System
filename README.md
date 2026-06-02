@@ -1,325 +1,245 @@
 # County Attachment Application System
 
-Digital attachment application portal for the County Government of Uasin Gishu. The system manages the workflow from student application, through department review under HR control, to final HR admission and joining-letter release.
+Digital attachment application portal for the County Government of Uasin Gishu.
 
-## Handover Status
+The system handles the full attachment workflow: student application, department review, HR final review, NITA processing, supervisor assignment, joining-letter release, reporting, and student tracking.
 
-The current system is suitable for:
+## Current Status
 
-- demo and presentation use
-- pilot or controlled deployment
-- hosted operation with MongoDB persistence
+The system is ready for demos, pilots, and controlled internal deployment.
 
-The current system is not yet ready for full county-wide production without the security and governance items listed in `Production-Readiness Gaps`.
+Before full public county-wide production use, the items in `Production Readiness` and `ROADMAP.md` should be completed or formally accepted by county IT and HR leadership.
 
-## Project Overview
+## Main Users
 
-This system was built to replace a manual attachment application process with a structured online workflow.
+- Students applying for county attachment.
+- Department reviewers checking applications under HR control.
+- HR officers managing intake periods, decisions, NITA workflow, supervisors, reports, communication, and joining letters.
+- County IT or developers maintaining deployment, configuration, security, and integrations.
 
-Main users:
+## Main Features
 
-- students applying for county attachment
-- department reviewers operating under HR authorization
-- HR officers managing intake windows, review flow, NITA workflow, communications, and joining letters
+- Student online application and tracking dashboard.
+- Intake period control with quarterly windows and deadline auto-closure.
+- Department review workflow controlled from the HR side.
+- HR final review queue and admission/rejection decisions.
+- NITA document workflow with county-endorsed document generation.
+- MongoDB GridFS storage for uploaded and generated files.
+- Joining-letter generation and student download.
+- Supervisor directory, demo supervisor loading, assignment, and CSV export.
+- HR reports for department, institution, and education-level distribution.
+- Email/SMS notification integration points.
+- Public AI assistant widget for student guidance and general questions when OpenAI is configured.
 
-Main outcomes:
+## System Architecture
 
-- online application instead of manual paper submission
-- controlled departmental intake and fairness balancing
-- student self-service tracking
-- centralized HR final decision making
-- persistent hosted storage through MongoDB
+### Application
 
-## End-To-End Workflow
-
-1. Student opens the landing page and confirms whether an application window is open.
-2. Student opens `Apply`, accepts the county terms, chooses a department and institution, and completes the application.
-3. Student uploads:
-   - one combined supporting-document file
-   - one separate NITA document
-4. The system generates:
-   - an internal application record
-   - a tracking number based on the student ID number, for example `ATT-12345678`
-   - an automatically county-endorsed NITA document
-5. Student receives notification guidance and can track the application using:
-   - ID number
-   - email used during application
-6. Department review is done from the HR-controlled department access flow.
-7. Department review can:
-   - edit applicant information
-   - review documents
-   - request corrections
-   - verify or reject applications
-   - freeze or restore records
-8. Verified applications move to the HR queue.
-9. HR manages:
-   - NITA workflow completion
-   - final decision as `Admitted` or `Rejected`
-   - joining-letter upload
-10. Student returns to the dashboard to:
-    - view progress
-    - re-upload corrected documents
-    - download the county-endorsed NITA document
-    - re-upload the stamped NITA document
-    - download the joining letter after admission
-
-## Current Live Architecture
-
-### Application stack
-
-- Node.js + Express backend
+- Node.js
+- Express
 - EJS server-rendered views
-- shared layout, county branding, and portal navigation
+- MongoDB for data, sessions, and files
+- MongoDB GridFS for uploaded/generated documents
 
-### Database
+### Storage
 
-- MongoDB is the active database
-- MongoDB stores:
-  - applications
-  - settings
-  - department access records
-  - HR account settings
-  - sessions
+MongoDB is the only active storage backend.
 
-This means hosted applications now remain available after Render refreshes and redeploys.
+MongoDB stores:
 
-### File storage
-
-The system stores uploaded and generated documents in `MongoDB GridFS`.
-
-- MongoDB remains the single storage backend for:
-  - application data
-  - settings
-  - sessions
-  - uploaded files
-  - generated PDFs
-- `STORAGE_ROOT` is only used as a temporary upload workspace before files are moved into GridFS.
-
-Documents handled by the system include:
-
-- combined application documents
-- initial NITA uploads
-- auto-generated county-endorsed NITA documents
-- stamped NITA re-submissions
+- application records
+- HR and department settings
+- sessions
+- uploaded student documents
+- generated NITA documents
 - joining letters
+- supervisor directory data
+- audit and workflow history
+
+`STORAGE_ROOT` is only a temporary workspace used while files are being uploaded or generated before being stored in MongoDB GridFS.
 
 ### Notifications
 
-The system includes notification integration through:
+The code supports:
 
-- email via SMTP
-- SMS via Twilio
+- SMTP email
+- Twilio SMS
 
-Current practical position:
+Email should be treated as the primary official notification channel unless SMS delivery is fully validated in production.
 
-- email is the primary reliable notification channel
-- SMS provider integration exists, but Kenyan SMS delivery depends on Twilio sender support and production configuration
+### AI Assistant
 
-## Functional Modules
+The public pages include a floating `Ask County Assistant` widget.
 
-### 1. Landing page and intake windows
+It works in two modes:
 
-The landing page presents:
+- live AI mode when `OPENAI_API_KEY` is configured
+- fallback guidance mode when the live AI provider is unavailable
 
-- county-branded introduction
-- live intake runner and deadline countdown
-- application window status
-- quarterly intake windows:
-  - January - March(3rd Quarter)
-  - April - June(4th Quarter)
-  - July - September(1st Quarter)
-  - October - December(2nd Quarter)
-- fair-distribution guidance
-- quick application instructions
+The fallback mainly answers portal-related questions. Live AI mode can answer normal/general questions and also use portal context.
 
-HR controls:
+## Application Workflow
 
-- open and closed windows
-- application deadline
-- landing runner message
-- department slot capacities
-- institution fairness ratio
+1. HR opens an application period and sets the deadline.
+2. Student opens the public site and confirms that an intake window is open.
+3. Student accepts county terms and conditions.
+4. Student fills the application form and uploads the required documents.
+5. The system creates the application record and tracking number.
+6. The system generates the county-endorsed NITA document.
+7. Department reviewer checks the application and either verifies, rejects, or requests correction.
+8. Verified applications move to the HR queue.
+9. HR checks NITA completion and makes the final decision.
+10. HR admits or rejects the student.
+11. HR assigns a supervisor where applicable.
+12. Student downloads the joining letter after admission.
 
-### 2. Student application flow
+## Required Student Documents
 
-The apply page now enforces this order:
+Student uploads are restricted to supported document formats.
 
-1. read and accept county terms and conditions
-2. choose department
-3. choose institution
-4. complete the rest of the form
+General student documents:
 
-The form collects:
+- PDF
+- DOCX
 
-- full name
-- email
-- phone number
-- ID number
-- institution
-- course or program
-- department
-- intake period
-- attachment dates
-- cover note
-- combined supporting document
-- NITA document
+NITA workflow documents:
 
-The system also records:
+- PDF
 
-- terms acceptance
-- terms acceptance time
-- recorded source/IP
-- terms version
+NITA remains PDF-only because the system processes and generates PDF-based NITA documents.
 
-### 3. Student tracking flow
+## Intake Periods
 
-The student tracking/dashboard flow allows a student to:
+The system uses four attachment windows:
 
-- open the dashboard using ID number and email
-- view current status
-- follow the review timeline
-- see reviewer comments
-- re-upload corrected documents
-- download the county-endorsed NITA document
-- re-upload the stamped NITA document
-- download the joining letter after admission
+- January - March (3rd Quarter)
+- April - June (4th Quarter)
+- July - September (1st Quarter)
+- October - December (2nd Quarter)
 
-### 4. Department review under HR control
+HR can open or close each period. Once the saved deadline is reached, the student application flow closes automatically even if the period was marked open.
 
-Department review is not an independent public portal anymore.
-
-Current behavior:
-
-- department review access is opened from HR
-- the legacy staff path redirects into the HR-controlled flow
-- reviewers only work within the department scope granted by HR
-
-Department review capabilities:
-
-- review applications by department
-- edit applicant details
-- review submitted documents
-- request corrections
-- verify or reject
-- freeze or restore records
-
-Department review does not:
-
-- make final HR admission decisions
-- upload joining letters
-- bypass department scope
-
-### 5. HR queue, NITA workflow, and joining-letter workflow
-
-HR manages:
-
-- intake windows and deadlines
-- department access records
-- final application queue
-- NITA workflow completion
-- final admission decision
-- joining-letter upload
-
-The final decision model is:
-
-- `Pending`
-- `Needs Correction`
-- `Verified`
-- `Admitted`
-- `Rejected`
-
-Important workflow rules:
-
-- only verified applications reach the HR queue
-- HR cannot admit an application before the NITA workflow is completed
-- joining-letter upload happens after admission
-
-### 6. HR communications and HR account management
+## HR Portal
 
 HR can:
 
-- access a dedicated communications page
-- broadcast updates to applicant contacts
-- review communication history for an application
-- change HR username
-- change HR password
+- manage application periods and deadlines
+- manage department reviewer access
+- review verified applications
+- admit or reject applications
+- manage NITA workflow completion
+- assign supervisors
+- send communications
+- download reports and CSV exports
+- manage HR account credentials
 
-This gives HR direct operational control without editing environment files after first setup.
+## Department Review
 
-## Operational Guide for HR
+Department review is controlled from the HR portal.
 
-### Open or close intake windows
+Department reviewers can:
 
-1. Sign in to the HR portal.
-2. Open `Period and Slot Settings`.
-3. Open or close the required quarter.
-4. Set the application deadline.
-5. Save the settings.
+- view applications for their assigned department
+- edit applicant details where allowed
+- review documents
+- request corrections
+- verify applications
+- reject applications
+- freeze or restore records
 
-### Set the landing runner and deadline
+Department reviewers cannot:
 
-1. Open `Period and Slot Settings`.
-2. Enter the landing-page runner message.
-3. Set the deadline date.
-4. Save changes.
+- make final HR admission decisions
+- bypass their department scope
+- upload or release joining letters
 
-### Manage department review access
+## Supervisor Workflow
 
-1. Open the HR portal.
-2. Go to the department/admin management section.
-3. Create, edit, activate, deactivate, or reset department access records.
+The system includes a supervisor assignment workflow.
 
-### Review applications
+Current capabilities:
 
-1. Open `HR Applications Queue`.
-2. Filter or select the application.
-3. Open the application detail page.
-4. Review:
-   - applicant details
-   - review comments
-   - NITA workflow state
-   - communication history
-   - terms acceptance record
+- HR supervisor page
+- demo supervisor loader for testing
+- future HR-system API sync placeholders
+- supervisor assignment on admitted student records
+- assignment CSV export for printing
 
-### Manage the NITA workflow
+Future integration:
 
-1. Student uploads an initial NITA document.
-2. System generates a county-endorsed NITA document automatically.
-3. Student downloads it, takes it to NITA, and re-uploads the stamped copy.
-4. HR confirms NITA completion.
-5. HR proceeds to final admission or rejection.
+- the main HR system should expose an API for active staff supervisors
+- this system will sync that supervisor list and allow HR to assign students to staff
 
-### Send communications
+Expected HR API configuration:
 
-1. Open `Communications` in the HR portal.
-2. Choose email, SMS, or both.
-3. Enter the subject and message.
-4. Send the communication.
+```env
+HR_SUPERVISOR_API_URL=
+HR_SUPERVISOR_API_TOKEN=
+HR_SUPERVISOR_API_HEADER=Authorization
+HR_SUPERVISOR_API_TOKEN_PREFIX=Bearer
+```
 
-### Upload joining letters
+## Reports
 
-1. Open an admitted application in the HR queue.
-2. Confirm the NITA workflow is complete.
-3. Upload the joining letter.
-4. Student then downloads the letter from the dashboard.
+HR reports include:
 
-## Deployment and Environment
+- application totals
+- department distribution
+- institution distribution
+- education-level distribution
+- department capacity snapshot
+- downloadable distribution CSV
+- supervisor assignment CSV
 
-### Core hosted requirements
+These reports are intended to help HR view placement distribution and print summary documents.
 
-The hosted system expects:
+## Local Setup
 
-- Node.js application hosting
-- MongoDB connection
-- environment variables
-- document storage strategy
+Install dependencies:
 
-### Required environment values
+```bash
+npm install
+```
 
-Core:
+Create the environment file:
 
+```bash
+copy .env.example .env
+```
+
+Start the app:
+
+```bash
+npm start
+```
+
+PowerShell may block `npm.ps1` depending on execution policy. In that case use:
+
+```powershell
+npm.cmd start
+```
+
+or:
+
+```powershell
+node server.js
+```
+
+Open:
+
+- `http://localhost:3000`
+- `http://localhost:3000/apply`
+- `http://localhost:3000/track`
+- `http://localhost:3000/hr-portal`
+
+## Environment Variables
+
+Use `.env.example` as the source of truth for environment names.
+
+Core required values:
+
+- `PORT`
 - `SESSION_SECRET`
-- `SESSION_COOKIE_MAX_AGE_HOURS`
 - `MONGODB_URI`
 - `MONGODB_DB_NAME`
 - `HR_USERNAME`
@@ -329,11 +249,7 @@ Core:
 - `HR_PORTAL_PATH`
 - `ADMIN_PORTAL_PATH`
 
-File storage:
-
-- `STORAGE_ROOT`
-
-Email notifications:
+Optional integrations:
 
 - `SMTP_HOST`
 - `SMTP_PORT`
@@ -341,162 +257,86 @@ Email notifications:
 - `SMTP_USER`
 - `SMTP_PASS`
 - `NOTIFICATIONS_EMAIL_FROM`
-
-SMS notifications:
-
 - `TWILIO_ACCOUNT_SID`
 - `TWILIO_AUTH_TOKEN`
 - `TWILIO_FROM_NUMBER`
+- `OPENAI_API_KEY`
+- `OPENAI_ASSISTANT_MODEL`
+- `HR_SUPERVISOR_API_URL`
+- `HR_SUPERVISOR_API_TOKEN`
 
-County NITA defaults:
+County NITA defaults are also configured through `.env.example`.
 
-- `COUNTY_ATTACHMENT_PROVIDER_NAME`
-- `COUNTY_ATTACHMENT_PROVIDER_POSTAL_ADDRESS`
-- `COUNTY_ATTACHMENT_PROVIDER_POSTAL_CODE`
-- `COUNTY_ATTACHMENT_PROVIDER_TOWN`
-- `COUNTY_ATTACHMENT_PROVIDER_PHYSICAL_ADDRESS`
-- `COUNTY_ATTACHMENT_PROVIDER_REGION`
-- `COUNTY_ATTACHMENT_PROVIDER_TELEPHONE`
-- `COUNTY_ATTACHMENT_PROVIDER_EMAIL`
-- `COUNTY_ATTACHMENT_PROVIDER_FAX`
-- `COUNTY_ATTACHMENT_OFFICER_IN_CHARGE`
-- `COUNTY_ATTACHMENT_OFFICER_TELEPHONE`
-- `COUNTY_ATTACHMENT_SIGNATORY_NAME`
-- `COUNTY_ATTACHMENT_SIGNATORY_DESIGNATION`
+## County Server Deployment
 
-### What persists after refresh or redeploy
+The county server uses the project as a Windows service through NSSM.
 
-With MongoDB configured:
+Typical update flow:
 
-- applications persist
-- settings persist
-- sessions persist
-- department access records persist
-- uploaded documents persist
-- generated NITA workflow files persist
-- joining letters persist
-
-## Production-Readiness Gaps
-
-These items are still required before real county-wide production handover.
-
-### 1. Password hashing
-
-Current state:
-
-- stored HR and department access passwords are now hashed
-- legacy plain-text records are upgraded after successful login
-
-Remaining improvement:
-
-- define a formal password reset and recovery policy
-- rotate bootstrap credentials and secrets during handover
-
-### 2. Rate limiting and login protection
-
-Current state:
-
-- baseline rate limiting now protects HR login and public tracking/verification routes
-
-Remaining improvement:
-
-- review thresholds for county-scale traffic
-- add stronger lockout and monitoring policy
-- harden session and authentication controls
-
-### 3. Audit trail
-
-Current state:
-
-- application audit history now records major workflow changes
-- HR system audit records settings, account, and communication actions
-
-Remaining improvement:
-
-- decide retention policy for audit entries
-- define export/review procedure for county oversight
-
-### 4. Backup and recovery plan
-
-Current issue:
-
-- the system depends on MongoDB availability, but formal recovery guidance is not yet documented
-
-Required improvement:
-
-- confirm MongoDB backup policy
-- document restore and continuity process
-
-### 5. HR handover and training package
-
-Current issue:
-
-- the product now has enough workflow depth that a short verbal explanation is not enough for real handover
-
-Required improvement:
-
-- provide HR operating instructions
-- provide issue-escalation guidance
-- provide user ownership and support expectations
-
-## Known Constraints
-
-### Twilio / Kenya SMS limitation
-
-SMS integration exists, but Kenyan SMS delivery depends on supported sender configuration and provider rules. Email should be treated as the primary official notification channel unless SMS is validated in production.
-
-### Credential hardening still needs operations policy
-
-The system now hashes stored HR and department passwords, but production handover still needs secret rotation, reset ownership, and credential-recovery policy.
-
-## Local Run Guide
-
-1. Install dependencies:
-
-```bash
-npm install
+```cmd
+cd C:\Users\user\Desktop\UG-county-Attachment-Application-System
+git pull origin main
+C:\Users\user\Downloads\nssm-2.24-101-g897c7ad\win64\nssm.exe restart UGCountyAttachmentApp
 ```
 
-2. Create `.env` from `.env.example`.
-3. Start the application:
+The NSSM restart command must be run from Command Prompt as Administrator.
 
-```bash
-npm start
+Check service status:
+
+```cmd
+C:\Users\user\Downloads\nssm-2.24-101-g897c7ad\win64\nssm.exe status UGCountyAttachmentApp
 ```
 
-4. Open:
+Expected status:
 
-- `/`
-- `/apply`
-- `/track`
-- `/hr-portal`
+```text
+SERVICE_RUNNING
+```
 
-## Render Hosting Notes
+## Render Deployment
 
 For Render:
 
-- set the MongoDB values
-- set SMTP values if email notifications are required
+- set all required environment variables
+- set MongoDB connection values
+- set SMTP values if email is required
+- set OpenAI values if the AI assistant should answer general questions
+- redeploy after changing environment variables
 
-If auto-deploy is enabled, GitHub pushes should trigger deployment automatically. Otherwise use `Manual Deploy` and deploy the latest commit.
+## Production Readiness
 
-## Key File References
+Before county-wide production, confirm:
 
-For reviewers or maintainers who want to inspect the implementation without scanning the whole codebase:
+- domain and HTTPS are configured
+- all exposed credentials and tokens are rotated
+- MongoDB backups are enabled and tested
+- HR and department password policy is agreed
+- audit retention policy is agreed
+- email delivery is tested
+- SMS delivery is tested if SMS will be used
+- supervisor API ownership is agreed with the main HR system team
+- support and escalation contacts are documented
 
-- `server.js`
-  - main application routes, workflow rules, settings, notifications, and status handling
-- `database.js`
-  - MongoDB storage layer and session persistence
-- `notification-service.js`
-  - email and SMS notification integration
-- `file-storage.js`
-  - MongoDB GridFS document storage and download handling
-- `county-nita-pdf.js`
-  - automatic county endorsement for Part C of the NITA workflow
-- `views/apply.ejs`
-  - student application experience and terms checkpoint
-- `views/hr-detail.ejs`
-  - HR review page, NITA workflow, and communication history
-- `views/admin-periods.ejs`
-  - intake windows, deadline, runner message, and slot settings
+## Key Files
+
+- `server.js` - main routes, workflow rules, AI assistant, reports, and HR logic
+- `database.js` - MongoDB access and GridFS support
+- `file-storage.js` - file storage and download handling
+- `notification-service.js` - email and SMS integration
+- `joining-letter-template.js` - joining-letter generation
+- `county-nita-pdf.js` - NITA PDF generation
+- `views/apply.ejs` - student application form
+- `views/track.ejs` - student tracking dashboard
+- `views/hr-detail.ejs` - HR application review page
+- `views/hr-supervisors.ejs` - supervisor sync and assignment page
+- `views/admin-periods.ejs` - period, slot, and deadline settings
+- `.env.example` - environment configuration template
+
+## Maintenance Notes
+
+- Do not commit `.env`.
+- Keep MongoDB credentials private.
+- Rotate any token that was shared in chat, screenshots, or terminal logs.
+- Use GitHub `main` for county server pulls unless the deployment process changes.
+- Use GitLab `county-deploy` for county GitLab collaboration.
+- Restart the NSSM service after pulling code on the county server.

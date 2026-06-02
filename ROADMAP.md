@@ -1,234 +1,379 @@
 # Project Roadmap
 
-This roadmap now reflects the current state of the County Attachment Application System. It separates what is already implemented from what still blocks a real county-wide production handover.
+Roadmap for the County Attachment Application System.
 
-## Current Delivery Status
+This document separates completed work from remaining production work so another developer, county IT officer, or HR owner can quickly understand what still needs attention.
 
-Implemented:
+## Delivery Snapshot
 
-- MongoDB migration for applications, settings, department access records, and sessions
-- MongoDB GridFS document storage for uploads and generated files
-- Student application portal
-- Student self-service dashboard
-- HR-controlled department review flow
-- HR final review queue
-- NITA workflow with automatic county-endorsed document generation
-- Joining-letter upload and student download
-- HR department access management
-- Analytics and reporting pages
-- HR communications page
-- Email and SMS notification integration points
-- Landing-page intake windows, deadline runner, and countdown
-- County terms and conditions checkpoint with recorded acceptance
+The core application workflow is implemented.
 
-Partially implemented or operationally limited:
+The system currently supports:
 
-- email notifications depend on SMTP configuration
-- SMS notifications depend on Twilio and valid production sender support for Kenya
+- student online applications
+- student tracking dashboard
+- HR-controlled department review
+- HR final review and admission flow
+- automatic deadline-based closure
+- MongoDB-only storage with GridFS files
+- NITA document generation and completion workflow
+- joining-letter generation/download
+- supervisor assignment workflow
+- HR reports and CSV exports
+- email/SMS integration points
+- public AI assistant widget
 
-## Top Priority Before Real County Production Use
+The main remaining work is production hardening, formal operations, and external HR-system integration.
 
-These items should be treated as production blockers, not optional polish.
+## Completed Work
 
-### 1. Password hashing
+### Application Workflow
 
-Status:
+Status: complete baseline
 
-- [x] Baseline implemented
+- Student application form
+- Terms and conditions checkpoint
+- Department and institution selection
+- Course level capture
+- PWD and special applicant handling
+- Student tracking using ID/email
+- Correction re-upload workflow
+
+### HR and Department Review
+
+Status: complete baseline
+
+- HR portal
+- HR application queue
+- HR period and deadline settings
+- HR-controlled department access
+- Department review pages
+- Department verification, rejection, correction, freeze, and restore actions
+- HR final admission/rejection workflow
+
+### Document Storage
+
+Status: complete baseline
+
+- MongoDB stores application data
+- MongoDB stores sessions
+- MongoDB GridFS stores uploaded documents
+- MongoDB GridFS stores generated documents
+- external file storage providers are no longer part of the active workflow
+
+### NITA Workflow
+
+Status: complete baseline
+
+- Initial NITA PDF upload
+- County-endorsed NITA PDF generation
+- Student download of endorsed NITA
+- Stamped NITA re-upload
+- HR confirmation of NITA completion
+
+### Joining Letter Workflow
+
+Status: complete baseline
+
+- County joining-letter generation
+- Student-specific field filling
+- Student download after admission
+
+Current limitation:
+
+- exact pixel-for-pixel template filling still requires the final county template as PDF or DOCX
+
+### Reports
+
+Status: complete baseline
+
+- Department distribution
+- Institution distribution
+- Education-level distribution
+- Department capacity snapshot
+- Distribution CSV export
+- Supervisor assignment CSV export
+
+### Supervisor Workflow
+
+Status: complete baseline, API pending
+
+- HR supervisors page
+- Demo supervisor loader
+- Supervisor assignment on admitted applications
+- Assignment export for printing
+- Environment placeholders for future HR API sync
+
+Remaining dependency:
+
+- main HR system API URL, token, and response format
+
+### AI Assistant
+
+Status: complete baseline
+
+- Floating public chat widget
+- Assistant icon and green launcher
+- OpenAI API support
+- Portal fallback helper
+- General-question support when live AI is configured
+
+Remaining dependency:
+
+- production OpenAI API key and stable outbound internet access
+
+## Production Blockers
+
+These items should be completed or formally accepted before full public production.
+
+### 1. HTTPS and Domain
+
+Status: required
 
 Why it matters:
 
-- HR and department credentials should not remain dependent on plain-text password handling
-
-What is now in place:
-
-- stored HR and department passwords are hashed
-- legacy plain-text credentials are upgraded on successful login
-- password change flow works against hashed credentials
-
-Remaining work:
-
-- define secure password reset and recovery policy
-- rotate bootstrap credentials during handover
-
-### 2. Rate limiting and login protection
-
-Status:
-
-- [~] Partially implemented
-
-Why it matters:
-
-- HR login and student tracking endpoints should be protected from brute force and abuse
-
-What is now in place:
-
-- rate limiting on HR login
-- rate limiting on student tracking and public verification
-- temporary repeated-failure blocking
-
-Remaining work:
-
-- tune thresholds for production traffic
-- add stronger monitoring, alerting, and lockout policy
-- review session-security hardening
-
-### 3. Audit trail
-
-Status:
-
-- [~] Partially implemented
-
-Why it matters:
-
-- county operations need accountability for sensitive actions
-
-What is now in place:
-
-- application audit trail for major workflow actions
-- system audit trail for settings, account, and communication changes
-- HR audit page for operational review
-
-Remaining work:
-
-- define audit retention policy
-- add export/archive policy for county oversight
-
-### 4. Backup and recovery strategy
-
-Status:
-
-- [ ] Required
-
-Why it matters:
-
-- production handover is incomplete without recoverability
+- protects student data and HR sessions in transit
+- removes browser `Not secure` warnings
+- provides a professional live URL
 
 Expected work:
 
-- confirm MongoDB backup process
-- document restore steps and ownership
+- assign domain or subdomain
+- configure DNS
+- configure HTTPS certificate
+- place IIS, Nginx, or another reverse proxy in front of Node if required
 
-### 5. HR handover and operating guide
+### 2. Credential Rotation
 
-Status:
-
-- [~] Documentation drafted, operations handover still required
+Status: required
 
 Why it matters:
 
-- HR needs a formal operating guide, not only code or demo knowledge
+- several credentials and tokens have been used during setup and testing
+- production should start with clean secrets
 
 Expected work:
 
-- provide portal operating instructions
-- define ownership and support contacts
-- document routine workflows and escalation paths
+- rotate MongoDB database password
+- rotate GitLab tokens that were shared during setup
+- rotate OpenAI key if exposed
+- rotate HR bootstrap password
+- rotate department bootstrap password
+- update Render and county server environment files
 
-## Next Operational Improvements
+### 3. Security Hardening
 
-These are valuable next steps after the production blockers above.
+Status: required
 
-### 6. Search and advanced filtering
+Why it matters:
 
-Status:
+- public-facing systems need stronger request and session protection
 
-- [x] Implemented
+Expected work:
 
-Goal:
+- remove weak fallback secrets
+- regenerate sessions after login
+- add CSRF protection for state-changing forms
+- add security headers through middleware such as Helmet
+- review public application/document routes
+- tune rate limiting for production traffic
 
-- speed up HR and department review for larger volumes
+### 4. Backup and Restore
 
-### 7. Document review workflow improvement
+Status: required
 
-Status:
+Why it matters:
 
-- [x] Implemented baseline
+- MongoDB now stores both records and files
+- production handover is incomplete without a restore plan
 
-Goal:
+Expected work:
 
-- standardize correction reasons and make document review easier to understand
+- confirm MongoDB backup schedule
+- test restore procedure
+- document who owns recovery
+- define retention period
 
-### 8. Joining letter templates
+### 5. Audit and Governance
 
-Status:
+Status: required
 
-- [x] Implemented baseline
+Why it matters:
 
-Goal:
+- HR decisions and document changes need accountability
 
-- allow HR to generate joining letters from standard templates instead of uploading each one manually
+Expected work:
 
-### 9. Public application verification page
+- confirm audit retention policy
+- add/export audit review reports if required
+- document who can review audit history
 
-Status:
+## High-Value Next Improvements
 
-- [x] Implemented baseline
+### 6. Manual Supervisor Management
 
-Goal:
-
-- provide a safer public follow-up path using tracking number plus identity verification inputs
-
-### 10. Timezone and activity consistency cleanup
-
-Status:
-
-- [ ] Planned
-
-Goal:
-
-- ensure all activity and timestamps consistently reflect county local time
-
-## Longer-Term Strategic Work
-
-### 11. Database strategy review
-
-Status:
-
-- [ ] Planned
+Status: recommended
 
 Goal:
 
-- review MongoDB versus PostgreSQL for long-term county production scale, reporting needs, and operations
+- allow HR to create, edit, deactivate, or remove supervisor records manually
 
-Current note:
+Reason:
 
-- MongoDB is the active live database today
-- this item is now a strategic review, not an immediate migration requirement
+- HR should not be blocked if the main HR API is offline or delayed
 
-### 12. Role expansion
+### 7. HR API Supervisor Sync
 
-Status:
-
-- [ ] Planned
+Status: planned
 
 Goal:
 
-- introduce more structured access control if the county later requires more separation of duties
+- sync supervisor staff from the main county HR system
 
-Possible future roles:
+Needed from the HR-system developer:
 
-- super admin
+- API URL
+- authentication method
+- sample JSON response
+- supervisor eligibility rules
+- staff department/station fields
+
+### 8. Assignment Printing Package
+
+Status: recommended
+
+Goal:
+
+- produce cleaner printable supervisor assignment sheets
+
+Possible outputs:
+
+- Excel export
+- PDF assignment sheet
+- department-level print view
+
+### 9. Notifications Dashboard
+
+Status: recommended
+
+Goal:
+
+- help HR see whether email/SMS messages were sent successfully
+
+Expected work:
+
+- delivery status display
+- retry option
+- failed-notification list
+
+### 10. Student Placement Tracking
+
+Status: planned
+
+Goal:
+
+- track what happens after admission
+
+Possible fields:
+
+- assigned supervisor
+- reporting station
+- reporting date
+- reported/not reported
+- completion status
+
+## Long-Term Strategic Work
+
+### 11. API-First Refactor
+
+Status: future
+
+Goal:
+
+- expose cleaner JSON APIs for integrations with county systems
+
+Expected direction:
+
+- keep current EJS portal working
+- extract business logic into services
+- add `/api/v1/...` routes
+- document endpoints
+- add API authentication
+
+### 12. Role Expansion
+
+Status: future
+
+Goal:
+
+- support more detailed access control if county operations require it
+
+Possible roles:
+
 - HR admin
+- HR officer
 - department reviewer
 - records officer
+- system administrator
 
-### 13. Advanced slot and fairness dashboard
+### 13. Advanced Analytics
 
-Status:
-
-- [ ] Planned
+Status: future
 
 Goal:
 
-- provide stronger visibility into departmental capacity pressure and institution distribution
+- improve reporting for planning and fairness oversight
 
-## Working Notes
+Possible reports:
 
-- MongoDB is the current active application database.
-- Sessions are also stored in MongoDB.
-- Uploaded and generated documents are stored in MongoDB GridFS.
-- Email is the most reliable notification channel in the current system.
-- SMS support exists in the codebase, but Kenyan production delivery depends on provider/sender readiness.
-- The system is currently suitable for demo, pilot, and controlled deployment.
-- A real county-wide handover still requires the production-blocker items above to be completed.
+- supervisor workload distribution
+- admitted vs reported students
+- institution capacity pressure
+- department completion report
+- period-to-period comparison
+
+### 14. Database Strategy Review
+
+Status: future
+
+Goal:
+
+- decide whether MongoDB remains the long-term county storage strategy
+
+Current position:
+
+- MongoDB is the active storage backend
+- no immediate database migration is required
+
+## Deployment Notes
+
+GitHub:
+
+- branch: `main`
+- used by the county server pull workflow
+
+GitLab:
+
+- branch: `county-deploy`
+- used for county GitLab collaboration
+
+County server update command:
+
+```cmd
+cd C:\Users\user\Desktop\UG-county-Attachment-Application-System
+git pull origin main
+C:\Users\user\Downloads\nssm-2.24-101-g897c7ad\win64\nssm.exe restart UGCountyAttachmentApp
+```
+
+The NSSM restart command must run in Administrator Command Prompt.
+
+## Immediate Recommended Order
+
+1. Finish security hardening.
+2. Rotate production credentials.
+3. Confirm HTTPS and domain setup.
+4. Confirm MongoDB backup and restore.
+5. Add manual supervisor management.
+6. Connect the main HR supervisor API.
+7. Improve printable assignment reports.
+8. Finalize HR handover guide and support ownership.
