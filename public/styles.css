@@ -2131,17 +2131,14 @@ html[data-theme="dark"] .period-chip.closed {
 }
 
 .portal-assistant {
+  display: contents;
+}
+
+.portal-assistant-toggle {
   position: fixed;
   right: 1.2rem;
   bottom: 1.2rem;
   z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.8rem;
-}
-
-.portal-assistant-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
@@ -2460,22 +2457,29 @@ html[data-theme="dark"] .portal-assistant-status {
   }
 
   .portal-assistant {
-    right: 0.8rem;
-    left: 0.8rem;
-    bottom: 0.8rem;
-    align-items: stretch;
+    display: contents;
   }
 
   .portal-assistant-toggle {
-    width: 100%;
-    min-width: 0;
+    position: fixed !important;
+    left: 0.8rem !important;
+    right: 0.8rem !important;
+    bottom: 0.8rem !important;
+    top: auto !important;
+    width: auto !important;
+    z-index: 40;
   }
 
   .portal-assistant-panel {
-    position: static !important;
+    position: fixed !important;
+    left: 0.8rem !important;
+    right: 0.8rem !important;
+    bottom: 4.5rem !important;
+    top: auto !important;
     transform: none !important;
-    width: 100% !important;
-    min-width: 0 !important;
+    width: auto !important;
+    max-height: calc(100vh - 6.5rem) !important;
+    z-index: 45;
   }
 }
 

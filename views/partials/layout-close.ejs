@@ -297,7 +297,7 @@
             }
             hasDragged = false;
             dragStartY = e.type === "touchstart" ? e.touches[0].clientY : e.clientY;
-            const rect = widget.getBoundingClientRect();
+            const rect = toggle.getBoundingClientRect();
             dragStartTop = rect.top;
 
             document.addEventListener("mousemove", drag);
@@ -318,11 +318,11 @@
               toggle.style.cursor = "grabbing";
               document.body.style.cursor = "grabbing";
               let newTop = dragStartTop + deltaY;
-              const widgetHeight = widget.offsetHeight;
-              const maxTop = window.innerHeight - widgetHeight - 16;
+              const toggleHeight = toggle.offsetHeight;
+              const maxTop = window.innerHeight - toggleHeight - 16;
               newTop = Math.max(16, Math.min(newTop, maxTop));
-              widget.style.bottom = "auto";
-              widget.style.top = newTop + "px";
+              toggle.style.bottom = "auto";
+              toggle.style.top = newTop + "px";
             }
           }
 
