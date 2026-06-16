@@ -2216,6 +2216,11 @@ html[data-theme="dark"] .period-chip.closed {
 }
 
 .portal-assistant-panel {
+  position: fixed;
+  right: 1.2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 45;
   width: min(340px, calc(100vw - 1.6rem));
   border-radius: 20px;
   border: 1px solid rgba(19, 59, 34, 0.1);
@@ -2224,6 +2229,10 @@ html[data-theme="dark"] .period-chip.closed {
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(242, 248, 241, 0.98));
   box-shadow: 0 26px 50px rgba(8, 29, 17, 0.24);
   overflow: hidden;
+}
+
+.portal-assistant-panel[hidden] {
+  display: none !important;
 }
 
 .portal-assistant-panel-head {
@@ -2457,10 +2466,16 @@ html[data-theme="dark"] .portal-assistant-status {
     align-items: stretch;
   }
 
-  .portal-assistant-toggle,
-  .portal-assistant-panel {
+  .portal-assistant-toggle {
     width: 100%;
     min-width: 0;
+  }
+
+  .portal-assistant-panel {
+    position: static !important;
+    transform: none !important;
+    width: 100% !important;
+    min-width: 0 !important;
   }
 }
 
