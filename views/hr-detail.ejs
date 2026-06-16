@@ -14,6 +14,7 @@
             <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
             <a class="btn secondary" href="/hr/applications">Back to HR Queue</a>
             <form action="/hr/logout" method="post">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <button class="btn secondary" type="submit">Logout</button>
             </form>
           </div>

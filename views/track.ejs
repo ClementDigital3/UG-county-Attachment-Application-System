@@ -12,7 +12,8 @@
           <div class="notice"><%= message %></div>
         <% } %>
 
-        <form action="/track" method="post" class="form-grid <%= result ? '' : 'auth-form' %>">
+        <form action="/track" method="post" class="form-grid <%= result ? '' : 'auth-form' %>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />">
           <label class="full-width">
             ID Number
             <input
@@ -164,6 +165,7 @@
 
             <% if (result.nitaWorkflow.status === 'Awaiting Student NITA Resubmission' && result.countySignedNitaDocument && result.countySignedNitaDocument.filename) { %>
               <form action="/track/nita-resubmit" method="post" enctype="multipart/form-data" class="form-grid">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                 <input type="hidden" name="idNumber" value="<%= result.idNumber || '' %>" />
                 <input type="hidden" name="email" value="<%= result.email %>" />
 
@@ -220,6 +222,7 @@
             </div>
 
             <form action="/track/resubmit" method="post" enctype="multipart/form-data" class="form-grid">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <input type="hidden" name="idNumber" value="<%= result.idNumber || '' %>" />
               <input type="hidden" name="email" value="<%= result.email %>" />
 

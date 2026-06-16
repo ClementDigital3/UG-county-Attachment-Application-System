@@ -9,6 +9,7 @@
         <% } %>
 
         <form action="/verify" method="post" class="form-grid auth-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
           <label class="full-width">
             Tracking Number
             <input type="text" name="trackingNumber" value="<%= formData.trackingNumber || '' %>" placeholder="ATT-12345678" required />

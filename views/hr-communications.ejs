@@ -11,6 +11,7 @@
             <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
             <a class="btn secondary" href="/hr/applications">HR Queue</a>
             <form action="/hr/logout" method="post">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <button class="btn secondary" type="submit">Logout</button>
             </form>
           </div>
@@ -55,6 +56,7 @@
         <% } %>
 
         <form action="/hr/communications" method="post" class="form-grid">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
           <label class="full-width">
             Communication Channels
             <div class="actions tight">

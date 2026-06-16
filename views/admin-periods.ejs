@@ -18,6 +18,7 @@
               <a class="btn secondary" href="/admin/applications">Applications</a>
             <% } %>
             <form action="<%= isHrAdmin ? '/hr/logout' : '/admin/logout' %>" method="post">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <button class="btn secondary" type="submit">Logout</button>
             </form>
           </div>
@@ -54,6 +55,7 @@
         <% } %>
 
         <form action="<%= isHrAdmin ? '/hr/periods' : '/admin/periods' %>" method="post" class="form-grid">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
           <% if (canManageOpenPeriods) { %>
             <label class="full-width">
               Landing Page Runner Message

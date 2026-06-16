@@ -248,20 +248,6 @@ const HR_SUPERVISOR_API_HEADER = process.env.HR_SUPERVISOR_API_HEADER || "Author
 const HR_SUPERVISOR_API_TOKEN_PREFIX = process.env.HR_SUPERVISOR_API_TOKEN_PREFIX || "Bearer";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_ASSISTANT_MODEL = process.env.OPENAI_ASSISTANT_MODEL || "gpt-5.5";
-const DEMO_SUPERVISOR_RECORD = {
-  supervisorId: "demo-supervisor-001",
-  employeeNumber: "UGC-HR-001",
-  fullName: "Janet Kibor",
-  department: "",
-  jobTitle: "Human Resource Officer",
-  email: "janet.kibor@uasingishu.go.ke",
-  phone: "0700000001",
-  workStation: "County Headquarters",
-  isActive: true,
-  canSupervise: true,
-  maxStudents: 5,
-  source: "demo-seed"
-};
 
 function validateSecurityConfiguration() {
   const unsafeDefaults = [];
@@ -332,6 +318,30 @@ function enforceSameOriginWrites(req, res, next) {
 
   return res.status(403).send("Invalid request origin.");
 }
+
+function initCsrfToken(req, res, next) {
+  res.locals.csrfToken = "";
+  if (req.session) {
+    if (!req.session.csrfToken) {
+      req.session.csrfToken = crypto.randomBytes(32).toString("hex");
+    }
+    res.locals.csrfToken = req.session.csrfToken;
+  }
+  next();
+}
+
+function verifyCsrf(req) {
+  const token = req.body?._csrf || req.headers["x-csrf-token"];
+  return token && token === req.session?.csrfToken;
+}
+
+function csrfProtection(req, res, next) {
+  if (verifyCsrf(req)) {
+    return next();
+  }
+  return res.status(403).send("Invalid or missing CSRF token.");
+}
+
 
 const COUNTY_ATTACHMENT_PROVIDER_NAME =
   process.env.COUNTY_ATTACHMENT_PROVIDER_NAME || "County Government of Uasin Gishu";
@@ -787,6 +797,9 @@ app.use(
     }
   })
 );
+
+app.use(initCsrfToken);
+
 
 function createDefaultDocumentsReview() {
   return REQUIRED_DOCUMENT_FIELDS.reduce((acc, fieldName) => {
@@ -3688,25 +3701,7 @@ function buildPortalAssistantFallback(message, snapshot) {
 }
 
 function extractResponsesApiText(payload) {
-  const direct = (payload?.output_text || "").toString().trim();
-  if (direct) {
-    return direct;
-  }
-
-  const outputItems = Array.isArray(payload?.output) ? payload.output : [];
-  const textParts = [];
-  outputItems.forEach((item) => {
-    const contentItems = Array.isArray(item?.content) ? item.content : [];
-    contentItems.forEach((content) => {
-      const candidate =
-        (content?.text || content?.output_text || content?.value || "").toString().trim();
-      if (candidate) {
-        textParts.push(candidate);
-      }
-    });
-  });
-
-  return textParts.join("\n\n").trim();
+  return (payload?.choices?.[0]?.message?.content || "").toString().trim();
 }
 
 async function generatePortalAssistantReply({ message, history, pageContext, snapshot }) {
@@ -3720,33 +3715,32 @@ async function generatePortalAssistantReply({ message, history, pageContext, sna
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
 
+  const assistantModel = (OPENAI_ASSISTANT_MODEL || "gpt-4o-mini")
+    .replace("gpt-5.4-mini", "gpt-4o-mini")
+    .replace("gpt-5.5", "gpt-4o-mini");
+
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: OPENAI_ASSISTANT_MODEL,
-        max_output_tokens: 350,
-        input: [
+        model: assistantModel,
+        max_tokens: 350,
+        messages: [
           {
             role: "system",
-            content: [{ type: "input_text", text: buildPortalAssistantSystemPrompt(snapshot) }]
+            content: buildPortalAssistantSystemPrompt(snapshot)
           },
           ...normalizePortalAssistantHistory(history).map((entry) => ({
             role: entry.role,
-            content: [{ type: "input_text", text: entry.content }]
+            content: entry.content
           })),
           {
             role: "user",
-            content: [
-              {
-                type: "input_text",
-                text: `Page context: ${(pageContext || "general").toString().trim() || "general"}\nUser question: ${message}`
-              }
-            ]
+            content: `Page context: ${(pageContext || "general").toString().trim() || "general"}\nUser question: ${message}`
           }
         ]
       }),
@@ -4404,7 +4398,8 @@ async function renderHrSupervisorsPage(res, {
     supervisorsLastSyncedAt: settings.supervisorsLastSyncedAt || "",
     formatDate,
     getDepartmentLabel,
-    getPeriodLabel
+    getPeriodLabel,
+    departments: DEPARTMENTS
   });
 }
 
@@ -4587,7 +4582,7 @@ app.get("/api/institution-suggestions", async (req, res) => {
   });
 });
 
-app.post("/api/assistant/chat", async (req, res) => {
+app.post("/api/assistant/chat", csrfProtection, async (req, res) => {
   const rateLimitKey = getPortalAssistantRateLimitKey(req);
   const rateLimitState = portalAssistantRateLimiter.check(rateLimitKey);
 
@@ -4645,6 +4640,11 @@ app.post("/apply", async (req, res) => {
   studentDocumentsUploadMiddleware(req, res, async (uploadError) => {
     const files = req.files || {};
     const formData = req.body || {};
+
+    if (!verifyCsrf(req)) {
+      cleanupUploadedFiles(files);
+      return res.status(403).send("Invalid or missing CSRF token.");
+    }
 
     if (uploadError) {
       cleanupUploadedFiles(files);
@@ -5047,7 +5047,7 @@ app.get("/track", async (req, res) => {
   });
 });
 
-app.post("/track", async (req, res) => {
+app.post("/track", csrfProtection, async (req, res) => {
   const idNumber = (req.body.idNumber || "").trim();
   const trackingNumber = (req.body.trackingNumber || req.body.applicationId || "").trim();
   const email = (req.body.email || "").trim().toLowerCase();
@@ -5112,6 +5112,11 @@ app.post("/track/resubmit", async (req, res) => {
     const idNumber = (req.body.idNumber || "").trim();
     const trackingNumber = (req.body.trackingNumber || req.body.applicationId || "").trim();
     const email = (req.body.email || "").trim().toLowerCase();
+
+    if (!verifyCsrf(req)) {
+      cleanupUploadedFiles(files);
+      return res.status(403).send("Invalid or missing CSRF token.");
+    }
 
     const applications = await readApplications();
     const index = findApplicationIndexForStudentDashboard(applications, {
@@ -5382,6 +5387,11 @@ app.post("/track/nita-resubmit", async (req, res) => {
     const email = (req.body.email || "").trim().toLowerCase();
     const uploadedFile = req.file || null;
 
+    if (!verifyCsrf(req)) {
+      cleanupUploadedFiles({ [NITA_RESUBMISSION_FIELD]: uploadedFile ? [uploadedFile] : [] });
+      return res.status(403).send("Invalid or missing CSRF token.");
+    }
+
     const applications = await readApplications();
     const index = findApplicationIndexForStudentDashboard(applications, {
       idNumber,
@@ -5621,7 +5631,7 @@ app.get("/verify", async (req, res) => {
   });
 });
 
-app.post("/verify", async (req, res) => {
+app.post("/verify", csrfProtection, async (req, res) => {
   const trackingNumber = (req.body.trackingNumber || "").toString().trim();
   const idNumber = (req.body.idNumber || "").toString().trim();
   const query = new URLSearchParams({
@@ -5742,7 +5752,7 @@ app.get(HR_PORTAL_PATH, async (req, res) => {
   });
 });
 
-app.post(HR_PORTAL_PATH, async (req, res) => {
+app.post(HR_PORTAL_PATH, csrfProtection, async (req, res) => {
   const username = (req.body.username || "").toString();
   const password = (req.body.password || "").toString();
   const rateLimitKey = getHrLoginRateLimitKey(req);
@@ -5786,13 +5796,13 @@ app.post(HR_PORTAL_PATH, async (req, res) => {
   return res.redirect("/hr/applications");
 });
 
-app.post("/admin/logout", ensureDepartmentAdmin, async (req, res) => {
+app.post("/admin/logout", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
   req.session.destroy(() => {
     res.redirect(HR_PORTAL_PATH);
   });
 });
 
-app.post("/hr/logout", ensureHrAdmin, async (req, res) => {
+app.post("/hr/logout", csrfProtection, ensureHrAdmin, async (req, res) => {
   req.session.destroy(() => {
     res.redirect(HR_PORTAL_PATH);
   });
@@ -5827,7 +5837,7 @@ app.get("/hr/periods", ensureHrAdmin, async (req, res) => {
   });
 });
 
-app.post("/hr/periods", ensureHrAdmin, async (req, res) => {
+app.post("/hr/periods", csrfProtection, ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
   const settings = await readSettings();
   const previousOpenPeriods = { ...(settings.openPeriods || {}) };
@@ -6046,14 +6056,14 @@ app.get("/hr/supervisors", ensureHrAdmin, async (req, res) => {
       count > 0
         ? `Supervisor directory synced successfully. ${count} supervisor record${count === 1 ? "" : "s"} ready for assignment.`
         : "Supervisor directory synced successfully.";
-  } else if (req.query.demo === "1") {
-    notice = "One demo supervisor record is now available for assignment testing.";
+  } else if (req.query.notice) {
+    notice = req.query.notice;
   }
 
   return renderHrSupervisorsPage(res, { notice });
 });
 
-app.post("/hr/supervisors/sync", ensureHrAdmin, async (req, res) => {
+app.post("/hr/supervisors/sync", csrfProtection, ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
 
   try {
@@ -6098,40 +6108,243 @@ app.get("/hr/supervisors/assignments.csv", ensureHrAdmin, async (req, res) => {
   return res.send(csv);
 });
 
-app.post("/hr/supervisors/demo", ensureHrAdmin, async (req, res) => {
-  clearHrDepartmentScope(req);
-  const settings = await readSettings();
-  const currentDirectory = normalizeSupervisorDirectory(settings.supervisorsDirectory);
-  const createdAt = new Date().toISOString();
-  const withoutDemoRecord = currentDirectory.filter(
-    (entry) => entry.supervisorId !== DEMO_SUPERVISOR_RECORD.supervisorId
-  );
-  settings.supervisorsDirectory = normalizeSupervisorDirectory([
-    ...withoutDemoRecord,
-    {
-      ...DEMO_SUPERVISOR_RECORD,
-      updatedAt: createdAt
-    }
-  ]);
-  settings.supervisorsLastSyncedAt = settings.supervisorsLastSyncedAt || createdAt;
-  settings.updatedAt = createdAt;
-  appendSettingsAudit(settings, {
-    scope: "settings",
-    action: "demo_supervisor_created",
-    ...getActorInfo(req, "hr_admin"),
-    note: "HR loaded one demo supervisor record for assignment workflow testing.",
-    at: createdAt,
-    metadata: {
-      supervisorId: DEMO_SUPERVISOR_RECORD.supervisorId,
-      employeeNumber: DEMO_SUPERVISOR_RECORD.employeeNumber
-    }
-  });
-  await writeSettings(settings);
 
-  return res.redirect("/hr/supervisors?demo=1");
+app.post("/hr/supervisors/create", csrfProtection, ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  try {
+    const settings = await readSettings();
+    if (!settings.supervisorsDirectory) {
+      settings.supervisorsDirectory = [];
+    }
+
+    const fullName = (req.body.fullName || "").trim();
+    if (!fullName) {
+      return renderHrSupervisorsPage(res, {
+        statusCode: 400,
+        error: "Supervisor full name is required."
+      });
+    }
+
+    const employeeNumber = (req.body.employeeNumber || "").trim();
+    if (employeeNumber) {
+      const exists = settings.supervisorsDirectory.some(
+        (s) => s.employeeNumber && s.employeeNumber.toLowerCase() === employeeNumber.toLowerCase()
+      );
+      if (exists) {
+        return renderHrSupervisorsPage(res, {
+          statusCode: 400,
+          error: `Supervisor with employee number "${employeeNumber}" already exists.`
+        });
+      }
+    }
+
+    const supervisorId = `manual-${crypto.randomBytes(8).toString("hex")}`;
+    const newSupervisor = {
+      supervisorId,
+      employeeNumber,
+      fullName,
+      department: (req.body.department || "").trim(),
+      jobTitle: (req.body.jobTitle || "").trim(),
+      email: (req.body.email || "").trim(),
+      phone: (req.body.phone || "").trim(),
+      workStation: (req.body.workStation || "").trim(),
+      isActive: true,
+      canSupervise: true,
+      maxStudents: parseInt(req.body.maxStudents, 10) || 5,
+      source: "manual"
+    };
+
+    settings.supervisorsDirectory.push(newSupervisor);
+
+    const createdAt = new Date().toISOString();
+    settings.updatedAt = createdAt;
+
+    appendSettingsAudit(settings, {
+      scope: "settings",
+      action: "manual_supervisor_created",
+      ...getActorInfo(req, "hr_admin"),
+      note: `HR manually created supervisor ${fullName} (${employeeNumber || "No employee number"}).`,
+      at: createdAt,
+      metadata: {
+        supervisorId,
+        employeeNumber
+      }
+    });
+
+    await writeSettings(settings);
+    return res.redirect("/hr/supervisors?notice=Supervisor+created+successfully");
+  } catch (error) {
+    return renderHrSupervisorsPage(res, {
+      statusCode: 500,
+      error: error.message || "Failed to create supervisor."
+    });
+  }
 });
 
-app.post("/hr/account/password", ensureHrAdmin, async (req, res) => {
+app.post("/hr/supervisors/:supervisorId/edit", csrfProtection, ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  const { supervisorId } = req.params;
+  try {
+    const settings = await readSettings();
+    if (!settings.supervisorsDirectory) {
+      settings.supervisorsDirectory = [];
+    }
+
+    const supervisor = settings.supervisorsDirectory.find((s) => s.supervisorId === supervisorId);
+    if (!supervisor) {
+      return renderHrSupervisorsPage(res, {
+        statusCode: 404,
+        error: "Supervisor not found."
+      });
+    }
+
+    const fullName = (req.body.fullName || "").trim();
+    if (!fullName) {
+      return renderHrSupervisorsPage(res, {
+        statusCode: 400,
+        error: "Supervisor full name is required."
+      });
+    }
+
+    const employeeNumber = (req.body.employeeNumber || "").trim();
+    if (employeeNumber && employeeNumber !== supervisor.employeeNumber) {
+      const exists = settings.supervisorsDirectory.some(
+        (s) => s.supervisorId !== supervisorId && s.employeeNumber && s.employeeNumber.toLowerCase() === employeeNumber.toLowerCase()
+      );
+      if (exists) {
+        return renderHrSupervisorsPage(res, {
+          statusCode: 400,
+          error: `Another supervisor with employee number "${employeeNumber}" already exists.`
+        });
+      }
+    }
+
+    supervisor.fullName = fullName;
+    supervisor.employeeNumber = employeeNumber;
+    supervisor.department = (req.body.department || "").trim();
+    supervisor.jobTitle = (req.body.jobTitle || "").trim();
+    supervisor.email = (req.body.email || "").trim();
+    supervisor.phone = (req.body.phone || "").trim();
+    supervisor.workStation = (req.body.workStation || "").trim();
+    supervisor.maxStudents = parseInt(req.body.maxStudents, 10) || 5;
+
+    const updatedAt = new Date().toISOString();
+    settings.updatedAt = updatedAt;
+
+    appendSettingsAudit(settings, {
+      scope: "settings",
+      action: "manual_supervisor_updated",
+      ...getActorInfo(req, "hr_admin"),
+      note: `HR manually updated supervisor ${fullName}.`,
+      at: updatedAt,
+      metadata: {
+        supervisorId
+      }
+    });
+
+    await writeSettings(settings);
+    return res.redirect("/hr/supervisors?notice=Supervisor+updated+successfully");
+  } catch (error) {
+    return renderHrSupervisorsPage(res, {
+      statusCode: 500,
+      error: error.message || "Failed to update supervisor."
+    });
+  }
+});
+
+app.post("/hr/supervisors/:supervisorId/toggle-active", csrfProtection, ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  const { supervisorId } = req.params;
+  try {
+    const settings = await readSettings();
+    if (!settings.supervisorsDirectory) {
+      settings.supervisorsDirectory = [];
+    }
+
+    const supervisor = settings.supervisorsDirectory.find((s) => s.supervisorId === supervisorId);
+    if (!supervisor) {
+      return renderHrSupervisorsPage(res, {
+        statusCode: 404,
+        error: "Supervisor not found."
+      });
+    }
+
+    const currentActive = supervisor.isActive === undefined ? true : supervisor.isActive;
+    const newActiveState = !currentActive;
+    supervisor.isActive = newActiveState;
+    supervisor.canSupervise = newActiveState;
+
+    const updatedAt = new Date().toISOString();
+    settings.updatedAt = updatedAt;
+
+    appendSettingsAudit(settings, {
+      scope: "settings",
+      action: "manual_supervisor_toggle_active",
+      ...getActorInfo(req, "hr_admin"),
+      note: `HR toggled active status for supervisor ${supervisor.fullName} to ${newActiveState}.`,
+      at: updatedAt,
+      metadata: {
+        supervisorId,
+        isActive: newActiveState
+      }
+    });
+
+    await writeSettings(settings);
+    return res.redirect(`/hr/supervisors?notice=Supervisor+status+updated+to+${newActiveState ? 'active' : 'inactive'}`);
+  } catch (error) {
+    return renderHrSupervisorsPage(res, {
+      statusCode: 500,
+      error: error.message || "Failed to toggle supervisor status."
+    });
+  }
+});
+
+app.post("/hr/supervisors/:supervisorId/delete", csrfProtection, ensureHrAdmin, async (req, res) => {
+  clearHrDepartmentScope(req);
+  const { supervisorId } = req.params;
+  try {
+    const settings = await readSettings();
+    if (!settings.supervisorsDirectory) {
+      settings.supervisorsDirectory = [];
+    }
+
+    const supervisorIndex = settings.supervisorsDirectory.findIndex((s) => s.supervisorId === supervisorId);
+    if (supervisorIndex === -1) {
+      return renderHrSupervisorsPage(res, {
+        statusCode: 404,
+        error: "Supervisor not found."
+      });
+    }
+
+    const supervisor = settings.supervisorsDirectory[supervisorIndex];
+    settings.supervisorsDirectory.splice(supervisorIndex, 1);
+
+    const updatedAt = new Date().toISOString();
+    settings.updatedAt = updatedAt;
+
+    appendSettingsAudit(settings, {
+      scope: "settings",
+      action: "manual_supervisor_deleted",
+      ...getActorInfo(req, "hr_admin"),
+      note: `HR manually deleted supervisor ${supervisor.fullName}.`,
+      at: updatedAt,
+      metadata: {
+        supervisorId,
+        fullName: supervisor.fullName
+      }
+    });
+
+    await writeSettings(settings);
+    return res.redirect("/hr/supervisors?notice=Supervisor+deleted+successfully");
+  } catch (error) {
+    return renderHrSupervisorsPage(res, {
+      statusCode: 500,
+      error: error.message || "Failed to delete supervisor."
+    });
+  }
+});
+
+app.post("/hr/account/password", csrfProtection, ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
   const previousSettings = await readSettings();
   const previousHrAccount = normalizeHrAccount(previousSettings?.hrAccount);
@@ -6189,7 +6402,7 @@ app.get("/hr/communications", ensureHrAdmin, async (req, res) => {
   });
 });
 
-app.post("/hr/communications", ensureHrAdmin, async (req, res) => {
+app.post("/hr/communications", csrfProtection, ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
   const subject = (req.body.subject || "").toString().trim();
   const message = (req.body.message || "").toString().trim();
@@ -6305,7 +6518,7 @@ app.post("/hr/communications", ensureHrAdmin, async (req, res) => {
   return res.redirect("/hr/communications?sent=failed");
 });
 
-app.post("/hr/admin-accounts/create", ensureHrAdmin, async (req, res) => {
+app.post("/hr/admin-accounts/create", csrfProtection, ensureHrAdmin, async (req, res) => {
   const result = await createDepartmentAdminAccount({
     username: req.body.username,
     password: req.body.password || DEFAULT_DEPARTMENT_ADMIN_PASSWORD,
@@ -6337,7 +6550,7 @@ app.post("/hr/admin-accounts/create", ensureHrAdmin, async (req, res) => {
   return res.redirect("/hr/admin-accounts?created=1");
 });
 
-app.post("/hr/admin-accounts/:username/update", ensureHrAdmin, async (req, res) => {
+app.post("/hr/admin-accounts/:username/update", csrfProtection, ensureHrAdmin, async (req, res) => {
   const previousAdmins = await readDepartmentAdmins();
   const previous = previousAdmins.find((item) => item.username === req.params.username);
   const result = await updateDepartmentAdminAccount(req.params.username, {
@@ -6372,7 +6585,7 @@ app.post("/hr/admin-accounts/:username/update", ensureHrAdmin, async (req, res) 
   return res.redirect("/hr/admin-accounts?updated=1");
 });
 
-app.post("/hr/admin-accounts/:username/password", ensureHrAdmin, async (req, res) => {
+app.post("/hr/admin-accounts/:username/password", csrfProtection, ensureHrAdmin, async (req, res) => {
   const result = await setDepartmentAdminPassword(req.params.username, req.body.password);
 
   if (result.error) {
@@ -6397,7 +6610,7 @@ app.post("/hr/admin-accounts/:username/password", ensureHrAdmin, async (req, res
   return res.redirect("/hr/admin-accounts?passwordReset=1");
 });
 
-app.post("/hr/admin-accounts/:username/toggle", ensureHrAdmin, async (req, res) => {
+app.post("/hr/admin-accounts/:username/toggle", csrfProtection, ensureHrAdmin, async (req, res) => {
   const nextState = (req.body.isActive || "").toString() === "1";
   const result = await setDepartmentAdminActiveState(req.params.username, nextState);
 
@@ -6557,7 +6770,7 @@ app.get("/admin/periods", ensureDepartmentAdmin, async (req, res) => {
   });
 });
 
-app.post("/admin/periods", ensureDepartmentAdmin, async (req, res) => {
+app.post("/admin/periods", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
   const settings = await readSettings();
   const adminScopeDepartment = getAdminScopeDepartment(req);
   if (!adminScopeDepartment) {
@@ -6833,7 +7046,7 @@ app.get("/admin/applications/:id", ensureDepartmentAdmin, async (req, res) => {
   });
 });
 
-app.post("/admin/applications/:id/placement", ensureDepartmentAdmin, async (req, res) => {
+app.post("/admin/applications/:id/placement", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
   const assignedDepartment = (req.body.assignedDepartment || "").toString().trim();
   const adminScopeDepartment = getAdminScopeDepartment(req);
   const applications = await readApplications();
@@ -6892,7 +7105,7 @@ app.post("/admin/applications/:id/placement", ensureDepartmentAdmin, async (req,
   return res.redirect(`/admin/applications/${req.params.id}?placementSaved=1`);
 });
 
-app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, async (req, res) => {
+app.post("/admin/applications/:id/documents-review", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
   const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
@@ -7066,7 +7279,7 @@ app.post("/admin/applications/:id/documents-review", ensureDepartmentAdmin, asyn
   return res.redirect(`/admin/applications/${req.params.id}?docsReviewed=1`);
 });
 
-app.post("/admin/applications/:id/joining-letter", ensureDepartmentAdmin, async (req, res) => {
+app.post("/admin/applications/:id/joining-letter", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
   const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
@@ -7104,7 +7317,7 @@ app.get("/admin/files/:filename", ensureDepartmentAdmin, async (req, res) => {
   });
 });
 
-app.post("/admin/applications/:id/status", ensureDepartmentAdmin, async (req, res) => {
+app.post("/admin/applications/:id/status", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
   const { status, reviewerComment } = req.body;
 
   if (!STATUS_OPTIONS.includes(status)) {
@@ -7190,7 +7403,7 @@ app.post("/admin/applications/:id/status", ensureDepartmentAdmin, async (req, re
   return res.redirect(`/admin/applications/${req.params.id}`);
 });
 
-app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, async (req, res) => {
+app.post("/admin/applications/:id/edit", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
   const {
     fullName,
     email,
@@ -7386,7 +7599,7 @@ app.post("/admin/applications/:id/edit", ensureDepartmentAdmin, async (req, res)
   return res.redirect(`/admin/applications/${req.params.id}`);
 });
 
-app.post("/admin/applications/:id/freeze", ensureDepartmentAdmin, async (req, res) => {
+app.post("/admin/applications/:id/freeze", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
   const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
@@ -7418,7 +7631,7 @@ app.post("/admin/applications/:id/freeze", ensureDepartmentAdmin, async (req, re
   return res.redirect(`/admin/applications/${req.params.id}?frozen=1`);
 });
 
-app.post("/admin/applications/:id/unfreeze", ensureDepartmentAdmin, async (req, res) => {
+app.post("/admin/applications/:id/unfreeze", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
   const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
@@ -7545,7 +7758,7 @@ app.get("/hr/applications/:id", ensureHrAdmin, async (req, res) => {
   });
 });
 
-app.post("/hr/applications/:id/nita-complete", ensureHrAdmin, async (req, res) => {
+app.post("/hr/applications/:id/nita-complete", csrfProtection, ensureHrAdmin, async (req, res) => {
   const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
 
@@ -7616,7 +7829,7 @@ app.post("/hr/applications/:id/nita-complete", ensureHrAdmin, async (req, res) =
   return res.redirect(`/hr/applications/${req.params.id}?nitaCompleted=1`);
 });
 
-app.post("/hr/applications/:id/supervisor", ensureHrAdmin, async (req, res) => {
+app.post("/hr/applications/:id/supervisor", csrfProtection, ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
   const selectedSupervisorId = (req.body.supervisorId || "").toString().trim();
   const applications = await readApplications();
@@ -7673,7 +7886,7 @@ app.post("/hr/applications/:id/supervisor", ensureHrAdmin, async (req, res) => {
     return renderHrDetailPage(res, {
       application,
       statusCode: 400,
-      error: "Select a supervisor from the list first. If the list is empty, load the demo supervisor or sync the HR supervisor directory."
+      error: "Select a supervisor from the list first. If the list is empty, create a supervisor manually or sync the HR supervisor directory."
     });
   }
 
@@ -7715,7 +7928,7 @@ app.post("/hr/applications/:id/supervisor", ensureHrAdmin, async (req, res) => {
   );
 });
 
-app.post("/hr/applications/:id/status", ensureHrAdmin, async (req, res) => {
+app.post("/hr/applications/:id/status", csrfProtection, ensureHrAdmin, async (req, res) => {
   const status = (req.body.status || "").toString().trim();
   const reviewerComment = (req.body.reviewerComment || "").toString().trim();
   const hrAllowedStatuses = new Set(HR_VISIBLE_STATUSES);
@@ -7810,7 +8023,7 @@ app.post("/hr/applications/:id/status", ensureHrAdmin, async (req, res) => {
   return res.redirect(`/hr/applications/${req.params.id}?statusSaved=1`);
 });
 
-app.post("/hr/applications/:id/joining-letter-template", ensureHrAdmin, async (req, res) => {
+app.post("/hr/applications/:id/joining-letter-template", csrfProtection, ensureHrAdmin, async (req, res) => {
   const selectedTemplate = (req.body.templateKey || JOINING_LETTER_TEMPLATES[0].key).toString().trim();
   if (!JOINING_LETTER_TEMPLATES.some((template) => template.key === selectedTemplate)) {
     return res.status(400).send("Invalid joining letter template.");

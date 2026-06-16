@@ -55,7 +55,7 @@
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                DevClaud
+                County Developers
               </a>
             </span>
           </div>
@@ -279,6 +279,67 @@
           const quickPrompts = widget.querySelectorAll("[data-assistant-prompt]");
           const history = [];
 
+          // Dragging logic
+          let isDragging = false;
+          let hasDragged = false;
+          let dragStartY = 0;
+          let dragStartTop = 0;
+
+          if (toggle) {
+            toggle.style.cursor = "grab";
+            toggle.addEventListener("mousedown", startDrag);
+            toggle.addEventListener("touchstart", startDrag, { passive: false });
+          }
+
+          function startDrag(e) {
+            if (e.target.closest("input") || e.target.closest("button:not([data-portal-assistant-toggle])") || e.target.closest("a")) {
+              return;
+            }
+            hasDragged = false;
+            dragStartY = e.type === "touchstart" ? e.touches[0].clientY : e.clientY;
+            const rect = widget.getBoundingClientRect();
+            dragStartTop = rect.top;
+
+            document.addEventListener("mousemove", drag);
+            document.addEventListener("touchmove", drag, { passive: false });
+            document.addEventListener("mouseup", stopDrag);
+            document.addEventListener("touchend", stopDrag);
+          }
+
+          function drag(e) {
+            const clientY = e.type === "touchmove" ? e.touches[0].clientY : e.clientY;
+            const deltaY = clientY - dragStartY;
+            if (Math.abs(deltaY) > 5) {
+              isDragging = true;
+              hasDragged = true;
+            }
+            if (isDragging) {
+              e.preventDefault();
+              toggle.style.cursor = "grabbing";
+              document.body.style.cursor = "grabbing";
+              let newTop = dragStartTop + deltaY;
+              const widgetHeight = widget.offsetHeight;
+              const maxTop = window.innerHeight - widgetHeight - 16;
+              newTop = Math.max(16, Math.min(newTop, maxTop));
+              widget.style.bottom = "auto";
+              widget.style.top = newTop + "px";
+            }
+          }
+
+          function stopDrag(e) {
+            document.removeEventListener("mousemove", drag);
+            document.removeEventListener("touchmove", drag);
+            document.removeEventListener("mouseup", stopDrag);
+            document.removeEventListener("touchend", stopDrag);
+            if (toggle) {
+              toggle.style.cursor = "grab";
+            }
+            document.body.style.cursor = "";
+            setTimeout(() => {
+              isDragging = false;
+            }, 50);
+          }
+
           function setOpen(isOpen) {
             panel.hidden = !isOpen;
             toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
@@ -323,12 +384,15 @@
               input.value = "";
             }
             setBusy(true, "Assistant is thinking...");
-
             try {
+              const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+              const csrfToken = csrfMeta ? csrfMeta.getAttribute("content") : "";
+
               const response = await fetch("/api/assistant/chat", {
                 method: "POST",
                 headers: {
-                  "Content-Type": "application/json"
+                  "Content-Type": "application/json",
+                  "X-CSRF-Token": csrfToken
                 },
                 body: JSON.stringify({
                   message: trimmed,
@@ -356,7 +420,15 @@
           }
 
           if (toggle) {
-            toggle.addEventListener("click", () => setOpen(panel.hidden));
+            toggle.addEventListener("click", (e) => {
+              if (hasDragged) {
+                hasDragged = false;
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+              }
+              setOpen(panel.hidden);
+            });
           }
           if (closeButton) {
             closeButton.addEventListener("click", () => setOpen(false));
@@ -377,6 +449,158 @@
           }
           quickPrompts.forEach((button) => {
             button.addEventListener("click", () => sendMessage(button.dataset.assistantPrompt || ""));
+          });
+        })();
+      </script>
+    <% } %>
+
+    <% if (footerPortal !== 'hr') { %>
+      <!-- Cookie Consent Banner -->
+      <div id="cookieConsentBanner" class="cookie-consent-banner" hidden>
+        <div class="cookie-consent-content">
+          <div class="cookie-consent-icon">
+            <svg viewBox="0 0 24 24" width="24" height="24">
+              <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1.5 13.5a1.5 1.5 0 1 1-1.5-1.5 1.5 1.5 0 0 1 1.5 1.5zm0-4a1.5 1.5 0 1 1-1.5-1.5 1.5 1.5 0 0 1 1.5 1.5zM12 8a1.5 1.5 0 1 1 1.5-1.5A1.5 1.5 0 0 1 12 8z" fill="currentColor"/>
+            </svg>
+          </div>
+          <div class="cookie-consent-text">
+            <h4>Cookie & Privacy Consent</h4>
+            <p>This portal uses essential session cookies to authenticate your session and protect against CSRF security threats. By continuing, you agree to our privacy policy.</p>
+          </div>
+        </div>
+        <div class="cookie-consent-actions">
+          <button id="btnAcceptCookies" class="btn btn-sm">Accept Cookies</button>
+          <button id="btnRejectCookies" class="btn btn-sm secondary">Decline</button>
+          <button id="btnLaterCookies" class="btn btn-sm text">Later</button>
+        </div>
+      </div>
+      
+      <style>
+        .cookie-consent-banner {
+          position: fixed;
+          bottom: 24px;
+          left: 50%;
+          transform: translateX(-50%) translateY(100px);
+          width: 90%;
+          max-width: 650px;
+          background: rgba(var(--card-bg-rgb, 255, 255, 255), 0.85);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border: 1px solid rgba(var(--border-rgb, 0, 0, 0), 0.1);
+          border-radius: 16px;
+          box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+          padding: 20px 24px;
+          display: flex;
+          flex-direction: row;
+          justify-content: space-between;
+          align-items: center;
+          gap: 24px;
+          z-index: 10000;
+          opacity: 0;
+          transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.5s ease;
+        }
+        .cookie-consent-banner.show {
+          transform: translateX(-50%) translateY(0);
+          opacity: 1;
+        }
+        .cookie-consent-content {
+          display: flex;
+          gap: 16px;
+          align-items: flex-start;
+        }
+        .cookie-consent-icon {
+          color: var(--primary-color, #1e5631);
+          margin-top: 4px;
+          flex-shrink: 0;
+        }
+        .cookie-consent-text h4 {
+          margin: 0 0 4px 0;
+          font-size: 1.05rem;
+          font-weight: 700;
+          color: var(--text-color, #1a1a1a);
+        }
+        .cookie-consent-text p {
+          margin: 0;
+          font-size: 0.85rem;
+          line-height: 1.4;
+          color: var(--text-muted, #666);
+        }
+        .cookie-consent-actions {
+          display: flex;
+          gap: 10px;
+          flex-shrink: 0;
+        }
+        .cookie-consent-actions .btn {
+          padding: 8px 16px;
+          font-size: 0.85rem;
+          border-radius: 8px;
+          cursor: pointer;
+        }
+        .cookie-consent-actions .btn.secondary {
+          background: rgba(var(--border-rgb, 0, 0, 0), 0.05);
+          color: var(--text-color, #1a1a1a);
+          border: 1px solid rgba(var(--border-rgb, 0, 0, 0), 0.1);
+        }
+        .cookie-consent-actions .btn.text {
+          background: transparent;
+          border: none;
+          color: var(--text-muted, #666);
+        }
+        .cookie-consent-actions .btn.text:hover {
+          color: var(--text-color, #1a1a1a);
+        }
+        @media (max-width: 600px) {
+          .cookie-consent-banner {
+            flex-direction: column;
+            align-items: stretch;
+            bottom: 16px;
+            padding: 16px;
+            gap: 16px;
+          }
+          .cookie-consent-actions {
+            justify-content: flex-end;
+          }
+        }
+      </style>
+      
+      <script>
+        (() => {
+          const banner = document.getElementById('cookieConsentBanner');
+          const acceptBtn = document.getElementById('btnAcceptCookies');
+          const rejectBtn = document.getElementById('btnRejectCookies');
+          const laterBtn = document.getElementById('btnLaterCookies');
+          const storageKey = 'ugc-cookie-consent';
+          
+          const consent = localStorage.getItem(storageKey);
+          if (!consent) {
+            // Show banner after 1.5 seconds
+            setTimeout(() => {
+              banner.removeAttribute('hidden');
+              // Force layout reflow
+              banner.offsetHeight;
+              banner.classList.add('show');
+            }, 1500);
+          }
+          
+          function hideBanner() {
+            banner.classList.remove('show');
+            setTimeout(() => {
+              banner.setAttribute('hidden', '');
+            }, 500);
+          }
+          
+          acceptBtn.addEventListener('click', () => {
+            localStorage.setItem(storageKey, 'accepted');
+            hideBanner();
+          });
+          
+          rejectBtn.addEventListener('click', () => {
+            localStorage.setItem(storageKey, 'declined');
+            hideBanner();
+          });
+          
+          laterBtn.addEventListener('click', () => {
+            hideBanner();
           });
         })();
       </script>

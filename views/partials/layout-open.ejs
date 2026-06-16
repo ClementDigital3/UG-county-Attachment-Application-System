@@ -24,6 +24,7 @@
         document.documentElement.setAttribute("data-theme", theme);
       })();
     </script>
+    <meta name="csrf-token" content="<%= csrfToken %>" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body data-portal="<%= activePortal || '' %>">

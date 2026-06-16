@@ -56,6 +56,7 @@
 
     <% if (canStartApplication) { %>
       <form action="/apply" method="post" enctype="multipart/form-data" class="form-grid" id="applyForm">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
         <section class="selection-panel full-width terms-checkpoint">
           <div class="selection-panel-header">
             <div>
