@@ -309,7 +309,7 @@
           function drag(e) {
             const clientY = e.type === "touchmove" ? e.touches[0].clientY : e.clientY;
             const deltaY = clientY - dragStartY;
-            if (Math.abs(deltaY) > 5) {
+            if (Math.abs(deltaY) > 10) {
               isDragging = true;
               hasDragged = true;
             }
@@ -337,7 +337,8 @@
             document.body.style.cursor = "";
             setTimeout(() => {
               isDragging = false;
-            }, 50);
+              hasDragged = false;
+            }, 100);
           }
 
           function setOpen(isOpen) {
