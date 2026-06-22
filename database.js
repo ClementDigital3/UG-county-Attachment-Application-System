@@ -333,6 +333,33 @@ async function createDatabase({
     }
   }
 
+  async function queuePendingSms(sms) {
+    const timestamp = new Date().toISOString();
+    const record = {
+      _id: (sms.id || crypto.randomUUID()).toString(),
+      to: (sms.to || "").toString().trim(),
+      message: (sms.message || "").toString().trim(),
+      applicationId: (sms.applicationId || "").toString().trim(),
+      status: "pending",
+      queuedAt: timestamp,
+      updatedAt: timestamp
+    };
+    await db.collection("pending_sms").insertOne(record);
+    return record;
+  }
+
+  async function getPendingSmsList() {
+    const records = await db.collection("pending_sms")
+      .find({ status: "pending" })
+      .sort({ queuedAt: 1 })
+      .toArray();
+    return clonePlain(records);
+  }
+
+  async function deletePendingSms(id) {
+    await db.collection("pending_sms").deleteOne({ _id: id });
+  }
+
   async function initializeDefaults() {
     const [settingsRow, departmentAdminCount] = await Promise.all([
       settingsCollection.findOne({ _id: "portal_settings" }, { projection: { _id: 1 } }),
@@ -360,6 +387,9 @@ async function createDatabase({
     readApplications,
     writeApplications,
     restoreApplications,
+    queuePendingSms,
+    getPendingSmsList,
+    deletePendingSms,
     readSession,
     writeSession,
     deleteSession,

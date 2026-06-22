@@ -63,18 +63,24 @@ function createNotificationService({
   emailFrom,
   twilioAccountSid,
   twilioAuthToken,
-  twilioFromNumber
+  twilioFromNumber,
+  smsProvider,
+  databasePromise
 }) {
+  const isLocalGateway = (smsProvider || "").toString().trim().toLowerCase() === "local_gateway";
+
   const hasEmailConfig =
     Boolean(smtpHost) &&
     Boolean(smtpPort) &&
     Boolean(smtpUser) &&
     Boolean(smtpPass) &&
     Boolean(emailFrom);
+    
   const hasSmsConfig =
-    Boolean(twilioAccountSid) &&
-    Boolean(twilioAuthToken) &&
-    Boolean(twilioFromNumber);
+    isLocalGateway ||
+    (Boolean(twilioAccountSid) &&
+     Boolean(twilioAuthToken) &&
+     Boolean(twilioFromNumber));
 
   const transporter = hasEmailConfig
     ? nodemailer.createTransport({
@@ -147,7 +153,7 @@ function createNotificationService({
     }
   }
 
-  async function sendSms({ to, message, initiatedBy, eventType }) {
+  async function sendSms({ to, message, initiatedBy, eventType, applicationId }) {
     const normalizedTo = normalizeSmsNumber(to);
     if (!normalizedTo) {
       return createEntry({
@@ -171,6 +177,37 @@ function createNotificationService({
         initiatedBy,
         eventType
       });
+    }
+
+    if (isLocalGateway) {
+      try {
+        const database = await databasePromise;
+        const queuedSms = await database.queuePendingSms({
+          to: normalizedTo,
+          message,
+          applicationId: applicationId || ""
+        });
+
+        return createEntry({
+          channel: "sms",
+          status: "queued",
+          message,
+          recipient: normalizedTo,
+          initiatedBy,
+          eventType,
+          reason: "Queued for local gateway transmission."
+        });
+      } catch (error) {
+        return createEntry({
+          channel: "sms",
+          status: "failed",
+          message,
+          recipient: normalizedTo,
+          reason: error.message || "Failed to queue local gateway SMS.",
+          initiatedBy,
+          eventType
+        });
+      }
     }
 
     try {
@@ -233,7 +270,8 @@ function createNotificationService({
     subject,
     message,
     initiatedBy = "system",
-    eventType = "manual"
+    eventType = "manual",
+    applicationId = ""
   }) {
     const normalizedChannels = Array.from(
       new Set(
@@ -262,7 +300,8 @@ function createNotificationService({
           to: toPhone,
           message,
           initiatedBy,
-          eventType
+          eventType,
+          applicationId
         })
       );
     }

@@ -671,7 +671,9 @@ const notificationService = createNotificationService({
   emailFrom: NOTIFICATIONS_EMAIL_FROM,
   twilioAccountSid: TWILIO_ACCOUNT_SID,
   twilioAuthToken: TWILIO_AUTH_TOKEN,
-  twilioFromNumber: TWILIO_FROM_NUMBER
+  twilioFromNumber: TWILIO_FROM_NUMBER,
+  smsProvider: process.env.SMS_PROVIDER,
+  databasePromise
 });
 const hrLoginRateLimiter = createRateLimiter(RATE_LIMIT_CONFIG.hrLogin);
 const studentTrackingRateLimiter = createRateLimiter(RATE_LIMIT_CONFIG.studentTracking);
@@ -4118,7 +4120,8 @@ async function sendApplicationNotification({
     subject: notification.subject,
     message: notification.message,
     initiatedBy,
-    eventType
+    eventType,
+    applicationId: application.id
   });
 
   appendNotificationEntries(application, entries);
@@ -4596,6 +4599,86 @@ app.get("/api/institution-suggestions", async (req, res) => {
     typedQuery: query,
     ...suggestions
   });
+});
+
+// Middleware to authenticate local SMS gateway client
+function ensureSmsGateway(req, res, next) {
+  const token = (process.env.SMS_GATEWAY_API_KEY || "").trim();
+  if (!token) {
+    return res.status(500).json({ error: "SMS Gateway is not configured on the server." });
+  }
+
+  const authHeader = req.headers["authorization"] || "";
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  const providedToken = match ? match[1].trim() : "";
+
+  if (!providedToken || providedToken !== token) {
+    return res.status(401).json({ error: "Unauthorized Gateway access token." });
+  }
+
+  next();
+}
+
+app.get("/api/v1/sms/pending", ensureSmsGateway, async (req, res) => {
+  try {
+    const database = await databasePromise;
+    const pendingList = await database.getPendingSmsList();
+    return res.json(pendingList);
+  } catch (error) {
+    console.error("Gateway pending list retrieval failed:", error);
+    return res.status(500).json({ error: "Failed to retrieve pending SMS." });
+  }
+});
+
+app.post("/api/v1/sms/status", ensureSmsGateway, async (req, res) => {
+  const reports = req.body || [];
+  if (!Array.isArray(reports)) {
+    return res.status(400).json({ error: "Body must be an array of status reports." });
+  }
+
+  try {
+    const database = await databasePromise;
+    const applications = await readApplications();
+
+    for (const report of reports) {
+      const { id, status, reason, applicationId } = report;
+      if (!id) continue;
+
+      // 1. Delete from pending_sms queue since transmission attempt completed
+      await database.deletePendingSms(id);
+
+      // 2. If applicationId is provided, update application's notification history
+      if (applicationId) {
+        const index = applications.findIndex(app => app.id === applicationId);
+        if (index >= 0) {
+          const application = ensureApplicationDefaults(applications[index]);
+          
+          const historyEntry = {
+            channel: "sms",
+            status: status === "sent" ? "sent" : "failed",
+            message: report.message || "",
+            recipient: report.to || "",
+            reason: reason || (status === "sent" ? "" : "SMS gateway transmission failed."),
+            initiatedBy: "system",
+            eventType: "status_report",
+            sentAt: new Date().toISOString()
+          };
+
+          if (!application.notificationHistory) {
+            application.notificationHistory = [];
+          }
+          application.notificationHistory.push(historyEntry);
+          applications[index] = application;
+        }
+      }
+    }
+
+    await writeApplications(applications);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("Gateway status update failed:", error);
+    return res.status(500).json({ error: "Failed to process status reports." });
+  }
 });
 
 app.post("/api/assistant/chat", csrfProtection, async (req, res) => {
@@ -6552,6 +6635,10 @@ app.post("/hr/communications", csrfProtection, ensureHrAdmin, async (req, res) =
   let skippedCount = 0;
 
   for (const target of recipientTargets) {
+    const firstIndex = target.indexes[0];
+    const firstApp = firstIndex !== undefined ? applications[firstIndex] : null;
+    const appId = firstApp ? firstApp.id : "";
+
     const entries = await notificationService.send({
       channels,
       toEmail: target.email,
@@ -6559,7 +6646,8 @@ app.post("/hr/communications", csrfProtection, ensureHrAdmin, async (req, res) =
       subject,
       message,
       initiatedBy: "hr",
-      eventType: "general_hr_broadcast"
+      eventType: "general_hr_broadcast",
+      applicationId: appId
     });
     const outcome = getNotificationOutcomeSummary(entries);
     deliveredCount += outcome.sent;
@@ -8292,6 +8380,11 @@ async function startServer() {
 }
 
 startServer();
+
+module.exports = {
+  databasePromise,
+  app
+};
 
 process.on("uncaughtException", (error) => {
   console.error("CRITICAL: Uncaught Exception caught globally:", error);
