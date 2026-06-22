@@ -292,6 +292,9 @@
           }
 
           function startDrag(e) {
+            if (window.innerWidth <= 980) {
+              return; // Disable dragging on mobile/tablet viewports where the button is a fixed bottom bar
+            }
             if (e.target.closest("input") || e.target.closest("button:not([data-portal-assistant-toggle])") || e.target.closest("a")) {
               return;
             }
