@@ -134,6 +134,38 @@
           </div>
         </form>
 
+        <% if (isHrAdmin) { %>
+          <hr class="section-divider" style="margin: 2.5rem 0; border: 0; border-top: 1px dashed #ccc;" />
+          <section class="backup-restore-section" style="margin-top: 1.5rem;">
+            <h2 style="margin-bottom: 0.5rem;">System Database Backup & Restore</h2>
+            <p class="field-hint" style="margin-bottom: 1.5rem; line-height: 1.4;">
+              Export a compressed backup containing all application records, settings, and logs. In case of server migration or database failure, upload this backup file to restore the entire portal state.
+            </p>
+            
+            <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+              <!-- Export Box -->
+              <div style="flex: 1; min-width: 280px; border: 1px solid #ddd; padding: 1.5rem; border-radius: 6px; background-color: #fafafa;">
+                <h3 style="margin-top: 0; margin-bottom: 0.5rem; font-size: 1.1rem; color: #1b5e20;">Export Database</h3>
+                <p class="field-hint" style="margin-bottom: 1.5rem;">Download a gzip-compressed backup file containing all portal data.</p>
+                <a href="/hr/backup/export" class="btn" style="display: inline-block; text-align: center; text-decoration: none; font-size: 0.9rem; padding: 0.6rem 1.2rem;">Download Backup (.json.gz)</a>
+              </div>
+              
+              <!-- Restore Box -->
+              <div style="flex: 1; min-width: 280px; border: 1px solid #ddd; padding: 1.5rem; border-radius: 6px; background-color: #fafafa;">
+                <h3 style="margin-top: 0; margin-bottom: 0.5rem; font-size: 1.1rem; color: #b71c1c;">Restore Database</h3>
+                <p class="field-hint" style="margin-bottom: 1rem; color: #b71c1c;">⚠️ Warning: Restoring a backup completely overwrites all current database collections.</p>
+                <form action="/hr/backup/restore" method="post" enctype="multipart/form-data" onsubmit="return confirm('Are you sure you want to restore? This will overwrite the entire database.');">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <div style="margin-bottom: 1rem;">
+                    <input type="file" name="backupFile" accept=".json.gz" required style="display: block; width: 100%; border: 1px solid #ccc; padding: 0.4rem; border-radius: 4px; font-size: 0.85rem;" />
+                  </div>
+                  <button type="submit" class="btn" style="background-color: #b71c1c; border-color: #b71c1c; color: white; font-size: 0.9rem; padding: 0.6rem 1.2rem;">Restore Database Backup</button>
+                </form>
+              </div>
+            </div>
+          </section>
+        <% } %>
+
         <p class="muted-note">Last updated: <%= formatDate(updatedAt) %></p>
       </section>
     </main>

@@ -11,6 +11,7 @@ const { createFileStorage } = require("./file-storage");
 const { createCountyEndorsedNitaPdf } = require("./county-nita-pdf");
 const { createNotificationService } = require("./notification-service");
 const { createJoiningLetterTemplatePdf } = require("./joining-letter-template");
+const backupsService = require("./backups-service");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -771,6 +772,10 @@ const studentDocumentsUploadMiddleware = upload.fields(
 );
 
 const nitaResubmissionUploadMiddleware = upload.single(NITA_RESUBMISSION_FIELD);
+const backupUploadMiddleware = multer({
+  dest: UPLOAD_DIR,
+  limits: { fileSize: 50 * 1024 * 1024 }
+}).single("backupFile");
 
 app.set("view engine", "ejs");
 app.set("views", VIEWS_DIR);
@@ -1261,7 +1266,18 @@ function ensureApplicationDefaults(application) {
 
 async function readApplications() {
   const database = await databasePromise;
-  return (await database.readApplications()).map((application) => ensureApplicationDefaults(application));
+  const list = (await database.readApplications()).map((application) => ensureApplicationDefaults(application));
+  for (const app of list) {
+    if (app) {
+      Object.defineProperty(app, "__originalState", {
+        value: JSON.stringify(app),
+        writable: true,
+        enumerable: false,
+        configurable: true
+      });
+    }
+  }
+  return list;
 }
 
 async function writeApplications(applications) {
@@ -6046,6 +6062,89 @@ app.get("/hr/audit", ensureHrAdmin, async (req, res) => {
   return renderHrAuditPage(res);
 });
 
+app.get("/hr/backup/export", ensureHrAdmin, async (req, res) => {
+  try {
+    const database = await databasePromise;
+    const settings = await database.readSettings();
+    const departmentAdmins = await database.readDepartmentAdmins();
+    const applications = await database.readApplications();
+
+    const backupData = {
+      timestamp: new Date().toISOString(),
+      version: "1.0",
+      settings,
+      departmentAdmins,
+      applications
+    };
+
+    const zlib = require("zlib");
+    const jsonString = JSON.stringify(backupData);
+    const compressed = zlib.gzipSync(Buffer.from(jsonString));
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    res.setHeader("Content-Type", "application/gzip");
+    res.setHeader("Content-Disposition", `attachment; filename="ug-county-attachment-backup-${dateStr}.json.gz"`);
+    res.setHeader("Cache-Control", "no-store");
+    return res.send(compressed);
+  } catch (error) {
+    console.error("Failed to export backup:", error);
+    return res.status(500).send("Failed to generate and export backup.");
+  }
+});
+
+app.post("/hr/backup/restore", ensureHrAdmin, backupUploadMiddleware, async (req, res) => {
+  const file = req.file;
+  if (!file) {
+    return res.redirect("/hr/periods?error=No+backup+file+uploaded");
+  }
+
+  if (!verifyCsrf(req)) {
+    if (file.path && fs.existsSync(file.path)) {
+      try { fs.unlinkSync(file.path); } catch (_) {}
+    }
+    return res.status(403).send("Invalid or missing CSRF token.");
+  }
+
+  try {
+    const fileBytes = fs.readFileSync(file.path);
+    const zlib = require("zlib");
+    const decompressed = zlib.gunzipSync(fileBytes).toString("utf-8");
+    const backup = JSON.parse(decompressed);
+
+    if (!backup.version || !backup.settings || !backup.departmentAdmins || !backup.applications) {
+      throw new Error("Invalid backup file structure.");
+    }
+
+    const database = await databasePromise;
+    
+    // Overwrite collections
+    await database.writeSettings(backup.settings);
+    await database.writeDepartmentAdmins(backup.departmentAdmins);
+    await database.restoreApplications(backup.applications);
+
+    // Audit trail
+    const updatedSettings = await database.readSettings();
+    appendSettingsAudit(updatedSettings, {
+      scope: "system",
+      action: "backup_restored",
+      actorRole: "hr_admin",
+      actorUsername: req.session?.adminUsername || "admin",
+      note: `System database restored successfully from uploaded backup file created at ${backup.timestamp}.`,
+      at: new Date().toISOString()
+    });
+    await database.writeSettings(updatedSettings);
+
+    return res.redirect("/hr/periods?notice=System+database+restored+successfully");
+  } catch (error) {
+    console.error("Failed to restore backup:", error);
+    return res.redirect(`/hr/periods?error=Failed+to+restore+backup:+${encodeURIComponent(error.message)}`);
+  } finally {
+    if (file.path && fs.existsSync(file.path)) {
+      try { fs.unlinkSync(file.path); } catch (_) {}
+    }
+  }
+});
+
 app.get("/hr/supervisors", ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
   let notice = null;
@@ -8155,13 +8254,22 @@ app.use((_req, res) => {
 });
 
 async function startServer() {
+  let db;
   try {
-    await databasePromise;
+    db = await databasePromise;
   } catch (error) {
     console.error("Failed to connect to MongoDB.");
     console.error(error);
     process.exit(1);
   }
+
+  // Initial automatic backup on boot
+  backupsService.createAutomaticBackup(db).catch(console.error);
+
+  // Daily automatic backups (every 24 hours)
+  setInterval(() => {
+    backupsService.createAutomaticBackup(db).catch(console.error);
+  }, 24 * 60 * 60 * 1000);
 
   app.listen(PORT, () => {
     console.log(`Attachment application system running on http://localhost:${PORT}`);
@@ -8184,4 +8292,32 @@ async function startServer() {
 }
 
 startServer();
+
+process.on("uncaughtException", (error) => {
+  console.error("CRITICAL: Uncaught Exception caught globally:", error);
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    fs.appendFileSync(
+      path.join(__dirname, "server-errors.log"),
+      `[${new Date().toISOString()}] Uncaught Exception: ${error.stack || error}\n`
+    );
+  } catch (logError) {
+    console.error("Failed to write to local error log:", logError);
+  }
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("CRITICAL: Unhandled Rejection at Promise:", promise, "reason:", reason);
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    fs.appendFileSync(
+      path.join(__dirname, "server-errors.log"),
+      `[${new Date().toISOString()}] Unhandled Rejection: ${reason?.stack || reason}\n`
+    );
+  } catch (logError) {
+    console.error("Failed to write to local error log:", logError);
+  }
+});
 

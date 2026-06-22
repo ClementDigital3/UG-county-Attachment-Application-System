@@ -151,12 +151,37 @@ async function createDatabase({
   }
 
   async function writeApplications(applications) {
-    const records = (Array.isArray(applications) ? applications : [])
-      .map((application) => buildApplicationRecord(application));
+    const incomingList = Array.isArray(applications) ? applications : [];
+    const ops = [];
 
-    await applicationsCollection.deleteMany({});
-    if (records.length) {
-      await applicationsCollection.insertMany(records, { ordered: true });
+    for (const app of incomingList) {
+      if (!app) continue;
+      const record = buildApplicationRecord(app);
+      
+      const originalStateStr = app.__originalState;
+      const currentStateStr = JSON.stringify(app);
+
+      if (!originalStateStr || originalStateStr !== currentStateStr) {
+        ops.push({
+          replaceOne: {
+            filter: { _id: record._id },
+            replacement: record,
+            upsert: true
+          }
+        });
+        
+        // Update __originalState property so it is considered synced
+        Object.defineProperty(app, "__originalState", {
+          value: currentStateStr,
+          writable: true,
+          enumerable: false,
+          configurable: true
+        });
+      }
+    }
+
+    if (ops.length > 0) {
+      await applicationsCollection.bulkWrite(ops, { ordered: false });
     }
   }
 
@@ -298,6 +323,16 @@ async function createDatabase({
     }
   }
 
+  async function restoreApplications(applications) {
+    const records = (Array.isArray(applications) ? applications : [])
+      .map((application) => buildApplicationRecord(application));
+
+    await applicationsCollection.deleteMany({});
+    if (records.length) {
+      await applicationsCollection.insertMany(records, { ordered: true });
+    }
+  }
+
   async function initializeDefaults() {
     const [settingsRow, departmentAdminCount] = await Promise.all([
       settingsCollection.findOne({ _id: "portal_settings" }, { projection: { _id: 1 } }),
@@ -324,6 +359,7 @@ async function createDatabase({
     writeDepartmentAdmins,
     readApplications,
     writeApplications,
+    restoreApplications,
     readSession,
     writeSession,
     deleteSession,

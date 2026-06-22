@@ -14,3 +14,4 @@ temp_*.log
 temp_*.png
 temp_*.pdf
 *-county-endorsed-nita.pdf
+backups/
