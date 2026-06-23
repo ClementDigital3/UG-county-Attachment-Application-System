@@ -240,9 +240,6 @@ const SMTP_SECURE = process.env.SMTP_SECURE || "false";
 const SMTP_USER = process.env.SMTP_USER || "";
 const SMTP_PASS = process.env.SMTP_PASS || "";
 const NOTIFICATIONS_EMAIL_FROM = process.env.NOTIFICATIONS_EMAIL_FROM || "";
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
-const TWILIO_FROM_NUMBER = process.env.TWILIO_FROM_NUMBER || "";
 const HR_SUPERVISOR_API_URL = process.env.HR_SUPERVISOR_API_URL || "";
 const HR_SUPERVISOR_API_TOKEN = process.env.HR_SUPERVISOR_API_TOKEN || "";
 const HR_SUPERVISOR_API_HEADER = process.env.HR_SUPERVISOR_API_HEADER || "Authorization";
@@ -669,10 +666,6 @@ const notificationService = createNotificationService({
   smtpUser: SMTP_USER,
   smtpPass: SMTP_PASS,
   emailFrom: NOTIFICATIONS_EMAIL_FROM,
-  twilioAccountSid: TWILIO_ACCOUNT_SID,
-  twilioAuthToken: TWILIO_AUTH_TOKEN,
-  twilioFromNumber: TWILIO_FROM_NUMBER,
-  smsProvider: process.env.SMS_PROVIDER,
   databasePromise
 });
 const hrLoginRateLimiter = createRateLimiter(RATE_LIMIT_CONFIG.hrLogin);

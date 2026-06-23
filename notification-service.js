@@ -61,14 +61,8 @@ function createNotificationService({
   smtpUser,
   smtpPass,
   emailFrom,
-  twilioAccountSid,
-  twilioAuthToken,
-  twilioFromNumber,
-  smsProvider,
   databasePromise
 }) {
-  const isLocalGateway = (smsProvider || "").toString().trim().toLowerCase() === "local_gateway";
-
   const hasEmailConfig =
     Boolean(smtpHost) &&
     Boolean(smtpPort) &&
@@ -76,11 +70,7 @@ function createNotificationService({
     Boolean(smtpPass) &&
     Boolean(emailFrom);
     
-  const hasSmsConfig =
-    isLocalGateway ||
-    (Boolean(twilioAccountSid) &&
-     Boolean(twilioAuthToken) &&
-     Boolean(twilioFromNumber));
+  const hasSmsConfig = true; // Always enabled for local gateway queueing
 
   const transporter = hasEmailConfig
     ? nodemailer.createTransport({
@@ -167,88 +157,22 @@ function createNotificationService({
       });
     }
 
-    if (!hasSmsConfig) {
-      return createEntry({
-        channel: "sms",
-        status: "skipped",
-        message,
-        recipient: normalizedTo,
-        reason: "SMS provider is not configured.",
-        initiatedBy,
-        eventType
-      });
-    }
-
-    if (isLocalGateway) {
-      try {
-        const database = await databasePromise;
-        const queuedSms = await database.queuePendingSms({
-          to: normalizedTo,
-          message,
-          applicationId: applicationId || ""
-        });
-
-        return createEntry({
-          channel: "sms",
-          status: "queued",
-          message,
-          recipient: normalizedTo,
-          initiatedBy,
-          eventType,
-          reason: "Queued for local gateway transmission."
-        });
-      } catch (error) {
-        return createEntry({
-          channel: "sms",
-          status: "failed",
-          message,
-          recipient: normalizedTo,
-          reason: error.message || "Failed to queue local gateway SMS.",
-          initiatedBy,
-          eventType
-        });
-      }
-    }
-
     try {
-      const body = new URLSearchParams({
-        To: normalizedTo,
-        From: twilioFromNumber,
-        Body: message
+      const database = await databasePromise;
+      const queuedSms = await database.queuePendingSms({
+        to: normalizedTo,
+        message,
+        applicationId: applicationId || ""
       });
-
-      const response = await fetch(
-        `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Basic ${Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString("base64")}`,
-            "Content-Type": "application/x-www-form-urlencoded"
-          },
-          body
-        }
-      );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        return createEntry({
-          channel: "sms",
-          status: "failed",
-          message,
-          recipient: normalizedTo,
-          reason: errorText || `SMS send failed with status ${response.status}.`,
-          initiatedBy,
-          eventType
-        });
-      }
 
       return createEntry({
         channel: "sms",
-        status: "sent",
+        status: "queued",
         message,
         recipient: normalizedTo,
         initiatedBy,
-        eventType
+        eventType,
+        reason: "Queued for local gateway transmission."
       });
     } catch (error) {
       return createEntry({
@@ -256,7 +180,7 @@ function createNotificationService({
         status: "failed",
         message,
         recipient: normalizedTo,
-        reason: error.message || "SMS send failed.",
+        reason: error.message || "Failed to queue local gateway SMS.",
         initiatedBy,
         eventType
       });
