@@ -240,6 +240,10 @@ const SMTP_SECURE = process.env.SMTP_SECURE || "false";
 const SMTP_USER = process.env.SMTP_USER || "";
 const SMTP_PASS = process.env.SMTP_PASS || "";
 const NOTIFICATIONS_EMAIL_FROM = process.env.NOTIFICATIONS_EMAIL_FROM || "";
+const SMS_PROVIDER = process.env.SMS_PROVIDER || "local_gateway";
+const AFRICASTALKING_USERNAME = process.env.AFRICASTALKING_USERNAME || "";
+const AFRICASTALKING_API_KEY = process.env.AFRICASTALKING_API_KEY || "";
+const AFRICASTALKING_SENDER_ID = process.env.AFRICASTALKING_SENDER_ID || "";
 const HR_SUPERVISOR_API_URL = process.env.HR_SUPERVISOR_API_URL || "";
 const HR_SUPERVISOR_API_TOKEN = process.env.HR_SUPERVISOR_API_TOKEN || "";
 const HR_SUPERVISOR_API_HEADER = process.env.HR_SUPERVISOR_API_HEADER || "Authorization";
@@ -666,6 +670,10 @@ const notificationService = createNotificationService({
   smtpUser: SMTP_USER,
   smtpPass: SMTP_PASS,
   emailFrom: NOTIFICATIONS_EMAIL_FROM,
+  smsProvider: SMS_PROVIDER,
+  africastalkingUsername: AFRICASTALKING_USERNAME,
+  africastalkingApiKey: AFRICASTALKING_API_KEY,
+  africastalkingSenderId: AFRICASTALKING_SENDER_ID,
   databasePromise
 });
 const hrLoginRateLimiter = createRateLimiter(RATE_LIMIT_CONFIG.hrLogin);

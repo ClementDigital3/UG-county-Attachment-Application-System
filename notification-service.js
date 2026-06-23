@@ -61,8 +61,15 @@ function createNotificationService({
   smtpUser,
   smtpPass,
   emailFrom,
+  smsProvider,
+  africastalkingUsername,
+  africastalkingApiKey,
+  africastalkingSenderId,
   databasePromise
 }) {
+  const isLocalGateway = (smsProvider || "").toString().trim().toLowerCase() === "local_gateway";
+  const isAfricasTalking = (smsProvider || "").toString().trim().toLowerCase() === "africastalking";
+
   const hasEmailConfig =
     Boolean(smtpHost) &&
     Boolean(smtpPort) &&
@@ -70,7 +77,9 @@ function createNotificationService({
     Boolean(smtpPass) &&
     Boolean(emailFrom);
     
-  const hasSmsConfig = true; // Always enabled for local gateway queueing
+  const hasSmsConfig =
+    isLocalGateway ||
+    (isAfricasTalking && Boolean(africastalkingUsername) && Boolean(africastalkingApiKey));
 
   const transporter = hasEmailConfig
     ? nodemailer.createTransport({
@@ -157,34 +166,138 @@ function createNotificationService({
       });
     }
 
-    try {
-      const database = await databasePromise;
-      const queuedSms = await database.queuePendingSms({
-        to: normalizedTo,
-        message,
-        applicationId: applicationId || ""
-      });
-
+    if (!hasSmsConfig) {
       return createEntry({
         channel: "sms",
-        status: "queued",
+        status: "skipped",
         message,
         recipient: normalizedTo,
-        initiatedBy,
-        eventType,
-        reason: "Queued for local gateway transmission."
-      });
-    } catch (error) {
-      return createEntry({
-        channel: "sms",
-        status: "failed",
-        message,
-        recipient: normalizedTo,
-        reason: error.message || "Failed to queue local gateway SMS.",
+        reason: "SMS provider is not configured.",
         initiatedBy,
         eventType
       });
     }
+
+    if (isLocalGateway) {
+      try {
+        const database = await databasePromise;
+        const queuedSms = await database.queuePendingSms({
+          to: normalizedTo,
+          message,
+          applicationId: applicationId || ""
+        });
+
+        return createEntry({
+          channel: "sms",
+          status: "queued",
+          message,
+          recipient: normalizedTo,
+          initiatedBy,
+          eventType,
+          reason: "Queued for local gateway transmission."
+        });
+      } catch (error) {
+        return createEntry({
+          channel: "sms",
+          status: "failed",
+          message,
+          recipient: normalizedTo,
+          reason: error.message || "Failed to queue local gateway SMS.",
+          initiatedBy,
+          eventType
+        });
+      }
+    }
+
+    if (isAfricasTalking) {
+      try {
+        const isSandbox = (africastalkingUsername || "").trim().toLowerCase() === "sandbox";
+        const url = isSandbox
+          ? "https://api.sandbox.africastalking.com/version1/messaging"
+          : "https://api.africastalking.com/version1/messaging";
+
+        const bodyParams = {
+          username: africastalkingUsername.trim(),
+          to: normalizedTo,
+          message: message
+        };
+
+        const senderIdClean = (africastalkingSenderId || "").trim();
+        if (senderIdClean && !isSandbox) {
+          bodyParams.from = senderIdClean;
+        }
+
+        const body = new URLSearchParams(bodyParams);
+
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "apiKey": africastalkingApiKey.trim()
+          },
+          body
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          return createEntry({
+            channel: "sms",
+            status: "failed",
+            message,
+            recipient: normalizedTo,
+            reason: errorText || `AfricasTalking failed with status ${response.status}.`,
+            initiatedBy,
+            eventType
+          });
+        }
+
+        const responseData = await response.json();
+        const recipientData = responseData?.SMSMessageData?.Recipients?.[0];
+        const statusText = recipientData?.status?.toLowerCase();
+
+        if (statusText === "success" || statusText === "sent") {
+          return createEntry({
+            channel: "sms",
+            status: "sent",
+            message,
+            recipient: normalizedTo,
+            initiatedBy,
+            eventType
+          });
+        } else {
+          return createEntry({
+            channel: "sms",
+            status: "failed",
+            message,
+            recipient: normalizedTo,
+            reason: recipientData?.failureReason || `AfricasTalking status: ${recipientData?.status || "unknown"}`,
+            initiatedBy,
+            eventType
+          });
+        }
+      } catch (error) {
+        return createEntry({
+          channel: "sms",
+          status: "failed",
+          message,
+          recipient: normalizedTo,
+          reason: error.message || "AfricasTalking API error.",
+          initiatedBy,
+          eventType
+        });
+      }
+    }
+
+    return createEntry({
+      channel: "sms",
+      status: "skipped",
+      message,
+      recipient: normalizedTo,
+      reason: "No active SMS provider configured.",
+      initiatedBy,
+      eventType
+    });
   }
 
   async function send({
