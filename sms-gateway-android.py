@@ -5,10 +5,11 @@ import urllib.request
 import urllib.error
 
 # ================= CONFIGURATION =================
-# Set this to the local network IP and port of your portal server
+# Set this to the local network IP and port of your portal server (e.g., http://192.168.1.15:3000)
+# If testing locally on the same machine running the server, "http://localhost:3000" is fine.
 PORTAL_URL = "http://localhost:3000" 
 # Must match SMS_GATEWAY_API_KEY in your .env file
-API_KEY = "choose-a-strong-api-key-for-phone-auth" 
+API_KEY = "gw_key_uasingishu_2026_x93f2k" 
 # How often to check for new SMS (in seconds)
 POLL_INTERVAL = 8 
 # =================================================
