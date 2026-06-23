@@ -3499,7 +3499,7 @@ function appendNotificationEntries(application, entries) {
 
 function getNotificationOutcomeSummary(entries) {
   const results = Array.isArray(entries) ? entries : [];
-  const sent = results.filter((entry) => entry.status === "sent").length;
+  const sent = results.filter((entry) => entry.status === "sent" || entry.status === "queued").length;
   const failed = results.filter((entry) => entry.status === "failed").length;
   const skipped = results.filter((entry) => entry.status === "skipped").length;
 
