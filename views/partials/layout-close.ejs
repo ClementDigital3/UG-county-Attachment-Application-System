@@ -356,7 +356,9 @@
           if (toggle) {
             toggle.style.cursor = "grab";
             toggle.addEventListener("mousedown", startDrag);
-            toggle.addEventListener("touchstart", startDrag, { passive: false });
+            if (window.innerWidth > 980) {
+              toggle.addEventListener("touchstart", startDrag, { passive: false });
+            }
           }
 
           function startDrag(e) {
@@ -530,7 +532,9 @@
           quickPrompts.forEach((button) => {
             button.addEventListener("click", () => sendMessage(button.dataset.assistantPrompt || ""));
           });
+        })();
 
+        (() => {
           // Testing Feedback Widget Logic
           console.log("[Feedback Widget] Initializing script...");
           const feedbackWidget = document.querySelector("[data-portal-feedback]");
