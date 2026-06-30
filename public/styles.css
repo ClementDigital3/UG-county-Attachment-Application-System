@@ -2137,6 +2137,11 @@ html[data-theme="dark"] .period-chip.closed {
   pointer-events: auto;
 }
 
+.portal-assistant-toggle *,
+.portal-feedback-toggle * {
+  pointer-events: none !important;
+}
+
 .portal-assistant-toggle {
   position: fixed;
   left: 1.2rem;

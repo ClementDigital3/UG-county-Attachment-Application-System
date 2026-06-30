@@ -82,10 +82,16 @@
                 toggle.setAttribute("aria-expanded", isHidden ? "true" : "false");
               }
               if (isHidden) {
-                const input = document.querySelector("[data-portal-assistant-input]");
-                if (input) {
-                  window.setTimeout(() => input.focus(), 50);
-                }
+                try {
+                  const input = document.querySelector("[data-portal-assistant-input]");
+                  if (input) {
+                    window.setTimeout(() => {
+                      try {
+                        input.focus();
+                      } catch (e) {}
+                    }, 50);
+                  }
+                } catch (e) {}
               }
             }
           };
