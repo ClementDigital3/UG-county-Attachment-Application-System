@@ -2130,16 +2130,6 @@ html[data-theme="dark"] .period-chip.closed {
   border-color: #46574e;
 }
 
-.portal-assistant {
-  position: fixed;
-  bottom: 0;
-  right: 0;
-  width: 0;
-  height: 0;
-  z-index: 40;
-  pointer-events: none;
-}
-
 .portal-assistant-toggle,
 .portal-assistant-panel,
 .portal-feedback-toggle,
@@ -2667,15 +2657,6 @@ html[data-theme="dark"] .portal-assistant-status {
 }
 
 /* --- Floating Testing Feedback Widget --- */
-.portal-feedback {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  width: 0;
-  height: 0;
-  z-index: 40;
-  pointer-events: none;
-}
 
 .portal-feedback-toggle {
   position: fixed;
