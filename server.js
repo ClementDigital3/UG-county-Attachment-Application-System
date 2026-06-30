@@ -8387,6 +8387,102 @@ app.use((_req, res) => {
   res.status(404).render("not-found");
 });
 
+const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
+
+async function ensureTestingNitaTemplate() {
+  const filePath = path.join(__dirname, "public", "testing-nita-template.pdf");
+  if (fs.existsSync(filePath)) {
+    return;
+  }
+
+  console.log("Generating default testing NITA template PDF...");
+  try {
+    const pdfDoc = await PDFDocument.create();
+    const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    // Page 1 (Landscape, Letter size: 792 x 612)
+    const page1 = pdfDoc.addPage([792, 612]);
+    
+    page1.drawText("NATIONAL INDUSTRIAL TRAINING AUTHORITY", {
+      x: 50,
+      y: 540,
+      size: 16,
+      font: boldFont,
+      color: rgb(0.08, 0.31, 0.18)
+    });
+    
+    page1.drawText("Industrial Attachment Contract (NITA/IT/IAAI/F/08)", {
+      x: 50,
+      y: 510,
+      size: 14,
+      font: boldFont
+    });
+    
+    page1.drawText("The Industrial Training Act Cap 237 Laws of Kenya", {
+      x: 50,
+      y: 490,
+      size: 10,
+      font: regularFont
+    });
+
+    page1.drawText("General Conditions:", { x: 50, y: 440, size: 12, font: boldFont });
+    const conditions = [
+      "(a) The contract shall be read in conjunction with the Industrial Training Act.",
+      "1. Obey and observe all industrial/site safety rules and regulations.",
+      "2. Serve the employer diligently and obey all lawful instructions.",
+      "3. Not divulge any of the employer's classified information.",
+      "4. Complete all assignments given by the trainer on time.",
+      "5. Maintain the insurance cover for the period of attachment.",
+      "6. Cooperate with fellow employees at work."
+    ];
+    let yPos = 415;
+    for (const cond of conditions) {
+      page1.drawText(cond, { x: 50, y: yPos, size: 9, font: regularFont });
+      yPos -= 20;
+    }
+
+    page1.drawText("Level of Contract: [ ] Craft  [ ] Diploma  [ ] Degree  [ ] Lecturer", { x: 50, y: 220, size: 10, font: boldFont });
+    page1.drawText("Name of Attaching Company: _____________________________________", { x: 50, y: 190, size: 10, font: regularFont });
+    page1.drawText("Name of Attachee: ______________________________________________", { x: 50, y: 165, size: 10, font: regularFont });
+    page1.drawText("Name of Training Institution: ___________________________________", { x: 50, y: 140, size: 10, font: regularFont });
+
+    // Page 2 (Landscape, Letter size: 792 x 612)
+    const page2 = pdfDoc.addPage([792, 612]);
+    
+    page2.drawText("PART A. To be signed by the Attachee", { x: 50, y: 550, size: 11, font: boldFont });
+    page2.drawText("Name (as it appears in ID Card): ____________________________________", { x: 50, y: 525, size: 9, font: regularFont });
+    page2.drawText("ID Card No: __________________ College Adm No. _____________________", { x: 50, y: 500, size: 9, font: regularFont });
+    page2.drawText("Course of Study: __________________________________________________", { x: 50, y: 475, size: 9, font: regularFont });
+
+    page2.drawText("PART B. To be signed by the Training Institution", { x: 50, y: 410, size: 11, font: boldFont });
+    page2.drawText("Name of Institution: _______________________________________________", { x: 50, y: 385, size: 9, font: regularFont });
+    page2.drawText("ILO/Placement Coordinator: ____________________ Tel: ______________", { x: 50, y: 360, size: 9, font: regularFont });
+
+    // Draw Part C (where the county signs)
+    page2.drawText("PART C. To be signed by the Attachment Provider", { x: 420, y: 550, size: 11, font: boldFont });
+    page2.drawText("Name of Attachment Provider ____________________________________", { x: 420, y: 525, size: 9, font: regularFont });
+    page2.drawText("Postal Address _________________ Code _______ Town ____________", { x: 420, y: 500, size: 9, font: regularFont });
+    page2.drawText("Physical Address (Street/Rd) ____________________ Region ________", { x: 420, y: 475, size: 9, font: regularFont });
+    page2.drawText("Telephone: _____________________ Email: _______________________", { x: 420, y: 450, size: 9, font: regularFont });
+    page2.drawText("Name of Officer in charge of Training ____________________________", { x: 420, y: 425, size: 9, font: regularFont });
+    page2.drawText("Signed by (Name) ___________________ Designation _______________", { x: 420, y: 400, size: 9, font: regularFont });
+    page2.drawText("Signed and Stamped _________________________ Date _____________", { x: 420, y: 375, size: 9, font: regularFont });
+
+    page2.drawText("PART D. For NITA use only.", { x: 420, y: 300, size: 11, font: boldFont });
+    page2.drawText("Recommended  [ ]   Not Recommended  [ ]", { x: 420, y: 275, size: 9, font: regularFont });
+    page2.drawText("Name of Officer: ___________________ Designation: _______________", { x: 420, y: 250, size: 9, font: regularFont });
+    page2.drawText("Signature: _________________________ Date: ______________________", { x: 420, y: 225, size: 9, font: regularFont });
+    page2.drawText("Approved  [ ]   Not Approved  [ ]", { x: 420, y: 190, size: 9, font: regularFont });
+
+    const pdfBytes = await pdfDoc.save();
+    fs.writeFileSync(filePath, pdfBytes);
+    console.log("Default testing NITA template PDF generated successfully.");
+  } catch (error) {
+    console.error("Error generating default NITA template PDF:", error);
+  }
+}
+
 async function startServer() {
   let db;
   try {
@@ -8399,6 +8495,9 @@ async function startServer() {
 
   // Initial automatic backup on boot
   backupsService.createAutomaticBackup(db).catch(console.error);
+
+  // Ensure testing NITA template PDF is available in public directory
+  await ensureTestingNitaTemplate();
 
   // Daily automatic backups (every 24 hours)
   setInterval(() => {

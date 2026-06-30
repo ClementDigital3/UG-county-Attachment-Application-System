@@ -175,6 +175,14 @@
                     Upload the same county-endorsed NITA document as a PDF after it has been stamped at the NITA office.
                   </span>
                   <input type="file" name="<%= nitaResubmissionDefinition.key %>" accept="<%= nitaResubmissionDefinition.accept %>" required />
+                  <button type="button" class="btn secondary use-test-nita-btn" data-target-name="<%= nitaResubmissionDefinition.key %>" style="margin-top: 0.5rem; padding: 0.35rem 0.7rem; font-size: 0.78rem; display: inline-flex; align-items: center; gap: 0.3rem; border-radius: 8px; font-weight: 600; width: fit-content; cursor: pointer;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align: middle;">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>Use Default Test NITA Form</span>
+                  </button>
                 </label>
 
                 <div class="actions full-width">
@@ -233,6 +241,16 @@
                     <%= document.key === nitaResubmissionDefinition.key || document.key === 'nitaDocument' ? 'Upload the corrected document as a PDF.' : 'Upload the corrected document as a PDF or DOCX file.' %>
                   </span>
                   <input type="file" name="<%= document.key %>" accept="<%= document.accept %>" required />
+                  <% if (document.key === nitaResubmissionDefinition.key || document.key === 'nitaDocument') { %>
+                    <button type="button" class="btn secondary use-test-nita-btn" data-target-name="<%= document.key %>" style="margin-top: 0.5rem; padding: 0.35rem 0.7rem; font-size: 0.78rem; display: inline-flex; align-items: center; gap: 0.3rem; border-radius: 8px; font-weight: 600; width: fit-content; cursor: pointer;">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align: middle;">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                      </svg>
+                      <span>Use Default Test NITA Form</span>
+                    </button>
+                  <% } %>
                 </label>
               <% }) %>
 
@@ -244,4 +262,57 @@
         <% } %>
       <% } %>
     </main>
+
+    <script>
+      (() => {
+        document.addEventListener("click", async (e) => {
+          const btn = e.target.closest(".use-test-nita-btn");
+          if (!btn) return;
+          
+          const targetName = btn.dataset.targetName;
+          const fileInput = document.querySelector(`input[type="file"][name="${targetName}"]`);
+          if (!fileInput) return;
+
+          const originalText = btn.innerHTML;
+          btn.disabled = true;
+          btn.innerHTML = `
+            <span class="loading-spinner" style="margin-right: 0.2rem; vertical-align: middle;"></span>
+            <span>Loading template...</span>
+          `;
+
+          try {
+            const response = await fetch("/testing-nita-template.pdf");
+            if (!response.ok) throw new Error("Failed to fetch template");
+            const blob = await response.blob();
+            const file = new File([blob], "testing-nita-template.pdf", { type: "application/pdf" });
+            
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            fileInput.files = dataTransfer.files;
+
+            fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+
+            btn.style.background = "var(--success)";
+            btn.style.color = "#ffffff";
+            btn.innerHTML = `
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.2rem; vertical-align: middle;">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>Test NITA Loaded!</span>
+            `;
+          } catch (err) {
+            console.error(err);
+            btn.style.background = "var(--danger)";
+            btn.style.color = "#ffffff";
+            btn.innerHTML = `<span>Error loading template</span>`;
+            setTimeout(() => {
+              btn.disabled = false;
+              btn.style.background = "";
+              btn.style.color = "";
+              btn.innerHTML = originalText;
+            }, 2000);
+          }
+        });
+      })();
+    </script>
 <%- include("partials/layout-close") %>
