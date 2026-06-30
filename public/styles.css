@@ -2139,19 +2139,27 @@ html[data-theme="dark"] .period-chip.closed {
 
 .portal-assistant-toggle {
   position: fixed;
-  right: 1.2rem;
+  left: 1.2rem;
   bottom: 1.2rem;
   z-index: 40;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 0.8rem;
-  border-radius: 14px;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: linear-gradient(135deg, #145c34 0%, #1e7a45 58%, #2d9256 100%);
   color: #f6fff8;
   box-shadow: 0 10px 25px rgba(8, 29, 17, 0.22);
   cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  padding: 0;
+}
+
+.portal-assistant-toggle:hover {
+  transform: scale(1.08);
+  box-shadow: 0 12px 28px rgba(8, 29, 17, 0.3);
 }
 
 .portal-assistant-avatar-wrap,
@@ -2217,11 +2225,10 @@ html[data-theme="dark"] .period-chip.closed {
 
 .portal-assistant-panel {
   position: fixed;
-  right: 1.2rem;
-  top: 50%;
-  transform: translateY(-50%);
+  left: 1.2rem;
+  bottom: 5.2rem;
   z-index: 45;
-  width: min(340px, calc(100vw - 1.6rem));
+  width: min(340px, calc(100vw - 2.4rem));
   border-radius: 20px;
   border: 1px solid rgba(19, 59, 34, 0.1);
   background:
@@ -2463,19 +2470,21 @@ html[data-theme="dark"] .portal-assistant-status {
 
   .portal-assistant-toggle {
     position: fixed !important;
-    left: 0.8rem !important;
-    right: 0.8rem !important;
-    bottom: 0.8rem !important;
+    left: 1.0rem !important;
+    bottom: 1.0rem !important;
+    right: auto !important;
     top: auto !important;
-    width: auto !important;
+    width: 56px !important;
+    height: 56px !important;
+    border-radius: 50% !important;
     z-index: 40;
   }
 
   .portal-assistant-panel {
     position: fixed !important;
-    left: 0.8rem !important;
-    right: 0.8rem !important;
-    bottom: 4.5rem !important;
+    left: 1.0rem !important;
+    right: 1.0rem !important;
+    bottom: 5.0rem !important;
     top: auto !important;
     transform: none !important;
     width: auto !important;
@@ -2661,34 +2670,34 @@ html[data-theme="dark"] .portal-assistant-status {
 .portal-feedback-toggle {
   position: fixed;
   left: 1.2rem;
-  bottom: 1.2rem;
+  bottom: 5.2rem;
   z-index: 40;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.8rem;
-  border-radius: 14px;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: linear-gradient(135deg, #d3a326 0%, #9a7210 100%);
   color: #ffffff;
   box-shadow: 0 10px 25px rgba(8, 29, 17, 0.22);
   cursor: pointer;
-  font-weight: 600;
-  font-size: 0.82rem;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  padding: 0;
 }
 
 .portal-feedback-toggle:hover {
-  transform: translateY(-2px);
+  transform: scale(1.08);
   box-shadow: 0 12px 28px rgba(8, 29, 17, 0.3);
 }
 
 .portal-feedback-panel {
   position: fixed;
   left: 1.2rem;
-  bottom: 4.2rem;
+  bottom: 9.2rem;
   z-index: 45;
-  width: min(340px, calc(100vw - 1.6rem));
+  width: min(340px, calc(100vw - 2.4rem));
   border-radius: 20px;
   border: 1px solid rgba(19, 59, 34, 0.1);
   background:
@@ -2724,23 +2733,26 @@ html[data-theme="dark"] .portal-feedback-panel {
 @media (max-width: 980px) {
   .portal-feedback-toggle {
     position: fixed !important;
-    left: 0.8rem !important;
-    right: 0.8rem !important;
-    bottom: 4.6rem !important;
-    width: auto !important;
+    left: 1.0rem !important;
+    bottom: 5.0rem !important;
+    right: auto !important;
+    top: auto !important;
+    width: 56px !important;
+    height: 56px !important;
+    border-radius: 50% !important;
     z-index: 40;
     justify-content: center;
   }
 
   .portal-feedback-panel {
     position: fixed;
-    left: 0.8rem;
-    right: 0.8rem;
-    bottom: 8.2rem;
+    left: 1.0rem;
+    right: 1.0rem;
+    bottom: 9.0rem;
     top: auto;
     transform: none;
     width: auto;
-    max-height: calc(100vh - 10.0rem);
+    max-height: calc(100vh - 10.5rem);
     z-index: 45;
   }
 }

@@ -63,6 +63,46 @@
       </footer>
 
       <% if (footerPortal !== 'hr') { %>
+        <script>
+          window.toggleAssistantPanel = function(event) {
+            if (window.portalAssistantHasDragged) {
+              window.portalAssistantHasDragged = false;
+              if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+              return;
+            }
+            const panel = document.getElementById("portalAssistantPanel");
+            if (panel) {
+              const isHidden = panel.hidden;
+              panel.hidden = !isHidden;
+              const toggle = document.querySelector("[data-portal-assistant-toggle]");
+              if (toggle) {
+                toggle.setAttribute("aria-expanded", isHidden ? "true" : "false");
+              }
+              if (isHidden) {
+                const input = document.querySelector("[data-portal-assistant-input]");
+                if (input) {
+                  window.setTimeout(() => input.focus(), 50);
+                }
+              }
+            }
+          };
+
+          window.toggleFeedbackPanel = function(event) {
+            const panel = document.getElementById("portalFeedbackPanel");
+            if (panel) {
+              const isHidden = panel.hidden;
+              panel.hidden = !isHidden;
+              const toggle = document.querySelector("[data-portal-feedback-toggle]");
+              if (toggle) {
+                toggle.setAttribute("aria-expanded", isHidden ? "true" : "false");
+              }
+            }
+          };
+        </script>
+
         <div class="portal-assistant" data-portal-assistant>
           <button
             class="portal-assistant-toggle"
@@ -70,13 +110,11 @@
             aria-expanded="false"
             aria-controls="portalAssistantPanel"
             data-portal-assistant-toggle
+            onclick="toggleAssistantPanel(event)"
+            title="Ask County Assistant"
           >
-            <span class="portal-assistant-avatar-wrap" aria-hidden="true">
-              <img class="portal-assistant-avatar" src="/county-assistant-lady.svg" alt="" />
-            </span>
-            <span class="portal-assistant-toggle-copy">
-              <span class="portal-assistant-toggle-kicker">AI Help</span>
-              <strong>Ask County Assistant</strong>
+            <span class="portal-assistant-avatar-wrap" aria-hidden="true" style="margin: 0; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;">
+              <img class="portal-assistant-avatar" src="/county-assistant-lady.svg" alt="" style="width: 100%; height: 100%; object-fit: contain;" />
             </span>
           </button>
 
@@ -141,11 +179,12 @@
             aria-expanded="false"
             aria-controls="portalFeedbackPanel"
             data-portal-feedback-toggle
+            onclick="toggleFeedbackPanel(event)"
+            title="System Feedback"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right: 0.2rem; vertical-align: middle;">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin: 0;">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
             </svg>
-            <span>System Feedback</span>
           </button>
 
           <section
@@ -498,20 +537,7 @@
             }
           }
 
-          if (toggle) {
-            toggle.addEventListener("click", (e) => {
-              console.log("[Assistant Widget] Toggle button clicked. hasDragged:", hasDragged);
-              if (hasDragged) {
-                hasDragged = false;
-                e.preventDefault();
-                e.stopPropagation();
-                return;
-              }
-              setOpen(panel.hidden);
-            });
-          } else {
-            console.error("[Assistant Widget] Toggle button is null!");
-          }
+          // Handled via window-level global inline onclick callback
           if (closeButton) {
             closeButton.addEventListener("click", () => setOpen(false));
           }
@@ -570,14 +596,7 @@
               feedbackToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
             }
 
-            if (feedbackToggle) {
-              feedbackToggle.addEventListener("click", () => {
-                console.log("[Feedback Widget] Toggle button clicked. feedbackPanel.hidden:", feedbackPanel.hidden);
-                toggleFeedback(feedbackPanel.hidden);
-              });
-            } else {
-              console.error("[Feedback Widget] Toggle button is null!");
-            }
+            // Handled via window-level global inline onclick callback
 
             if (feedbackClose) {
               feedbackClose.addEventListener("click", () => {
