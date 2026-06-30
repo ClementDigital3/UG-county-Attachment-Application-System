@@ -2131,7 +2131,20 @@ html[data-theme="dark"] .period-chip.closed {
 }
 
 .portal-assistant {
-  display: contents;
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.portal-assistant-toggle,
+.portal-assistant-panel,
+.portal-feedback-toggle,
+.portal-feedback-panel {
+  pointer-events: auto;
 }
 
 .portal-assistant-toggle {
@@ -2456,9 +2469,7 @@ html[data-theme="dark"] .portal-assistant-status {
     justify-content: flex-start;
   }
 
-  .portal-assistant {
-    display: contents;
-  }
+  /* Removed display: contents to prevent WebKit touch click bug */
 
   .portal-assistant-toggle {
     position: fixed !important;
@@ -2656,6 +2667,16 @@ html[data-theme="dark"] .portal-assistant-status {
 }
 
 /* --- Floating Testing Feedback Widget --- */
+.portal-feedback {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
 .portal-feedback-toggle {
   position: fixed;
   left: 1.2rem;
@@ -2724,7 +2745,7 @@ html[data-theme="dark"] .portal-feedback-panel {
     position: fixed !important;
     left: 0.8rem !important;
     right: 0.8rem !important;
-    bottom: 3.8rem !important;
+    bottom: 4.6rem !important;
     width: auto !important;
     z-index: 40;
     justify-content: center;
@@ -2734,11 +2755,11 @@ html[data-theme="dark"] .portal-feedback-panel {
     position: fixed;
     left: 0.8rem;
     right: 0.8rem;
-    bottom: 7.2rem;
+    bottom: 8.2rem;
     top: auto;
     transform: none;
     width: auto;
-    max-height: calc(100vh - 9.0rem);
+    max-height: calc(100vh - 10.0rem);
     z-index: 45;
   }
 }
