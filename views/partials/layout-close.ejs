@@ -132,6 +132,59 @@
             </form>
           </section>
         </div>
+
+        <!-- Testing Feedback Widget -->
+        <div class="portal-feedback" data-portal-feedback>
+          <button
+            class="portal-feedback-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="portalFeedbackPanel"
+            data-portal-feedback-toggle
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right: 0.2rem; vertical-align: middle;">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span>System Feedback</span>
+          </button>
+
+          <section
+            id="portalFeedbackPanel"
+            class="portal-feedback-panel"
+            hidden
+            aria-label="Testing feedback panel"
+          >
+            <div class="portal-feedback-head">
+              <h3 style="margin: 0; font-size: 1.05rem;">System Feedback</h3>
+              <button class="portal-feedback-close" type="button" data-portal-feedback-close aria-label="Close feedback panel" style="background: none; border: none; font-size: 1.4rem; cursor: pointer; line-height: 1;">
+                &times;
+              </button>
+            </div>
+            
+            <p style="font-size: 0.8rem; margin: 0 0 0.8rem 0; color: var(--muted); line-height: 1.4;">
+              Submit feedback, bug reports, or suggestions. They are logged directly into the HR audit trail.
+            </p>
+
+            <form id="testingFeedbackFormWidget" class="feedback-form" method="POST" action="/api/testing-feedback">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              
+              <div class="form-group" style="margin-bottom: 0.8rem;">
+                <label for="feedbackWidgetName" style="display: block; font-weight: 600; font-size: 0.8rem; margin-bottom: 0.25rem; color: var(--muted);">Name / Org (Optional)</label>
+                <input type="text" id="feedbackWidgetName" name="name" placeholder="Anonymous Tester" style="width: 100%; padding: 0.5rem; border-radius: 8px; border: 1px solid var(--border); background: var(--input-bg); color: var(--input-text); font-family: inherit; font-size: 0.85rem;" />
+              </div>
+              
+              <div class="form-group" style="margin-bottom: 0.8rem;">
+                <label for="feedbackWidgetMessage" style="display: block; font-weight: 600; font-size: 0.8rem; margin-bottom: 0.25rem; color: var(--muted);">Observations / Bugs <span style="color: var(--danger);">*</span></label>
+                <textarea id="feedbackWidgetMessage" name="message" rows="3" required placeholder="Describe your observations or suggestions..." style="width: 100%; padding: 0.5rem; border-radius: 8px; border: 1px solid var(--border); background: var(--input-bg); color: var(--input-text); font-family: inherit; font-size: 0.85rem; resize: vertical;"></textarea>
+              </div>
+              
+              <button type="submit" id="submitFeedbackWidgetBtn" class="btn" style="width: 100%; padding: 0.6rem; font-size: 0.85rem;">
+                Submit Feedback
+              </button>
+            </form>
+            <div id="feedbackWidgetResponseMsg" style="margin-top: 0.8rem; padding: 0.5rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; display: none;"></div>
+          </section>
+        </div>
       <% } %>
 
     </div>
@@ -454,6 +507,82 @@
           quickPrompts.forEach((button) => {
             button.addEventListener("click", () => sendMessage(button.dataset.assistantPrompt || ""));
           });
+
+          // Testing Feedback Widget Logic
+          const feedbackWidget = document.querySelector("[data-portal-feedback]");
+          if (feedbackWidget) {
+            const feedbackToggle = feedbackWidget.querySelector("[data-portal-feedback-toggle]");
+            const feedbackPanel = document.getElementById("portalFeedbackPanel");
+            const feedbackClose = feedbackWidget.querySelector("[data-portal-feedback-close]");
+            const feedbackForm = document.getElementById("testingFeedbackFormWidget");
+            const feedbackName = document.getElementById("feedbackWidgetName");
+            const feedbackMsg = document.getElementById("feedbackWidgetMessage");
+            const feedbackSubmitBtn = document.getElementById("submitFeedbackWidgetBtn");
+            const feedbackResponse = document.getElementById("feedbackWidgetResponseMsg");
+
+            function toggleFeedback(isOpen) {
+              feedbackPanel.hidden = !isOpen;
+              feedbackToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+            }
+
+            if (feedbackToggle) {
+              feedbackToggle.addEventListener("click", () => {
+                toggleFeedback(feedbackPanel.hidden);
+              });
+            }
+
+            if (feedbackClose) {
+              feedbackClose.addEventListener("click", () => {
+                toggleFeedback(false);
+              });
+            }
+
+            if (feedbackForm) {
+              feedbackForm.addEventListener("submit", async (e) => {
+                e.preventDefault();
+
+                feedbackSubmitBtn.disabled = true;
+                feedbackSubmitBtn.textContent = "Submitting...";
+                feedbackResponse.style.display = "none";
+
+                try {
+                  const response = await fetch("/api/testing-feedback", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                      _csrf: feedbackForm.querySelector('input[name="_csrf"]').value,
+                      name: feedbackName.value,
+                      message: feedbackMsg.value
+                    })
+                  });
+
+                  const data = await response.json();
+                  if (response.ok && data.success) {
+                    feedbackResponse.style.display = "block";
+                    feedbackResponse.style.backgroundColor = "rgba(31, 125, 66, 0.1)";
+                    feedbackResponse.style.color = "var(--success)";
+                    feedbackResponse.style.border = "1px solid var(--success)";
+                    feedbackResponse.textContent = data.message;
+                    feedbackForm.reset();
+                    setTimeout(() => toggleFeedback(false), 2000);
+                  } else {
+                    throw new Error(data.error || "An error occurred while submitting feedback.");
+                  }
+                } catch (err) {
+                  feedbackResponse.style.display = "block";
+                  feedbackResponse.style.backgroundColor = "rgba(180, 35, 24, 0.1)";
+                  feedbackResponse.style.color = "var(--danger)";
+                  feedbackResponse.style.border = "1px solid var(--danger)";
+                  feedbackResponse.textContent = err.message || "Failed to submit feedback. Please try again.";
+                } finally {
+                  feedbackSubmitBtn.disabled = false;
+                  feedbackSubmitBtn.textContent = "Submit Feedback";
+                }
+              });
+            }
+          }
         })();
       </script>
     <% } %>
