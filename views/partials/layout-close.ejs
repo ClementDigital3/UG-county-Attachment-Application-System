@@ -316,8 +316,10 @@
     <% if (footerPortal !== 'hr') { %>
       <script>
         (() => {
+          console.log("[Assistant Widget] Initializing script...");
           const widget = document.querySelector("[data-portal-assistant]");
           if (!widget) {
+            console.warn("[Assistant Widget] Container '[data-portal-assistant]' not found.");
             return;
           }
 
@@ -331,6 +333,19 @@
           const status = widget.querySelector("[data-portal-assistant-status]");
           const quickPrompts = widget.querySelectorAll("[data-assistant-prompt]");
           const history = [];
+
+          console.log("[Assistant Widget] DOMElements query result:", {
+            widget: !!widget,
+            toggle: !!toggle,
+            panel: !!panel,
+            closeButton: !!closeButton,
+            thread: !!thread,
+            form: !!form,
+            input: !!input,
+            sendButton: !!sendButton,
+            status: !!status,
+            quickPromptsCount: quickPrompts.length
+          });
 
           // Dragging logic
           let isDragging = false;
@@ -398,6 +413,11 @@
           }
 
           function setOpen(isOpen) {
+            console.log("[Assistant Widget] setOpen called:", isOpen);
+            if (!panel) {
+              console.error("[Assistant Widget] Cannot open: panel element is missing!");
+              return;
+            }
             panel.hidden = !isOpen;
             toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
             if (isOpen) {
@@ -478,6 +498,7 @@
 
           if (toggle) {
             toggle.addEventListener("click", (e) => {
+              console.log("[Assistant Widget] Toggle button clicked. hasDragged:", hasDragged);
               if (hasDragged) {
                 hasDragged = false;
                 e.preventDefault();
@@ -486,6 +507,8 @@
               }
               setOpen(panel.hidden);
             });
+          } else {
+            console.error("[Assistant Widget] Toggle button is null!");
           }
           if (closeButton) {
             closeButton.addEventListener("click", () => setOpen(false));
@@ -509,6 +532,7 @@
           });
 
           // Testing Feedback Widget Logic
+          console.log("[Feedback Widget] Initializing script...");
           const feedbackWidget = document.querySelector("[data-portal-feedback]");
           if (feedbackWidget) {
             const feedbackToggle = feedbackWidget.querySelector("[data-portal-feedback-toggle]");
@@ -520,15 +544,35 @@
             const feedbackSubmitBtn = document.getElementById("submitFeedbackWidgetBtn");
             const feedbackResponse = document.getElementById("feedbackWidgetResponseMsg");
 
+            console.log("[Feedback Widget] DOMElements query result:", {
+              feedbackWidget: !!feedbackWidget,
+              feedbackToggle: !!feedbackToggle,
+              feedbackPanel: !!feedbackPanel,
+              feedbackClose: !!feedbackClose,
+              feedbackForm: !!feedbackForm,
+              feedbackName: !!feedbackName,
+              feedbackMsg: !!feedbackMsg,
+              feedbackSubmitBtn: !!feedbackSubmitBtn,
+              feedbackResponse: !!feedbackResponse
+            });
+
             function toggleFeedback(isOpen) {
+              console.log("[Feedback Widget] toggleFeedback called:", isOpen);
+              if (!feedbackPanel) {
+                console.error("[Feedback Widget] Cannot open: panel element is missing!");
+                return;
+              }
               feedbackPanel.hidden = !isOpen;
               feedbackToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
             }
 
             if (feedbackToggle) {
               feedbackToggle.addEventListener("click", () => {
+                console.log("[Feedback Widget] Toggle button clicked. feedbackPanel.hidden:", feedbackPanel.hidden);
                 toggleFeedback(feedbackPanel.hidden);
               });
+            } else {
+              console.error("[Feedback Widget] Toggle button is null!");
             }
 
             if (feedbackClose) {
