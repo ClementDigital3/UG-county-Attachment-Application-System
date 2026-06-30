@@ -194,5 +194,92 @@
           </div>
         </section>
       </section>
+
+      <!-- Testing Feedback Panel -->
+      <section class="card landing-window-panel" style="margin-top: 0.85rem;">
+        <div class="row-between">
+          <div>
+            <p class="eyebrow">Testing Feedback</p>
+            <h2>Help us improve the system</h2>
+          </div>
+        </div>
+        <p class="landing-brief-copy" style="max-width: 100%; margin-bottom: 1.25rem;">
+          If you are testing the attachment portal, please leave your feedback, suggestions, or report any issues below. Your feedback will be directly logged into the system audit trail on the HR portal.
+        </p>
+        <form id="testingFeedbackForm" class="feedback-form" method="POST" action="/api/testing-feedback" style="max-width: 600px;">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label for="feedbackName" style="display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 0.35rem; color: var(--muted);">Your Name / Organization (Optional)</label>
+            <input type="text" id="feedbackName" name="name" placeholder="Anonymous Tester" style="width: 100%; padding: 0.75rem; border-radius: 10px; border: 1px solid var(--border); background: var(--input-bg); color: var(--input-text); font-family: inherit; font-size: 0.9rem;" />
+          </div>
+          
+          <div class="form-group" style="margin-bottom: 1.25rem;">
+            <label for="feedbackMessage" style="display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 0.35rem; color: var(--muted);">Feedback / Bug Reports / Suggestions <span style="color: var(--danger);">*</span></label>
+            <textarea id="feedbackMessage" name="message" rows="4" required placeholder="Type your observations, suggestions, or bugs here..." style="width: 100%; padding: 0.75rem; border-radius: 10px; border: 1px solid var(--border); background: var(--input-bg); color: var(--input-text); font-family: inherit; font-size: 0.9rem; resize: vertical;"></textarea>
+          </div>
+          
+          <button type="submit" id="submitFeedbackBtn" class="btn" style="padding: 0.7rem 1.5rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;">
+            Submit Feedback
+          </button>
+        </form>
+        <div id="feedbackResponseMsg" style="margin-top: 1rem; padding: 0.75rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; display: none;"></div>
+      </section>
+
+      <script>
+        document.addEventListener("DOMContentLoaded", () => {
+          const form = document.getElementById("testingFeedbackForm");
+          const nameInput = document.getElementById("feedbackName");
+          const msgInput = document.getElementById("feedbackMessage");
+          const submitBtn = document.getElementById("submitFeedbackBtn");
+          const responseDiv = document.getElementById("feedbackResponseMsg");
+
+          if (form) {
+            form.addEventListener("submit", async (e) => {
+              e.preventDefault();
+
+              submitBtn.disabled = true;
+              submitBtn.textContent = "Submitting...";
+              responseDiv.style.display = "none";
+
+              try {
+                const response = await fetch("/api/testing-feedback", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json"
+                  },
+                  body: JSON.stringify({
+                    _csrf: form.querySelector('input[name="_csrf"]').value,
+                    name: nameInput.value,
+                    message: msgInput.value
+                  })
+                });
+
+                const data = await response.json();
+                if (response.ok && data.success) {
+                  responseDiv.style.display = "block";
+                  responseDiv.style.backgroundColor = "rgba(31, 125, 66, 0.1)";
+                  responseDiv.style.color = "var(--success)";
+                  responseDiv.style.border = "1px solid var(--success)";
+                  responseDiv.textContent = data.message;
+                  form.reset();
+                } else {
+                  throw new Error(data.error || "An error occurred while submitting feedback.");
+                }
+              } catch (err) {
+                responseDiv.style.display = "block";
+                responseDiv.style.backgroundColor = "rgba(180, 35, 24, 0.1)";
+                responseDiv.style.color = "var(--danger)";
+                responseDiv.style.border = "1px solid var(--danger)";
+                responseDiv.textContent = err.message || "Failed to submit feedback. Please try again.";
+              } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Submit Feedback";
+              }
+            });
+          }
+        });
+      </script>
     </main>
 <%- include("partials/layout-close") %>
+

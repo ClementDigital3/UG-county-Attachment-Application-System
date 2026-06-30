@@ -679,6 +679,11 @@ const notificationService = createNotificationService({
 const hrLoginRateLimiter = createRateLimiter(RATE_LIMIT_CONFIG.hrLogin);
 const studentTrackingRateLimiter = createRateLimiter(RATE_LIMIT_CONFIG.studentTracking);
 const portalAssistantRateLimiter = createRateLimiter(RATE_LIMIT_CONFIG.portalAssistant);
+const testingFeedbackRateLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  maxAttempts: 5,
+  blockMs: 2 * 60 * 1000
+});
 
 class MongoSessionStore extends session.Store {
   constructor(dbPromise) {
@@ -4679,6 +4684,46 @@ app.post("/api/v1/sms/status", ensureSmsGateway, async (req, res) => {
   } catch (error) {
     console.error("Gateway status update failed:", error);
     return res.status(500).json({ error: "Failed to process status reports." });
+  }
+});
+
+app.post("/api/testing-feedback", csrfProtection, async (req, res) => {
+  const rateLimitKey = req.ip || "unknown";
+  const rateLimitState = testingFeedbackRateLimiter.check(rateLimitKey);
+
+  if (!rateLimitState.allowed) {
+    return res.status(429).json({
+      error: `Too many feedback submissions. Try again in ${formatRetryWindow(rateLimitState.retryAfterMs)}.`
+    });
+  }
+
+  try {
+    const { name, message } = req.body;
+    if (!message || !message.trim()) {
+      testingFeedbackRateLimiter.fail(rateLimitKey);
+      return res.status(400).json({ error: "Feedback message cannot be empty." });
+    }
+
+    const database = await databasePromise;
+    const settings = await database.readSettings();
+
+    const testerName = (name && name.trim()) ? name.trim() : "Anonymous Tester";
+    appendSettingsAudit(settings, {
+      scope: "testing-feedback",
+      action: "feedback_submitted",
+      actorRole: "tester",
+      actorUsername: testerName,
+      note: message.trim(),
+      at: new Date().toISOString()
+    });
+
+    await database.writeSettings(settings);
+    testingFeedbackRateLimiter.reset(rateLimitKey);
+
+    return res.json({ success: true, message: "Feedback submitted successfully! Thank you." });
+  } catch (error) {
+    console.error("Failed to save testing feedback:", error);
+    return res.status(500).json({ error: "Failed to submit feedback. Please try again." });
   }
 });
 
