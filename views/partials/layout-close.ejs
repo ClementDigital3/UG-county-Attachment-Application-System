@@ -65,7 +65,7 @@
       <% if (footerPortal !== 'hr') { %>
         <script>
           window.toggleAssistantPanel = function(event) {
-            if (window.portalAssistantHasDragged) {
+            if (window.innerWidth > 980 && window.portalAssistantHasDragged) {
               window.portalAssistantHasDragged = false;
               if (event) {
                 event.preventDefault();
