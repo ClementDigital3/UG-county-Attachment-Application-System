@@ -63,12 +63,12 @@ Email should be treated as the primary official notification channel unless SMS 
 
 ### AI Assistant and Testing Feedback Widgets
 
-The student-facing pages include two floating, circular action widgets positioned on the bottom-left of the screen:
+The student-facing pages include two floating, circular action widgets positioned on the bottom-right of the screen:
 
-- **Ask County Assistant:** A green circular toggle button (`bottom: 1.2rem; left: 1.2rem;`) that opens an AI chat panel directly above it. It works in two modes:
+- **Ask County Assistant:** A green circular toggle button (`bottom: 1.2rem; right: 1.2rem;`) that opens an AI chat panel directly above it. It works in two modes:
   - live AI mode when `OPENAI_API_KEY` is configured.
   - fallback guidance mode when the live AI provider is unavailable.
-- **System Feedback:** A gold circular toggle button (`bottom: 5.2rem; left: 1.2rem;`) that opens a tester feedback form. Feedback submissions are transmitted via AJAX, protected by CSRF, rate-limited, and recorded directly to the HR audit trail for review.
+- **System Feedback:** A gold circular toggle button (`bottom: 5.2rem; right: 1.2rem;`) that opens a tester feedback form. Feedback submissions are transmitted via AJAX, protected by CSRF, rate-limited, and recorded directly to the HR audit trail for review.
 
 Both widgets are highly optimized for mobile devices (including Xiaomi/Redmi viewports) utilizing direct inline `onclick` event handlers and pointer-events locks to prevent event swallowing.
 
