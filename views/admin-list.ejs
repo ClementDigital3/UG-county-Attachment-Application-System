@@ -119,10 +119,12 @@
                       <a href="/admin/applications/<%= application.id %>">Review</a>
                       <% if (application.isFrozen) { %>
                         <form action="/admin/applications/<%= application.id %>/unfreeze" method="post">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <button type="submit" class="link-btn">Restore</button>
                         </form>
                       <% } else { %>
                         <form action="/admin/applications/<%= application.id %>/freeze" method="post" onsubmit="return confirm('Freeze this application record?');">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <button type="submit" class="link-btn danger-text">Freeze</button>
                         </form>
                       <% } %>

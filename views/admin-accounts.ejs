@@ -89,6 +89,7 @@
               </div>
 
               <form action="/hr/admin-accounts/<%= account.username %>/update" method="post" class="form-grid">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                 <label>
                   Record Code
                   <input type="text" name="username" value="<%= account.username %>" required />
@@ -118,6 +119,7 @@
 
               <div class="actions">
                 <form action="/hr/admin-accounts/<%= account.username %>/toggle" method="post">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                   <input type="hidden" name="isActive" value="<%= account.isActive ? '0' : '1' %>" />
                   <button class="btn secondary" type="submit">
                     <%= account.isActive ? 'Freeze Record' : 'Restore Record' %>

@@ -130,6 +130,7 @@
 
         <% if (application.nitaWorkflow.status !== 'Completed' && application.nitaResubmittedDocument && application.nitaResubmittedDocument.filename) { %>
           <form action="/hr/applications/<%= application.id %>/nita-complete" method="post" class="form-grid">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
             <div class="actions full-width">
               <button class="btn" type="submit">Confirm NITA Workflow Complete</button>
             </div>
@@ -139,6 +140,7 @@
         <h2>HR Final Decision</h2>
         <p>Department review happens first. HR can only make the final admission decision after the NITA workflow is completed.</p>
         <form action="/hr/applications/<%= application.id %>/status" method="post" class="form-grid">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
           <label>
             HR Status
             <select name="status" required>
@@ -183,6 +185,7 @@
 
         <% if (application.status === 'Admitted') { %>
           <form action="/hr/applications/<%= application.id %>/supervisor" method="post" class="form-grid">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
             <label class="full-width">
               County Supervisor
               <select name="supervisorId">
@@ -259,6 +262,7 @@
         <p>Complete the NITA workflow and set status to <strong>Admitted</strong> first, then generate the official joining letter. Once generated, it is published immediately for the student to download from the dashboard.</p>
 
         <form action="/hr/applications/<%= application.id %>/joining-letter-template" method="post" class="form-grid">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
           <label>
             Template
             <select name="templateKey" required>
