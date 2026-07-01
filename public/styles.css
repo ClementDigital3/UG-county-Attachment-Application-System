@@ -2146,7 +2146,7 @@ html[data-theme="dark"] .period-chip.closed {
   position: fixed;
   right: 1.2rem;
   bottom: 1.2rem;
-  z-index: 40;
+  z-index: 20000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2232,7 +2232,7 @@ html[data-theme="dark"] .period-chip.closed {
   position: fixed;
   right: 1.2rem;
   bottom: 5.2rem;
-  z-index: 45;
+  z-index: 20005;
   width: min(340px, calc(100vw - 2.4rem));
   border-radius: 20px;
   border: 1px solid rgba(19, 59, 34, 0.1);
@@ -2482,7 +2482,7 @@ html[data-theme="dark"] .portal-assistant-status {
     width: 56px !important;
     height: 56px !important;
     border-radius: 50% !important;
-    z-index: 40;
+    z-index: 20000 !important;
   }
 
   .portal-assistant-panel {
@@ -2494,7 +2494,7 @@ html[data-theme="dark"] .portal-assistant-status {
     transform: none !important;
     width: auto !important;
     max-height: calc(100vh - 6.5rem) !important;
-    z-index: 45;
+    z-index: 20005 !important;
   }
 }
 
@@ -2676,7 +2676,7 @@ html[data-theme="dark"] .portal-assistant-status {
   position: fixed;
   right: 1.2rem;
   bottom: 5.2rem;
-  z-index: 40;
+  z-index: 20000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2701,7 +2701,7 @@ html[data-theme="dark"] .portal-assistant-status {
   position: fixed;
   right: 1.2rem;
   bottom: 9.2rem;
-  z-index: 45;
+  z-index: 20005;
   width: min(340px, calc(100vw - 2.4rem));
   border-radius: 20px;
   border: 1px solid rgba(19, 59, 34, 0.1);
@@ -2745,7 +2745,7 @@ html[data-theme="dark"] .portal-feedback-panel {
     width: 56px !important;
     height: 56px !important;
     border-radius: 50% !important;
-    z-index: 40;
+    z-index: 20000 !important;
     justify-content: center;
   }
 
@@ -2758,7 +2758,7 @@ html[data-theme="dark"] .portal-feedback-panel {
     transform: none;
     width: auto;
     max-height: calc(100vh - 10.5rem);
-    z-index: 45;
+    z-index: 20005 !important;
   }
 }
 
