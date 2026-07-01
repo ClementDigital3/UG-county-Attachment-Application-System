@@ -334,7 +334,18 @@ function initCsrfToken(req, res, next) {
 
 function verifyCsrf(req) {
   const token = req.body?._csrf || req.headers["x-csrf-token"];
-  return token && token === req.session?.csrfToken;
+  const isValid = token && token === req.session?.csrfToken;
+  console.log("[CSRF Diagnostic]", {
+    path: req.path,
+    method: req.method,
+    hasSession: !!req.session,
+    sessionToken: req.session?.csrfToken,
+    submittedToken: token,
+    submittedViaBody: !!req.body?._csrf,
+    submittedViaHeader: !!req.headers["x-csrf-token"],
+    isValid: !!isValid
+  });
+  return isValid;
 }
 
 function csrfProtection(req, res, next) {
