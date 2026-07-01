@@ -65,7 +65,6 @@
       <% if (footerPortal !== 'hr') { %>
         <script>
           window.toggleAssistantPanel = function(event) {
-            alert("[Diagnostic] toggleAssistantPanel clicked! width=" + window.innerWidth);
             if (window.innerWidth > 980 && window.portalAssistantHasDragged) {
               window.portalAssistantHasDragged = false;
               if (event) {
@@ -98,7 +97,6 @@
           };
 
           window.toggleFeedbackPanel = function(event) {
-            alert("[Diagnostic] toggleFeedbackPanel clicked! width=" + window.innerWidth);
             const panel = document.getElementById("portalFeedbackPanel");
             if (panel) {
               const isHidden = panel.hidden;
