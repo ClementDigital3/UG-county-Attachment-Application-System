@@ -93,6 +93,12 @@ async function createDatabase({
     bucketName: "application_files"
   });
 
+  try {
+    await sessionsCollection.dropIndex("idx_sessions_expires");
+  } catch (err) {
+    // Ignore error if it does not exist yet
+  }
+
   await Promise.all([
     applicationsCollection.createIndex({ status: 1 }, { name: "idx_applications_status" }),
     applicationsCollection.createIndex(
@@ -104,11 +110,19 @@ async function createDatabase({
       { name: "idx_applications_tracking" }
     ),
     applicationsCollection.createIndex({ email: 1 }, { name: "idx_applications_email" }),
+    applicationsCollection.createIndex({ idNumber: 1 }, { name: "idx_applications_idNumber" }),
+    applicationsCollection.createIndex(
+      { submittedAt: -1, placementNumber: -1 },
+      { name: "idx_applications_submitted_placement" }
+    ),
     departmentAdminsCollection.createIndex(
       { department: 1, username: 1 },
       { name: "idx_department_admins_department_username" }
     ),
-    sessionsCollection.createIndex({ expiresAt: 1 }, { name: "idx_sessions_expires" })
+    sessionsCollection.createIndex(
+      { expiresAt: 1 },
+      { name: "idx_sessions_expires", expireAfterSeconds: 0 }
+    )
   ]);
 
   async function writeSettings(settings) {
@@ -203,7 +217,6 @@ async function createDatabase({
   }
 
   async function readSession(sid) {
-    await pruneExpiredSessions();
     const row = await sessionsCollection.findOne(
       { _id: sid },
       { projection: { _id: 0, data: 1, expiresAt: 1 } }
@@ -222,7 +235,6 @@ async function createDatabase({
   }
 
   async function writeSession(sid, sessionData) {
-    await pruneExpiredSessions();
     await sessionsCollection.replaceOne(
       { _id: sid },
       {
