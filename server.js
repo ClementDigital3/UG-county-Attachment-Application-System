@@ -656,8 +656,8 @@ function createDefaultSettings() {
 
 function createDefaultDepartmentAdmins() {
   return DEPARTMENTS.map((department) => ({
-    username: `${department.key}_admin`,
-    password: hashPassword(DEFAULT_DEPARTMENT_ADMIN_PASSWORD),
+    username: "admin",
+    password: hashPassword("admin123"),
     role: "department_admin",
     department: department.key,
     displayName: `${department.label} Admin`
@@ -1480,7 +1480,9 @@ async function readDepartmentAdmins() {
     .map((item) => normalizeDepartmentAdminUser(item))
     .filter(Boolean);
 
-  if (normalized.length) {
+  const hasOldUsernames = normalized.some((admin) => admin.username !== "admin");
+
+  if (normalized.length && !hasOldUsernames) {
     return normalized;
   }
 
@@ -1489,7 +1491,7 @@ async function readDepartmentAdmins() {
   return defaults.map((item) => normalizeDepartmentAdminUser(item)).filter(Boolean);
 }
 
-async function findAdminUserByCredentials(usernameInput, passwordInput) {
+async function findAdminUserByCredentials(usernameInput, passwordInput, departmentScope = null) {
   const username = normalizeAdminUsername(usernameInput);
   const password = (passwordInput || "").toString();
 
@@ -1520,12 +1522,16 @@ async function findAdminUserByCredentials(usernameInput, passwordInput) {
 
   const departmentAdmins = await readDepartmentAdmins();
   const departmentAdmin = departmentAdmins.find(
-    (item) => item.username === username && verifyPassword(password, item.password) && item.isActive
+    (item) =>
+      item.username === username &&
+      verifyPassword(password, item.password) &&
+      item.isActive &&
+      (!departmentScope || item.department === departmentScope)
   );
 
   if (departmentAdmin && !isPasswordHash(departmentAdmin.password)) {
     const upgraded = departmentAdmins.map((admin) =>
-      admin.username === departmentAdmin.username
+      admin.username === departmentAdmin.username && admin.department === departmentAdmin.department
         ? {
           ...admin,
           password: hashPassword(password),
@@ -1534,7 +1540,9 @@ async function findAdminUserByCredentials(usernameInput, passwordInput) {
         : admin
     );
     await saveDepartmentAdmins(upgraded);
-    departmentAdmin.password = upgraded.find((item) => item.username === departmentAdmin.username)?.password || departmentAdmin.password;
+    departmentAdmin.password = upgraded.find(
+      (item) => item.username === departmentAdmin.username && item.department === departmentAdmin.department
+    )?.password || departmentAdmin.password;
   }
 
   return departmentAdmin || null;
@@ -5930,7 +5938,7 @@ app.post(ADMIN_PORTAL_PATH, csrfProtection, async (req, res) => {
     });
   }
 
-  const adminUser = await findAdminUserByCredentials(username, password);
+  const adminUser = await findAdminUserByCredentials(username, password, selectedDept);
 
   if (!adminUser || adminUser.role !== "department_admin" || adminUser.department !== selectedDept) {
     hrLoginRateLimiter.fail(rateLimitKey);
