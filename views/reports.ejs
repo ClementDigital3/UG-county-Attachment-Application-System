@@ -5,12 +5,11 @@
           <h1><%= pageTitle %></h1>
           <div class="actions tight">
             <% if (isHrAdmin) { %>
-              <a class="btn secondary" href="/hr/departments">Department Review</a>
+              <a class="btn secondary" href="/hr/departments">Department Status</a>
               <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
               <a class="btn secondary" href="/hr/applications">HR Queue</a>
               <a class="btn secondary" href="/hr/audit">Audit Trail</a>
             <% } else { %>
-              <a class="btn secondary" href="/admin/departments">Departments</a>
               <a class="btn secondary" href="/admin/applications">Applications</a>
             <% } %>
             <a class="btn secondary" href="<%= distributionExportPath %>?status=<%= encodeURIComponent(filters.status) %>&period=<%= encodeURIComponent(filters.period) %>&department=<%= encodeURIComponent(filters.department) %>&search=<%= encodeURIComponent(filters.search || '') %>&dateFrom=<%= encodeURIComponent(filters.dateFrom || '') %>&dateTo=<%= encodeURIComponent(filters.dateTo || '') %>">Export Distribution CSV</a>

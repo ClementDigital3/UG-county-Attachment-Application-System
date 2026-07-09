@@ -4,7 +4,7 @@
         <div class="row-between">
           <h1>HR Applications Queue</h1>
           <div class="actions tight">
-            <a class="btn secondary" href="/hr/departments">Department Review</a>
+            <a class="btn secondary" href="/hr/departments">Department Status</a>
             <a class="btn secondary" href="/hr/communications">Communications</a>
             <a class="btn secondary" href="/hr/supervisors">Supervisors</a>
             <a class="btn secondary" href="/hr/audit">Audit Trail</a>
@@ -71,61 +71,72 @@
             Submitted to
             <input type="date" name="dateTo" value="<%= dateTo || '' %>" />
           </label>
-          <button class="btn" type="submit">Apply Filter</button>
+          <div class="actions">
+            <button class="btn" type="submit">Apply</button>
+            <a class="btn secondary" href="/hr/applications">Reset</a>
+          </div>
         </form>
-        <p class="muted-note">Only department-verified applications enter this HR queue.</p>
 
-        <div class="table-wrap">
-          <table>
+        <div class="table-container">
+          <table class="table">
             <thead>
               <tr>
-                <th class="table-number-cell">ID</th>
-                <th>Tracking Number</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Department</th>
+                <th>Applicant</th>
+                <th>Course Details</th>
                 <th>Period</th>
-                <th>NITA Return</th>
-                <th class="table-status-cell">Status</th>
-                <th class="table-date-cell">Submitted</th>
-                <th class="table-action-cell">Action</th>
+                <th>Status</th>
+                <th class="table-action-cell">Actions</th>
               </tr>
             </thead>
             <tbody>
               <% if (!applications.length) { %>
                 <tr>
-                  <td class="table-empty-state" colspan="10"><strong>No applications found.</strong> Adjust the selected filter and try again.</td>
+                  <td colspan="5" class="table-empty-cell">No matching applications found.</td>
                 </tr>
+              <% } else { %>
+                <% applications.forEach((application) => { %>
+                  <tr>
+                    <td>
+                      <div class="applicant-cell">
+                        <strong><%= application.fullName %></strong>
+                        <span>ID: <%= application.idNumber %></span>
+                        <span><%= application.email %></span>
+                        <span><%= application.phone %></span>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="course-cell">
+                        <strong><%= application.course %></strong>
+                        <span><%= getCourseLevelLabel(application.courseLevel) %></span>
+                        <span><%= getDepartmentLabel(application.appliedDepartment) %></span>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="period-cell">
+                        <strong><%= application.period %></strong>
+                        <span><%= formatDate(application.startDate) %> to <%= formatDate(application.endDate) %></span>
+                      </div>
+                    </td>
+                    <td>
+                      <span class="status-badge <%= getStatusClass(application.status) %>">
+                        <%= application.status %>
+                      </span>
+                    </td>
+                    <td class="table-action-cell">
+                      <a class="btn small" href="/hr/applications/<%= application.id %>">View Details</a>
+                    </td>
+                  </tr>
+                <% }) %>
               <% } %>
-
-              <% applications.forEach((application) => { %>
-                <tr>
-                  <td class="table-number-cell"><%= application.id %></td>
-                  <td><%= application.placementNumber || application.id %></td>
-                  <td><%= application.fullName %></td>
-                  <td><%= application.email %></td>
-                  <td><%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></td>
-                  <td><%= application.period ? getPeriodLabel(application.period) : 'Not set' %></td>
-                  <td>
-                    <% if (application.nitaWorkflow.studentResubmissionCount > 0) { %>
-                      <span class="badge verified">Returned</span>
-                      <div class="muted-note">Student re-uploaded stamped NITA</div>
-                    <% } else { %>
-                      <span class="badge pending">Awaiting Student</span>
-                    <% } %>
-                  </td>
-                  <td class="table-status-cell"><span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></td>
-                  <td class="table-date-cell"><%= formatDate(application.submittedAt) %></td>
-                  <td class="table-action-cell"><a href="/hr/applications/<%= application.id %>">Review</a></td>
-                </tr>
-              <% }) %>
             </tbody>
           </table>
         </div>
+      </section>
 
-        <h2>Department Review Access</h2>
-        <div class="table-wrap">
-          <table>
+      <section class="card margin-top">
+        <h2>Department Slot Status</h2>
+        <div class="table-container">
+          <table class="table">
             <thead>
               <tr>
                 <th>Department</th>
@@ -142,7 +153,7 @@
               <% departmentSummaries.forEach((department) => { %>
                 <tr>
                   <td>
-                    <a href="/hr/departments/<%= department.key %>/open"><%= department.label %></a>
+                    <%= department.label %>
                   </td>
                   <td class="table-count-cell"><%= department.capacity %></td>
                   <td class="table-count-cell"><%= department.applications %></td>
@@ -152,7 +163,6 @@
                   <td class="table-count-cell"><%= department.remaining %></td>
                   <td class="table-action-cell">
                     <div class="table-actions">
-                      <a href="/hr/departments/<%= department.key %>/open">Review</a>
                       <a href="/hr/reports/export.csv?status=All&period=All&department=<%= department.key %>">Export</a>
                     </div>
                   </td>

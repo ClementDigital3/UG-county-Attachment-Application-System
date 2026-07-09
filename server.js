@@ -4176,10 +4176,7 @@ async function sendAndPersistApplicationNotification({
 }
 
 function ensureDepartmentAdmin(req, res, next) {
-  if (
-    req.session?.isAdmin &&
-    (req.session.adminRole === "hr_admin" || req.session.adminRole === "department_admin")
-  ) {
+  if (req.session?.isAdmin && req.session.adminRole === "department_admin") {
     return next();
   }
 
@@ -7042,15 +7039,7 @@ app.get("/hr/departments", ensureHrAdmin, async (req, res) => {
   return renderDepartmentAccessPage(res, departmentSummaries);
 });
 
-app.get("/hr/departments/:department/open", ensureHrAdmin, async (req, res) => {
-  const departmentKey = (req.params.department || "").toString().trim();
-  if (!isValidDepartment(departmentKey)) {
-    return res.status(404).render("not-found");
-  }
 
-  setHrDepartmentScope(req, departmentKey);
-  return res.redirect(`/admin/applications?status=All&department=${encodeURIComponent(departmentKey)}`);
-});
 
 app.get("/admin/periods", ensureDepartmentAdmin, async (req, res) => {
   const settings = await readSettings();
