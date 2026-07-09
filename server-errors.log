@@ -1,0 +1,7 @@
+[2026-07-09T02:20:56.110Z] Uncaught Exception: Error: listen EADDRINUSE: address already in use :::3000
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at app.listen (C:\Users\Real Sylph\Desktop\Attachment Application System\node_modules\express\lib\application.js:635:24)
+    at startServer (C:\Users\Real Sylph\Desktop\Attachment Application System\server.js:8582:7)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)

@@ -4176,11 +4176,14 @@ async function sendAndPersistApplicationNotification({
 }
 
 function ensureDepartmentAdmin(req, res, next) {
-  if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
+  if (
+    req.session?.isAdmin &&
+    (req.session.adminRole === "hr_admin" || req.session.adminRole === "department_admin")
+  ) {
     return next();
   }
 
-  return res.redirect(HR_PORTAL_PATH);
+  return res.redirect(ADMIN_PORTAL_PATH);
 }
 
 function ensureHrAdmin(req, res, next) {
@@ -4488,6 +4491,8 @@ async function renderHrCommunicationsPage(res, {
 }
 
 app.locals.hrPortalPath = HR_PORTAL_PATH;
+app.locals.adminPortalPath = ADMIN_PORTAL_PATH;
+app.locals.departmentsList = DEPARTMENTS;
 app.locals.documentDefinitions = getViewDocumentDefinitions();
 app.locals.getStatusClass = getStatusClass;
 app.locals.getDepartmentLabel = getDepartmentLabel;
@@ -5875,19 +5880,11 @@ app.get("/application/:id/county-signed-nita", async (req, res) => {
 });
 
 app.get("/admin/login", async (_req, res) => {
-  return res.redirect(HR_PORTAL_PATH);
+  return res.redirect(ADMIN_PORTAL_PATH);
 });
 
 app.post("/admin/login", async (_req, res) => {
-  return res.redirect(307, HR_PORTAL_PATH);
-});
-
-app.get(ADMIN_PORTAL_PATH, async (_req, res) => {
-  return res.redirect(HR_PORTAL_PATH);
-});
-
-app.post(ADMIN_PORTAL_PATH, async (_req, res) => {
-  return res.redirect(307, HR_PORTAL_PATH);
+  return res.redirect(307, ADMIN_PORTAL_PATH);
 });
 
 app.get("/hr/login", async (_req, res) => {
@@ -5898,13 +5895,78 @@ app.post("/hr/login", async (_req, res) => {
   return res.redirect(307, HR_PORTAL_PATH);
 });
 
-app.get(HR_PORTAL_PATH, async (req, res) => {
-  if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
-    return res.redirect("/hr/applications");
+app.get(ADMIN_PORTAL_PATH, async (req, res) => {
+  if (req.session?.isAdmin) {
+    if (req.session.adminRole === "hr_admin") {
+      return res.redirect("/hr/applications");
+    }
+    if (req.session.adminRole === "department_admin") {
+      return res.redirect("/admin/applications");
+    }
   }
 
   return res.render("hr-login", {
-    error: null
+    error: null,
+    defaultRole: "department_admin"
+  });
+});
+
+app.post(ADMIN_PORTAL_PATH, csrfProtection, async (req, res) => {
+  const username = (req.body.username || "").toString();
+  const password = (req.body.password || "").toString();
+  const selectedDept = (req.body.department || "").toString().trim();
+  const rateLimitKey = getHrLoginRateLimitKey(req);
+  const rateLimitState = hrLoginRateLimiter.check(rateLimitKey);
+
+  if (!rateLimitState.allowed) {
+    return res.status(429).render("hr-login", {
+      error: `Too many login attempts. Try again in ${formatRetryWindow(rateLimitState.retryAfterMs)}.`,
+      defaultRole: "department_admin"
+    });
+  }
+
+  if (!isValidDepartment(selectedDept)) {
+    hrLoginRateLimiter.fail(rateLimitKey);
+    return res.status(400).render("hr-login", {
+      error: "Please select a valid department.",
+      defaultRole: "department_admin"
+    });
+  }
+
+  const adminUser = await findAdminUserByCredentials(username, password);
+
+  if (!adminUser || adminUser.role !== "department_admin" || adminUser.department !== selectedDept) {
+    hrLoginRateLimiter.fail(rateLimitKey);
+    return res.status(401).render("hr-login", {
+      error: "Invalid Department login credentials.",
+      defaultRole: "department_admin"
+    });
+  }
+
+  hrLoginRateLimiter.reset(rateLimitKey);
+  await establishAdminSession(req, {
+    isAdmin: true,
+    adminUsername: adminUser.username,
+    adminRole: "department_admin",
+    adminDepartment: adminUser.department,
+    adminScopeDepartment: null
+  });
+  return res.redirect("/admin/applications");
+});
+
+app.get(HR_PORTAL_PATH, async (req, res) => {
+  if (req.session?.isAdmin) {
+    if (req.session.adminRole === "hr_admin") {
+      return res.redirect("/hr/applications");
+    }
+    if (req.session.adminRole === "department_admin") {
+      return res.redirect("/admin/applications");
+    }
+  }
+
+  return res.render("hr-login", {
+    error: null,
+    defaultRole: "hr_admin"
   });
 });
 
@@ -5916,7 +5978,8 @@ app.post(HR_PORTAL_PATH, csrfProtection, async (req, res) => {
 
   if (!rateLimitState.allowed) {
     return res.status(429).render("hr-login", {
-      error: `Too many login attempts. Try again in ${formatRetryWindow(rateLimitState.retryAfterMs)}.`
+      error: `Too many login attempts. Try again in ${formatRetryWindow(rateLimitState.retryAfterMs)}.`,
+      defaultRole: "hr_admin"
     });
   }
 
@@ -5937,7 +6000,8 @@ app.post(HR_PORTAL_PATH, csrfProtection, async (req, res) => {
   if (!adminUser || adminUser.role !== "hr_admin") {
     hrLoginRateLimiter.fail(rateLimitKey);
     return res.status(401).render("hr-login", {
-      error: "Invalid HR login credentials."
+      error: "Invalid HR login credentials.",
+      defaultRole: "hr_admin"
     });
   }
 
@@ -5954,7 +6018,7 @@ app.post(HR_PORTAL_PATH, csrfProtection, async (req, res) => {
 
 app.post("/admin/logout", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
   req.session.destroy(() => {
-    res.redirect(HR_PORTAL_PATH);
+    res.redirect(ADMIN_PORTAL_PATH);
   });
 });
 
