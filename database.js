@@ -32,8 +32,10 @@ function buildApplicationRecord(application) {
 function buildDepartmentAdminRecord(admin) {
   const timestamp = new Date().toISOString();
   const username = (admin?.username || "").toString().trim().toLowerCase();
+  const dept = (admin?.department || "").toString().trim().toLowerCase();
+  const uniqueId = `${username}_${dept || Math.random().toString(36).substring(2, 9)}`;
   return {
-    _id: username,
+    _id: uniqueId,
     username,
     password: (admin?.password || "").toString(),
     role: (admin?.role || "department_admin").toString(),

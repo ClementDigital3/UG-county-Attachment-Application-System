@@ -5,3 +5,14 @@
     at app.listen (C:\Users\Real Sylph\Desktop\Attachment Application System\node_modules\express\lib\application.js:635:24)
     at startServer (C:\Users\Real Sylph\Desktop\Attachment Application System\server.js:8582:7)
     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[2026-07-11T19:36:42.559Z] Unhandled Rejection: MongoBulkWriteError: E11000 duplicate key error collection: attachment_application_system.department_admins index: _id_ dup key: { _id: "admin" }
+    at OrderedBulkOperation.handleWriteError (C:\Users\Real Sylph\Desktop\Attachment Application System\node_modules\mongodb\lib\bulk\common.js:802:19)
+    at executeCommands (C:\Users\Real Sylph\Desktop\Attachment Application System\node_modules\mongodb\lib\bulk\common.js:346:23)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async C:\Users\Real Sylph\Desktop\Attachment Application System\node_modules\mongodb\lib\bulk\common.js:788:24
+    at async MongoClient.withSession (C:\Users\Real Sylph\Desktop\Attachment Application System\node_modules\mongodb\lib\mongo_client.js:469:20)
+    at async OrderedBulkOperation.execute (C:\Users\Real Sylph\Desktop\Attachment Application System\node_modules\mongodb\lib\bulk\common.js:787:20)
+    at async Collection.bulkWrite (C:\Users\Real Sylph\Desktop\Attachment Application System\node_modules\mongodb\lib\collection.js:224:16)
+    at async Collection.insertMany (C:\Users\Real Sylph\Desktop\Attachment Application System\node_modules\mongodb\lib\collection.js:171:25)
+    at async Object.writeDepartmentAdmins (C:\Users\Real Sylph\Desktop\Attachment Application System\database.js:154:7)
+    at async readDepartmentAdmins (C:\Users\Real Sylph\Desktop\Attachment Application System\server.js:1490:3)
