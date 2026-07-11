@@ -1499,28 +1499,36 @@ async function findAdminUserByCredentials(usernameInput, passwordInput, departme
     return null;
   }
 
-  const settings = await readSettings();
-  const hrAccount = normalizeHrAccount(settings?.hrAccount);
+  if (!departmentScope) {
+    const settings = await readSettings();
+    const hrAccount = normalizeHrAccount(settings?.hrAccount);
 
-  if (username === hrAccount.username && verifyPassword(password, hrAccount.password)) {
-    if (!isPasswordHash(hrAccount.password)) {
-      settings.hrAccount = {
-        ...hrAccount,
-        password: hashPassword(password),
-        updatedAt: new Date().toISOString()
+    if (username === hrAccount.username && verifyPassword(password, hrAccount.password)) {
+      if (!isPasswordHash(hrAccount.password)) {
+        settings.hrAccount = {
+          ...hrAccount,
+          password: hashPassword(password),
+          updatedAt: new Date().toISOString()
+        };
+        settings.updatedAt = new Date().toISOString();
+        await writeSettings(settings);
+      }
+      return {
+        username: hrAccount.username,
+        role: "hr_admin",
+        department: null,
+        displayName: "HR Administrator"
       };
-      settings.updatedAt = new Date().toISOString();
-      await writeSettings(settings);
     }
-    return {
-      username: hrAccount.username,
-      role: "hr_admin",
-      department: null,
-      displayName: "HR Administrator"
-    };
   }
 
   const departmentAdmins = await readDepartmentAdmins();
+  console.log("[findAdminUserByCredentials] all admins in DB:", departmentAdmins.map(d => ({
+    username: d.username,
+    department: d.department,
+    isActive: d.isActive,
+    hasPasswordHash: isPasswordHash(d.password)
+  })));
   const departmentAdmin = departmentAdmins.find(
     (item) =>
       item.username === username &&
@@ -1528,6 +1536,10 @@ async function findAdminUserByCredentials(usernameInput, passwordInput, departme
       item.isActive &&
       (!departmentScope || item.department === departmentScope)
   );
+  console.log("[findAdminUserByCredentials] match outcome:", {
+    matched: !!departmentAdmin,
+    matchedDept: departmentAdmin?.department
+  });
 
   if (departmentAdmin && !isPasswordHash(departmentAdmin.password)) {
     const upgraded = departmentAdmins.map((admin) =>
@@ -5938,7 +5950,20 @@ app.post(ADMIN_PORTAL_PATH, csrfProtection, async (req, res) => {
     });
   }
 
+  console.log("[Staff Login attempt]", {
+    username,
+    password,
+    selectedDept,
+    body: req.body
+  });
+
   const adminUser = await findAdminUserByCredentials(username, password, selectedDept);
+
+  console.log("[Staff Login result]", {
+    found: !!adminUser,
+    role: adminUser?.role,
+    dept: adminUser?.department
+  });
 
   if (!adminUser || adminUser.role !== "department_admin" || adminUser.department !== selectedDept) {
     hrLoginRateLimiter.fail(rateLimitKey);
