@@ -135,11 +135,6 @@ body {
   transition: padding 0.25s ease;
 }
 
-.site-header.scrolled .site-header-inner {
-  padding-top: 0.55rem;
-  padding-bottom: 0.55rem;
-}
-
 .site-brand {
   display: flex;
   align-items: center;
