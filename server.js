@@ -1634,6 +1634,68 @@ async function updateHrAccount({
   };
 }
 
+async function updateDepartmentAdminAccount({
+  username,
+  department,
+  displayName,
+  currentPassword,
+  newPassword,
+  confirmPassword
+}) {
+  const current = (currentPassword || "").toString();
+  const next = (newPassword || "").toString();
+  const confirm = (confirmPassword || "").toString();
+  const nextDisplayName = (displayName || "").toString().trim();
+
+  if (!current) {
+    return { error: "Current password is required." };
+  }
+
+  const departmentAdmins = await readDepartmentAdmins();
+  const currentAdmin = departmentAdmins.find(
+    (item) => item.username === username && item.department === department
+  );
+
+  if (!currentAdmin) {
+    return { error: "Admin account not found." };
+  }
+
+  if (!verifyPassword(current, currentAdmin.password)) {
+    return { error: "Current password is incorrect." };
+  }
+
+  if (!nextDisplayName) {
+    return { error: "Display name is required." };
+  }
+
+  const changingPassword = Boolean(next || confirm);
+  if (changingPassword) {
+    if (next.length < 6) {
+      return { error: "New password must be at least 6 characters long." };
+    }
+
+    if (next !== confirm) {
+      return { error: "New password and confirm password do not match." };
+    }
+  }
+
+  const nextPassword = changingPassword ? hashPassword(next) : currentAdmin.password;
+
+  const updatedAdmins = departmentAdmins.map((admin) =>
+    admin.username === username && admin.department === department
+      ? {
+          ...admin,
+          displayName: nextDisplayName,
+          password: nextPassword,
+          updatedAt: new Date().toISOString()
+        }
+      : admin
+  );
+
+  await saveDepartmentAdmins(updatedAdmins);
+  return { success: true };
+}
+
 async function validateDepartmentAdminInput({
   username,
   password,
@@ -6050,6 +6112,64 @@ app.post("/admin/logout", csrfProtection, ensureDepartmentAdmin, async (req, res
   req.session.destroy(() => {
     res.redirect(ADMIN_PORTAL_PATH);
   });
+});
+
+app.get("/admin/account", ensureDepartmentAdmin, async (req, res) => {
+  let notice = null;
+  if (req.query.passwordChanged === "1") {
+    notice = "Account settings updated successfully.";
+  }
+
+  const departmentAdmins = await readDepartmentAdmins();
+  const adminDept = getAdminScopeDepartment(req);
+  const currentAdmin = departmentAdmins.find(
+    (item) => item.username === req.session.adminUsername && item.department === adminDept
+  );
+
+  if (!currentAdmin) {
+    return res.redirect("/admin/applications");
+  }
+
+  return res.status(200).render("admin-account", {
+    username: currentAdmin.username,
+    displayName: currentAdmin.displayName,
+    department: currentAdmin.department,
+    updatedAt: currentAdmin.updatedAt,
+    error: null,
+    notice,
+    formatDate
+  });
+});
+
+app.post("/admin/account/password", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
+  const adminDept = getAdminScopeDepartment(req);
+  const result = await updateDepartmentAdminAccount({
+    username: req.session.adminUsername,
+    department: adminDept,
+    displayName: req.body.displayName,
+    currentPassword: req.body.currentPassword,
+    newPassword: req.body.newPassword,
+    confirmPassword: req.body.confirmPassword
+  });
+
+  if (result.error) {
+    const departmentAdmins = await readDepartmentAdmins();
+    const currentAdmin = departmentAdmins.find(
+      (item) => item.username === req.session.adminUsername && item.department === adminDept
+    );
+
+    return res.status(400).render("admin-account", {
+      username: req.session.adminUsername,
+      displayName: req.body.displayName || currentAdmin?.displayName || "",
+      department: adminDept,
+      updatedAt: currentAdmin?.updatedAt || "",
+      error: result.error,
+      notice: null,
+      formatDate
+    });
+  }
+
+  return res.redirect("/admin/account?passwordChanged=1");
 });
 
 app.post("/hr/logout", csrfProtection, ensureHrAdmin, async (req, res) => {
