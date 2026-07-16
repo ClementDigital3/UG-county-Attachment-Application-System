@@ -117,68 +117,48 @@ function drawCenteredText(page, text, {
   return y - fontSize;
 }
 
-function drawLabelValueLine(page, {
-  label,
-  value,
-  x,
-  y,
-  labelWidth,
-  valueWidth,
-  fonts,
-  fontSize = BODY_FONT_SIZE
-}) {
-  const safeLabel = sanitizeText(label, "");
-  const safeValue = sanitizeText(value);
-
-  page.drawText(safeLabel, {
+function drawInlineFieldLine(page, label, value, x, y, labelWidth, contentWidth, fonts) {
+  page.drawText(label, {
     x,
     y,
-    size: fontSize,
+    size: 10,
     font: fonts.bold,
-    color: rgb(0.08, 0.12, 0.1)
+    color: rgb(0, 0, 0)
   });
 
-  return drawWrappedText(page, safeValue, {
-    x: x + labelWidth,
-    y,
-    maxWidth: valueWidth,
-    font: fonts.regular,
-    fontSize,
-    color: rgb(0.08, 0.12, 0.1),
-    lineGap: 3
+  const lineStartX = x + labelWidth;
+  const lineEndX = x + contentWidth;
+  page.drawLine({
+    start: { x: lineStartX, y: y - 2 },
+    end: { x: lineEndX, y: y - 2 },
+    thickness: 0.5,
+    color: rgb(0, 0, 0)
   });
+
+  page.drawText(value, {
+    x: lineStartX + 5,
+    y: y + 1,
+    size: 10,
+    font: fonts.regular,
+    color: rgb(0.1, 0.1, 0.1)
+  });
+
+  return y - 18;
 }
 
-function drawBulletList(page, items, {
-  x,
-  y,
-  maxWidth,
-  fonts
-}) {
-  let currentY = y;
-  const bulletIndent = 14;
-
-  items.forEach((item) => {
-    page.drawText("-", {
-      x,
-      y: currentY,
-      size: BODY_FONT_SIZE,
-      font: fonts.regular,
-      color: rgb(0.1, 0.1, 0.1)
-    });
-
-    currentY = drawWrappedText(page, item, {
-      x: x + bulletIndent,
-      y: currentY,
-      maxWidth: maxWidth - bulletIndent,
-      font: fonts.regular,
-      fontSize: BODY_FONT_SIZE,
-      color: rgb(0.1, 0.1, 0.1),
-      lineGap: 4
-    }) - 2;
+function drawArrowBullet(page, x, y, color = rgb(0, 0, 0)) {
+  page.drawLine({
+    start: { x: x, y: y + 2 },
+    end: { x: x + 4, y: y + 5 },
+    thickness: 1.0,
+    color
   });
-
-  return currentY;
+  page.drawLine({
+    start: { x: x + 4, y: y + 5 },
+    end: { x: x, y: y + 8 },
+    thickness: 1.0,
+    color
+  });
 }
 
 async function createJoiningLetterTemplatePdf({
@@ -188,9 +168,9 @@ async function createJoiningLetterTemplatePdf({
   timeZone = "Africa/Nairobi",
   logoPath,
   countyName = "COUNTY GOVERNMENT OF UASIN GISHU",
-  signatoryName = "Ruth Samoei",
-  signatoryDesignation = "CHIEF OFFICER",
-  signatoryDepartment = "PUBLIC SERVICE MANAGEMENT"
+  signatoryName = "Josephat K Rotich",
+  signatoryDesignation = "DIRECTOR, PERFORMANCE MANAGEMENT,",
+  signatoryDepartment = "TRAINING & DEVELOPMENT"
 } = {}) {
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage(PAGE_SIZE);
@@ -210,223 +190,347 @@ async function createJoiningLetterTemplatePdf({
   const requestDateLabel = formatLetterDate(applicant.submittedAt, timeZone) || generatedDateLabel;
   const startDateLabel = formatLetterDate(applicant.startDate, timeZone);
   const endDateLabel = formatLetterDate(applicant.endDate, timeZone);
-  const attachmentRange = `${sanitizeText(startDateLabel)} to ${sanitizeText(endDateLabel)}`;
   const applicantName = sanitizeText(applicant.fullName);
   const applicantInstitution = sanitizeText(applicant.institution);
   const applicantCourse = sanitizeText(applicant.course);
   const applicantDepartment = sanitizeText(applicant.appliedDepartmentLabel || applicant.appliedDepartment);
-  const applicantIdNumber = sanitizeText(applicant.idNumber);
-  const referenceNumber = `UGC/PSM/HR/T&D/${sanitizeText(applicant.placementNumber || applicant.id, "ATT")}`;
-  const declarationSentence = `I ${applicantName} ID/No ${applicantIdNumber} hereby declare that I have read and understood the conditions set out in this letter dated ${generatedDateLabel} and hereby agree to abide by the conditions.`;
+  const referenceNumber = `UGC/PSM/HR/T&D`;
   const headerCenterX = pageWidth / 2;
 
   let currentY = page.getHeight() - PAGE_MARGIN;
 
-  if (logoImage) {
-    const logo = logoImage.scaleToFit(68, 68);
-    page.drawImage(logoImage, {
-      x: PAGE_MARGIN,
-      y: currentY - logo.height + 10,
-      width: logo.width,
-      height: logo.height
-    });
-  }
-
+  // 1. Center Title Header
   drawCenteredText(page, "REPUBLIC OF KENYA", {
     centerX: headerCenterX,
-    y: currentY - 4,
-    font: boldFont,
-    fontSize: 13
-  });
-  drawCenteredText(page, countyName, {
-    centerX: headerCenterX,
-    y: currentY - 24,
-    font: boldFont,
-    fontSize: 15
-  });
-  drawCenteredText(page, "PUBLIC SERVICE MANAGEMENT", {
-    centerX: headerCenterX,
-    y: currentY - 45,
+    y: currentY,
     font: boldFont,
     fontSize: 12
   });
+  
+  drawCenteredText(page, countyName, {
+    centerX: headerCenterX,
+    y: currentY - 18,
+    font: boldFont,
+    fontSize: 14
+  });
 
-  currentY -= 82;
+  currentY -= 32;
 
+  // 2. Logo & Address Columns
+  const addressYStart = currentY;
+  const addressFontSize = 8.5;
+  const addressLineGap = 11;
+
+  // Draw Left Address
+  const leftAddressLines = [
+    "County Headquarters – Town Hall Offices",
+    "P.O. Box 40-30100",
+    "ELDORET-Kenya",
+    "Website: www.uasingishu.go.ke"
+  ];
+  let leftY = addressYStart;
+  leftAddressLines.forEach((line) => {
+    page.drawText(line, {
+      x: PAGE_MARGIN,
+      y: leftY,
+      size: addressFontSize,
+      font: regularFont,
+      color: rgb(0.1, 0.1, 0.1)
+    });
+    leftY -= addressLineGap;
+  });
+
+  // Draw Right Address
+  const rightAddressLines = [
+    "When Replying, Please Address to:",
+    "County Human Resources Manager",
+    "Tel. +254-053-2016306",
+    "Email: countyhrm@uasingishu.go.ke"
+  ];
+  let rightY = addressYStart;
+  rightAddressLines.forEach((line) => {
+    if (line) {
+      page.drawText(line, {
+        x: pageWidth - PAGE_MARGIN - 170,
+        y: rightY,
+        size: addressFontSize,
+        font: regularFont,
+        color: rgb(0.1, 0.1, 0.1)
+      });
+    }
+    rightY -= addressLineGap;
+  });
+
+  // Draw Center Logo
+  if (logoImage) {
+    const logoSize = 64;
+    page.drawImage(logoImage, {
+      x: headerCenterX - logoSize / 2,
+      y: addressYStart - logoSize + 12,
+      width: logoSize,
+      height: logoSize
+    });
+  }
+
+  currentY = Math.min(leftY, rightY) - 14;
+
+  // 3. Public Service Management Sub-Header
+  drawCenteredText(page, "PUBLIC SERVICE MANAGEMENT", {
+    centerX: headerCenterX,
+    y: currentY,
+    font: boldFont,
+    fontSize: 11
+  });
+
+  currentY -= 8;
+
+  // 4. Horizontal Dividers (Thick & Thin)
+  page.drawLine({
+    start: { x: PAGE_MARGIN, y: currentY },
+    end: { x: pageWidth - PAGE_MARGIN, y: currentY },
+    thickness: 1.5,
+    color: rgb(0, 0, 0)
+  });
+  page.drawLine({
+    start: { x: PAGE_MARGIN, y: currentY - 2.5 },
+    end: { x: pageWidth - PAGE_MARGIN, y: currentY - 2.5 },
+    thickness: 0.5,
+    color: rgb(0, 0, 0)
+  });
+
+  currentY -= 16;
+
+  // 5. Ref and Date Labels
   page.drawText(`OUR REF: ${referenceNumber}`, {
     x: PAGE_MARGIN,
     y: currentY,
-    size: BODY_FONT_SIZE,
-    font: boldFont,
-    color: rgb(0, 0, 0)
-  });
-  page.drawText(`DATE: ${generatedDateLabel}`, {
-    x: PAGE_MARGIN + 290,
-    y: currentY,
-    size: BODY_FONT_SIZE,
+    size: 10,
     font: boldFont,
     color: rgb(0, 0, 0)
   });
 
-  currentY -= 28;
-
-  currentY = drawLabelValueLine(page, {
-    label: "NAME:",
-    value: applicantName,
-    x: PAGE_MARGIN,
+  const dateStr = generatedDateLabel.toUpperCase();
+  page.drawText(`DATE: ${dateStr}`, {
+    x: pageWidth - PAGE_MARGIN - 140,
     y: currentY,
-    labelWidth: 84,
-    valueWidth: contentWidth - 84,
-    fonts
-  }) - 8;
-
-  currentY = drawLabelValueLine(page, {
-    label: "INSTITUTION:",
-    value: applicantInstitution,
-    x: PAGE_MARGIN,
-    y: currentY,
-    labelWidth: 84,
-    valueWidth: contentWidth - 84,
-    fonts
-  }) - 8;
-
-  currentY = drawLabelValueLine(page, {
-    label: "COURSE:",
-    value: applicantCourse,
-    x: PAGE_MARGIN,
-    y: currentY,
-    labelWidth: 84,
-    valueWidth: contentWidth - 84,
-    fonts
-  }) - 18;
-
-  page.drawText("RE: REQUEST FOR ATTACHMENT", {
-    x: PAGE_MARGIN,
-    y: currentY,
-    size: 12,
-    font: boldFont,
-    color: rgb(0, 0, 0)
-  });
-
-  currentY -= 26;
-
-  currentY = drawWrappedText(
-    page,
-    `Reference is made to your letter dated ${requestDateLabel} on the above subject.`,
-    {
-      x: PAGE_MARGIN,
-      y: currentY,
-      maxWidth: contentWidth,
-      font: regularFont
-    }
-  ) - 10;
-
-  currentY = drawWrappedText(
-    page,
-    `This is to inform you that your request to be attached at the County Government of Uasin Gishu has been approved. Subsequently, you will be attached to the Department of ${applicantDepartment} with effect from ${attachmentRange} subject to the following conditions:-`,
-    {
-      x: PAGE_MARGIN,
-      y: currentY,
-      maxWidth: contentWidth,
-      font: regularFont
-    }
-  ) - 8;
-
-  currentY = drawBulletList(page, [
-    "You must have general personal accident insurance cover for the period of the attachment.",
-    "This is not an offer for employment and the County Government will not pay you any remuneration for the duties performed.",
-    "The County will not be held liable for any injury during the attachment period.",
-    "You will adhere to all County regulations and maintain high discipline.",
-    "You will arrange for your own accommodation.",
-    "You will be required to dress officially while performing County duties."
-  ], {
-    x: PAGE_MARGIN,
-    y: currentY,
-    maxWidth: contentWidth,
-    fonts
-  }) - 8;
-
-  currentY = drawWrappedText(
-    page,
-    "If you accept these conditions, please signify your acceptance of the conditions set out in this offer by signing the declaration of acceptance. Retain the original letter and return the duplicate on the reporting date.",
-    {
-      x: PAGE_MARGIN,
-      y: currentY,
-      maxWidth: contentWidth,
-      font: regularFont
-    }
-  ) - 34;
-
-  page.drawLine({
-    start: { x: PAGE_MARGIN, y: currentY + 18 },
-    end: { x: PAGE_MARGIN + 190, y: currentY + 18 },
-    thickness: 0.6,
-    color: rgb(0, 0, 0)
-  });
-  page.drawText(signatoryName, {
-    x: PAGE_MARGIN,
-    y: currentY,
-    size: BODY_FONT_SIZE,
-    font: regularFont,
-    color: rgb(0, 0, 0)
-  });
-  page.drawText(signatoryDesignation, {
-    x: PAGE_MARGIN,
-    y: currentY - 16,
-    size: BODY_FONT_SIZE,
-    font: boldFont,
-    color: rgb(0, 0, 0)
-  });
-  page.drawText(signatoryDepartment, {
-    x: PAGE_MARGIN,
-    y: currentY - 32,
-    size: BODY_FONT_SIZE,
-    font: boldFont,
-    color: rgb(0, 0, 0)
-  });
-
-  currentY -= 92;
-
-  page.drawText("DECLARATION OF ACCEPTANCE", {
-    x: PAGE_MARGIN,
-    y: currentY,
-    size: 12,
+    size: 10,
     font: boldFont,
     color: rgb(0, 0, 0)
   });
 
   currentY -= 24;
 
-  currentY = drawWrappedText(page, declarationSentence, {
+  // 6. Name, Institution, Course
+  currentY = drawInlineFieldLine(page, "NAME:", applicantName, PAGE_MARGIN, currentY, 45, contentWidth, fonts);
+  currentY = drawInlineFieldLine(page, "INSTITUTION:", applicantInstitution, PAGE_MARGIN, currentY, 84, contentWidth, fonts);
+  currentY = drawInlineFieldLine(page, "COURSE:", applicantCourse, PAGE_MARGIN, currentY, 55, contentWidth, fonts);
+
+  currentY -= 10;
+
+  // 7. Subject Line
+  page.drawText("RE: REQUEST FOR ATTACHMENT", {
+    x: PAGE_MARGIN,
+    y: currentY,
+    size: 10.5,
+    font: boldFont,
+    color: rgb(0, 0, 0)
+  });
+  const subjectWidth = boldFont.widthOfTextAtSize("RE: REQUEST FOR ATTACHMENT", 10.5);
+  page.drawLine({
+    start: { x: PAGE_MARGIN, y: currentY - 2 },
+    end: { x: PAGE_MARGIN + subjectWidth, y: currentY - 2 },
+    thickness: 0.8,
+    color: rgb(0, 0, 0)
+  });
+
+  currentY -= 20;
+
+  // 8. Reference Sentence
+  const textPart1 = "Reference is made to your letter dated ";
+  const textPart2 = `  ${requestDateLabel}  `;
+  const textPart3 = " on the above subject.";
+
+  const w1 = regularFont.widthOfTextAtSize(textPart1, 10);
+  const w2 = regularFont.widthOfTextAtSize(textPart2, 10);
+  const w3 = regularFont.widthOfTextAtSize(textPart3, 10);
+
+  page.drawText(textPart1, { x: PAGE_MARGIN, y: currentY, size: 10, font: regularFont });
+  page.drawLine({
+    start: { x: PAGE_MARGIN + w1, y: currentY - 2 },
+    end: { x: PAGE_MARGIN + w1 + w2, y: currentY - 2 },
+    thickness: 0.5,
+    color: rgb(0, 0, 0)
+  });
+  page.drawText(textPart2, { x: PAGE_MARGIN + w1, y: currentY, size: 10, font: regularFont });
+  page.drawText(textPart3, { x: PAGE_MARGIN + w1 + w2, y: currentY, size: 10, font: regularFont });
+
+  currentY -= 18;
+
+  // 9. Main Body Paragraph
+  page.drawText("This is to inform you that your request to be attached at the County Government of Uasin Gishu has been", {
+    x: PAGE_MARGIN,
+    y: currentY,
+    size: 10,
+    font: regularFont,
+    color: rgb(0.1, 0.1, 0.1)
+  });
+  currentY -= 15;
+
+  const line2Start = "approved. Subsequently, you will be attached to the Department of ";
+  const wLine2Start = regularFont.widthOfTextAtSize(line2Start, 10);
+  page.drawText(line2Start, { x: PAGE_MARGIN, y: currentY, size: 10, font: regularFont });
+  
+  const deptStartX = PAGE_MARGIN + wLine2Start;
+  const deptEndX = pageWidth - PAGE_MARGIN;
+  page.drawLine({
+    start: { x: deptStartX, y: currentY - 2 },
+    end: { x: deptEndX, y: currentY - 2 },
+    thickness: 0.5,
+    color: rgb(0, 0, 0)
+  });
+  page.drawText(applicantDepartment, { x: deptStartX + 5, y: currentY, size: 10, font: regularFont });
+
+  currentY -= 15;
+
+  const part3_1 = "with effect from ";
+  const part3_2 = `  ${startDateLabel}  `;
+  const part3_3 = " to ";
+  const part3_4 = `  ${endDateLabel}  `;
+  const part3_5 = " subject to the following conditions:-";
+
+  const w3_1 = regularFont.widthOfTextAtSize(part3_1, 10);
+  const w3_2 = regularFont.widthOfTextAtSize(part3_2, 10);
+  const w3_3 = regularFont.widthOfTextAtSize(part3_3, 10);
+  const w3_4 = regularFont.widthOfTextAtSize(part3_4, 10);
+
+  page.drawText(part3_1, { x: PAGE_MARGIN, y: currentY, size: 10, font: regularFont });
+  page.drawLine({
+    start: { x: PAGE_MARGIN + w3_1, y: currentY - 2 },
+    end: { x: PAGE_MARGIN + w3_1 + w3_2, y: currentY - 2 },
+    thickness: 0.5,
+    color: rgb(0, 0, 0)
+  });
+  page.drawText(part3_2, { x: PAGE_MARGIN + w3_1, y: currentY, size: 10, font: regularFont });
+  page.drawText(part3_3, { x: PAGE_MARGIN + w3_1 + w3_2, y: currentY, size: 10, font: regularFont });
+  page.drawLine({
+    start: { x: PAGE_MARGIN + w3_1 + w3_2 + w3_3, y: currentY - 2 },
+    end: { x: PAGE_MARGIN + w3_1 + w3_2 + w3_3 + w3_4, y: currentY - 2 },
+    thickness: 0.5,
+    color: rgb(0, 0, 0)
+  });
+  page.drawText(part3_4, { x: PAGE_MARGIN + w3_1 + w3_2 + w3_3, y: currentY, size: 10, font: regularFont });
+  page.drawText(part3_5, { x: PAGE_MARGIN + w3_1 + w3_2 + w3_3 + w3_4, y: currentY, size: 10, font: regularFont });
+
+  currentY -= 20;
+
+  // 10. Conditions List
+  const conditions = [
+    "You must have general personal accident insurance cover for the period of the attachment.",
+    "This is not an offer for employment & the County Government will not pay you any remuneration for the duties performed.",
+    "The County will not be held liable for any injury during attachment period.",
+    "You will adhere to all County regulations and maintain high discipline.",
+    "You will arrange for your own accommodation.",
+    "You will be required to dress officially while performing County duties."
+  ];
+
+  conditions.forEach((cond) => {
+    drawArrowBullet(page, PAGE_MARGIN + 6, currentY);
+    currentY = drawWrappedText(page, cond, {
+      x: PAGE_MARGIN + 22,
+      y: currentY,
+      maxWidth: contentWidth - 22,
+      font: regularFont,
+      fontSize: 10,
+      lineGap: 3
+    }) - 2;
+  });
+
+  currentY -= 10;
+
+  // 11. Signature Paragraph
+  currentY = drawWrappedText(page, "If you accept these conditions, please signify your acceptance of the conditions set out in this offer by signing the declaration of acceptance. Retain the original letter and return the duplicate on the reporting date.", {
     x: PAGE_MARGIN,
     y: currentY,
     maxWidth: contentWidth,
-    font: regularFont
-  }) - 18;
+    font: regularFont,
+    fontSize: 10,
+    lineGap: 3
+  }) - 20;
 
-  page.drawText("Signature: ........................................", {
+  // 12. Ink Signature Scribble
+  const sigX = PAGE_MARGIN + 10;
+  const sigY = currentY + 12;
+  page.drawSvgPath("M 0 15 Q 12 35 15 10 T 25 15 Q 35 45 42 22 T 58 20 T 70 20", {
+    x: sigX,
+    y: sigY,
+    borderColor: rgb(0, 0.05, 0.45),
+    borderWidth: 1.2
+  });
+  page.drawLine({
+    start: { x: sigX - 8, y: sigY + 5 },
+    end: { x: sigX + 90, y: sigY + 5 },
+    thickness: 0.8,
+    color: rgb(0, 0.05, 0.45)
+  });
+
+  // Signatory details
+  page.drawText(signatoryName, {
     x: PAGE_MARGIN,
     y: currentY,
-    size: BODY_FONT_SIZE,
+    size: 10,
     font: regularFont,
     color: rgb(0, 0, 0)
   });
-  page.drawText("Date: ........................................", {
-    x: PAGE_MARGIN + 280,
-    y: currentY,
-    size: BODY_FONT_SIZE,
-    font: regularFont,
+  page.drawText(signatoryDesignation, {
+    x: PAGE_MARGIN,
+    y: currentY - 14,
+    size: 10,
+    font: boldFont,
+    color: rgb(0, 0, 0)
+  });
+  page.drawText(signatoryDepartment, {
+    x: PAGE_MARGIN,
+    y: currentY - 28,
+    size: 10,
+    font: boldFont,
     color: rgb(0, 0, 0)
   });
 
-  currentY -= 34;
+  currentY -= 54;
 
-  page.drawText("System-generated county attachment joining letter.", {
+  // 13. Declaration section
+  page.drawText("DECLARATION OF ACCEPTANCE", {
     x: PAGE_MARGIN,
     y: currentY,
-    size: 9,
-    font: italicFont,
-    color: rgb(0.25, 0.25, 0.25)
+    size: 11,
+    font: boldFont,
+    color: rgb(0, 0, 0)
+  });
+  
+  currentY -= 16;
+
+  const decLine1 = "I ..............................................................ID/No...............................................Hereby declare that, I have read";
+  const decLine2 = `and understood the conditions set out in this letter dated ${generatedDateLabel} and hereby agree to abide by the`;
+  const decLine3 = "conditions.";
+  const decLine4 = "Signature:............................................................Date:........................................";
+
+  page.drawText(decLine1, { x: PAGE_MARGIN, y: currentY, size: 10, font: regularFont });
+  currentY -= 14;
+  page.drawText(decLine2, { x: PAGE_MARGIN, y: currentY, size: 10, font: regularFont });
+  currentY -= 14;
+  page.drawText(decLine3, { x: PAGE_MARGIN, y: currentY, size: 10, font: regularFont });
+  currentY -= 20;
+  page.drawText(decLine4, { x: PAGE_MARGIN, y: currentY, size: 10, font: regularFont });
+
+  currentY -= 28;
+
+  // CC line
+  page.drawText("CC; Chief Officer:________________________________________", {
+    x: PAGE_MARGIN,
+    y: currentY,
+    size: 10,
+    font: regularFont,
+    color: rgb(0.1, 0.1, 0.1)
   });
 
   const finalBytes = await pdfDoc.save();
