@@ -2795,6 +2795,20 @@ function getStatusClass(status) {
   return normalized.toLowerCase().replace(/\s+/g, "-");
 }
 
+function getNitaStatusClass(status) {
+  const normalized = (status || "").toString().trim();
+  if (normalized === "Completed") {
+    return "approved";
+  }
+  if (normalized === "Under HR NITA Review") {
+    return "verified";
+  }
+  if (normalized === "Awaiting Student NITA Resubmission") {
+    return "needs-correction";
+  }
+  return "pending";
+}
+
 function getStudentDashboardStatus(application, rejectedDocuments) {
   const status = normalizeApplicationStatus(application?.status);
   const nitaWorkflow = normalizeNitaWorkflow(application?.nitaWorkflow);
@@ -4574,6 +4588,7 @@ app.locals.adminPortalPath = ADMIN_PORTAL_PATH;
 app.locals.departmentsList = DEPARTMENTS;
 app.locals.documentDefinitions = getViewDocumentDefinitions();
 app.locals.getStatusClass = getStatusClass;
+app.locals.getNitaStatusClass = getNitaStatusClass;
 app.locals.getDepartmentLabel = getDepartmentLabel;
 app.locals.getDisabilityStatusLabel = getDisabilityStatusLabel;
 app.locals.getCourseLevelLabel = getCourseLevelLabel;
