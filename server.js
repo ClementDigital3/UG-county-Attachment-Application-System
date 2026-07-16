@@ -4543,6 +4543,40 @@ async function renderHrSupervisorsPage(res, {
   });
 }
 
+async function renderAdminSupervisorsPage(res, req, {
+  error = null,
+  notice = null,
+  statusCode = 200
+} = {}) {
+  const settings = await readSettings();
+  const applications = await readApplications();
+  const adminDept = getAdminScopeDepartment(req);
+
+  const allSupervisors = createSupervisorAssignmentSummary(settings.supervisorsDirectory, applications);
+  const supervisors = allSupervisors.filter((s) => s.department === adminDept);
+
+  const assignedApplications = applications
+    .map((item) => ensureApplicationDefaults(item))
+    .filter((application) => application.supervisorAssignment && application.supervisorAssignment.department === adminDept)
+    .sort((a, b) => {
+      const left = `${a.supervisorAssignment?.fullName || ""} ${a.fullName || ""}`;
+      const right = `${b.supervisorAssignment?.fullName || ""} ${b.fullName || ""}`;
+      return left.localeCompare(right, "en", { sensitivity: "base" });
+    });
+
+  return res.status(statusCode).render("admin-supervisors", {
+    error,
+    notice,
+    supervisors,
+    assignedApplications,
+    formatDate,
+    getDepartmentLabel,
+    getPeriodLabel,
+    adminScopeDepartment: adminDept,
+    adminScopeDepartmentLabel: adminDept ? getDepartmentLabel(adminDept) : "Department"
+  });
+}
+
 async function renderHrAuditPage(res, {
   error = null,
   notice = null,
@@ -6814,6 +6848,262 @@ app.post("/hr/supervisors/:supervisorId/delete", csrfProtection, ensureHrAdmin, 
     return res.redirect("/hr/supervisors?notice=Supervisor+deleted+successfully");
   } catch (error) {
     return renderHrSupervisorsPage(res, {
+      statusCode: 500,
+      error: error.message || "Failed to delete supervisor."
+    });
+  }
+});
+
+app.get("/admin/supervisors", ensureDepartmentAdmin, async (req, res) => {
+  let notice = req.query.notice || null;
+  return renderAdminSupervisorsPage(res, req, { notice });
+});
+
+app.post("/admin/supervisors/create", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
+  const adminDept = getAdminScopeDepartment(req);
+  if (!adminDept) {
+    return res.status(400).send("No department scope active for session.");
+  }
+
+  try {
+    const settings = await readSettings();
+    if (!settings.supervisorsDirectory) {
+      settings.supervisorsDirectory = [];
+    }
+
+    const fullName = (req.body.fullName || "").trim();
+    if (!fullName) {
+      return renderAdminSupervisorsPage(res, req, {
+        statusCode: 400,
+        error: "Supervisor full name is required."
+      });
+    }
+
+    const employeeNumber = (req.body.employeeNumber || "").trim();
+    if (employeeNumber) {
+      const exists = settings.supervisorsDirectory.some(
+        (s) => s.employeeNumber && s.employeeNumber.toLowerCase() === employeeNumber.toLowerCase()
+      );
+      if (exists) {
+        return renderAdminSupervisorsPage(res, req, {
+          statusCode: 400,
+          error: `Supervisor with employee number "${employeeNumber}" already exists.`
+        });
+      }
+    }
+
+    const supervisorId = `manual-${crypto.randomBytes(8).toString("hex")}`;
+    const newSupervisor = {
+      supervisorId,
+      employeeNumber,
+      fullName,
+      department: adminDept,
+      jobTitle: (req.body.jobTitle || "").trim(),
+      email: (req.body.email || "").trim(),
+      phone: (req.body.phone || "").trim(),
+      workStation: (req.body.workStation || "").trim(),
+      isActive: true,
+      canSupervise: true,
+      maxStudents: parseInt(req.body.maxStudents, 10) || 5,
+      source: "manual"
+    };
+
+    settings.supervisorsDirectory.push(newSupervisor);
+
+    const createdAt = new Date().toISOString();
+    settings.updatedAt = createdAt;
+
+    appendSettingsAudit(settings, {
+      scope: "settings",
+      action: "manual_supervisor_created",
+      ...getActorInfo(req, "department_admin"),
+      note: `Department admin (${adminDept}) manually created supervisor ${fullName} (${employeeNumber || "No employee number"}).`,
+      at: createdAt,
+      metadata: {
+        supervisorId,
+        employeeNumber,
+        department: adminDept
+      }
+    });
+
+    await writeSettings(settings);
+    return res.redirect("/admin/supervisors?notice=Supervisor+created+successfully");
+  } catch (error) {
+    return renderAdminSupervisorsPage(res, req, {
+      statusCode: 500,
+      error: error.message || "Failed to create supervisor."
+    });
+  }
+});
+
+app.post("/admin/supervisors/:supervisorId/edit", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
+  const adminDept = getAdminScopeDepartment(req);
+  if (!adminDept) {
+    return res.status(400).send("No department scope active for session.");
+  }
+  const { supervisorId } = req.params;
+  try {
+    const settings = await readSettings();
+    if (!settings.supervisorsDirectory) {
+      settings.supervisorsDirectory = [];
+    }
+
+    const supervisor = settings.supervisorsDirectory.find((s) => s.supervisorId === supervisorId);
+    if (!supervisor || supervisor.department !== adminDept) {
+      return renderAdminSupervisorsPage(res, req, {
+        statusCode: 404,
+        error: "Supervisor not found or not in your department."
+      });
+    }
+
+    const fullName = (req.body.fullName || "").trim();
+    if (!fullName) {
+      return renderAdminSupervisorsPage(res, req, {
+        statusCode: 400,
+        error: "Supervisor full name is required."
+      });
+    }
+
+    const employeeNumber = (req.body.employeeNumber || "").trim();
+    if (employeeNumber && employeeNumber !== supervisor.employeeNumber) {
+      const exists = settings.supervisorsDirectory.some(
+        (s) => s.supervisorId !== supervisorId && s.employeeNumber && s.employeeNumber.toLowerCase() === employeeNumber.toLowerCase()
+      );
+      if (exists) {
+        return renderAdminSupervisorsPage(res, req, {
+          statusCode: 400,
+          error: `Another supervisor with employee number "${employeeNumber}" already exists.`
+        });
+      }
+    }
+
+    supervisor.fullName = fullName;
+    supervisor.employeeNumber = employeeNumber;
+    supervisor.jobTitle = (req.body.jobTitle || "").trim();
+    supervisor.email = (req.body.email || "").trim();
+    supervisor.phone = (req.body.phone || "").trim();
+    supervisor.workStation = (req.body.workStation || "").trim();
+    supervisor.maxStudents = parseInt(req.body.maxStudents, 10) || 5;
+
+    const updatedAt = new Date().toISOString();
+    settings.updatedAt = updatedAt;
+
+    appendSettingsAudit(settings, {
+      scope: "settings",
+      action: "manual_supervisor_updated",
+      ...getActorInfo(req, "department_admin"),
+      note: `Department admin (${adminDept}) manually updated supervisor ${fullName}.`,
+      at: updatedAt,
+      metadata: {
+        supervisorId,
+        department: adminDept
+      }
+    });
+
+    await writeSettings(settings);
+    return res.redirect("/admin/supervisors?notice=Supervisor+updated+successfully");
+  } catch (error) {
+    return renderAdminSupervisorsPage(res, req, {
+      statusCode: 500,
+      error: error.message || "Failed to update supervisor."
+    });
+  }
+});
+
+app.post("/admin/supervisors/:supervisorId/toggle-active", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
+  const adminDept = getAdminScopeDepartment(req);
+  if (!adminDept) {
+    return res.status(400).send("No department scope active for session.");
+  }
+  const { supervisorId } = req.params;
+  try {
+    const settings = await readSettings();
+    if (!settings.supervisorsDirectory) {
+      settings.supervisorsDirectory = [];
+    }
+
+    const supervisor = settings.supervisorsDirectory.find((s) => s.supervisorId === supervisorId);
+    if (!supervisor || supervisor.department !== adminDept) {
+      return renderAdminSupervisorsPage(res, req, {
+        statusCode: 404,
+        error: "Supervisor not found or not in your department."
+      });
+    }
+
+    const currentActive = supervisor.isActive === undefined ? true : supervisor.isActive;
+    const newActiveState = !currentActive;
+    supervisor.isActive = newActiveState;
+    supervisor.canSupervise = newActiveState;
+
+    const updatedAt = new Date().toISOString();
+    settings.updatedAt = updatedAt;
+
+    appendSettingsAudit(settings, {
+      scope: "settings",
+      action: "manual_supervisor_toggle_active",
+      ...getActorInfo(req, "department_admin"),
+      note: `Department admin (${adminDept}) toggled active status for supervisor ${supervisor.fullName} to ${newActiveState}.`,
+      at: updatedAt,
+      metadata: {
+        supervisorId,
+        isActive: newActiveState,
+        department: adminDept
+      }
+    });
+
+    await writeSettings(settings);
+    return res.redirect(`/admin/supervisors?notice=Supervisor+status+updated+to+${newActiveState ? 'active' : 'inactive'}`);
+  } catch (error) {
+    return renderAdminSupervisorsPage(res, req, {
+      statusCode: 500,
+      error: error.message || "Failed to toggle supervisor status."
+    });
+  }
+});
+
+app.post("/admin/supervisors/:supervisorId/delete", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
+  const adminDept = getAdminScopeDepartment(req);
+  if (!adminDept) {
+    return res.status(400).send("No department scope active for session.");
+  }
+  const { supervisorId } = req.params;
+  try {
+    const settings = await readSettings();
+    if (!settings.supervisorsDirectory) {
+      settings.supervisorsDirectory = [];
+    }
+
+    const supervisorIndex = settings.supervisorsDirectory.findIndex((s) => s.supervisorId === supervisorId);
+    if (supervisorIndex === -1 || settings.supervisorsDirectory[supervisorIndex].department !== adminDept) {
+      return renderAdminSupervisorsPage(res, req, {
+        statusCode: 404,
+        error: "Supervisor not found or not in your department."
+      });
+    }
+
+    const supervisor = settings.supervisorsDirectory[supervisorIndex];
+    settings.supervisorsDirectory.splice(supervisorIndex, 1);
+
+    const updatedAt = new Date().toISOString();
+    settings.updatedAt = updatedAt;
+
+    appendSettingsAudit(settings, {
+      scope: "settings",
+      action: "manual_supervisor_deleted",
+      ...getActorInfo(req, "department_admin"),
+      note: `Department admin (${adminDept}) manually deleted supervisor ${supervisor.fullName}.`,
+      at: updatedAt,
+      metadata: {
+        supervisorId,
+        fullName: supervisor.fullName,
+        department: adminDept
+      }
+    });
+
+    await writeSettings(settings);
+    return res.redirect("/admin/supervisors?notice=Supervisor+deleted+successfully");
+  } catch (error) {
+    return renderAdminSupervisorsPage(res, req, {
       statusCode: 500,
       error: error.message || "Failed to delete supervisor."
     });
