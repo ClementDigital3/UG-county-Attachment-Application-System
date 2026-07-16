@@ -4450,6 +4450,13 @@ async function renderAdminDetailPage(res, {
     : DEPARTMENTS;
   const statusOptions = STATUS_OPTIONS.filter((status) => status !== "Admitted");
 
+  const applications = await readApplications();
+  const supervisorOptions = getSupervisorSelectionOptions(
+    settings.supervisorsDirectory,
+    normalized,
+    applications
+  );
+
   return res.status(statusCode).render("admin-detail", {
     application: normalized,
     formatDate,
@@ -4465,7 +4472,8 @@ async function renderAdminDetailPage(res, {
     correctionReasonOptions: CORRECTION_REASON_OPTIONS,
     getCorrectionReasonLabel,
     error,
-    notice
+    notice,
+    supervisorOptions
   });
 }
 
@@ -7503,6 +7511,10 @@ app.get("/admin/applications/:id", ensureDepartmentAdmin, async (req, res) => {
     notice = "Application record frozen successfully.";
   } else if (req.query.unfrozen === "1") {
     notice = "Application record restored successfully.";
+  } else if (req.query.supervisorSaved === "1") {
+    notice = "Department supervisor assigned successfully.";
+  } else if (req.query.supervisorCleared === "1") {
+    notice = "Department supervisor assignment cleared.";
   }
 
   return renderAdminDetailPage(res, {
@@ -8294,8 +8306,7 @@ app.post("/hr/applications/:id/nita-complete", csrfProtection, ensureHrAdmin, as
   return res.redirect(`/hr/applications/${req.params.id}?nitaCompleted=1`);
 });
 
-app.post("/hr/applications/:id/supervisor", csrfProtection, ensureHrAdmin, async (req, res) => {
-  clearHrDepartmentScope(req);
+app.post("/admin/applications/:id/supervisor", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
   const selectedSupervisorId = (req.body.supervisorId || "").toString().trim();
   const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
@@ -8306,23 +8317,24 @@ app.post("/hr/applications/:id/supervisor", csrfProtection, ensureHrAdmin, async
 
   const application = ensureApplicationDefaults(applications[index]);
 
-  if (!HR_VISIBLE_STATUSES.has(application.status)) {
-    return res.status(400).send("Application is not yet in HR review queue.");
+  const adminDept = getAdminScopeDepartment(req);
+  if (adminDept && application.appliedDepartment !== adminDept) {
+    return res.status(403).send("Forbidden: You cannot access applications outside your department.");
   }
 
   if (isApplicationFrozen(application)) {
-    return renderHrDetailPage(res, {
+    return renderAdminDetailPage(res, {
       application,
       statusCode: 400,
-      error: "This application record is frozen. Unfreeze it from department review before continuing the HR workflow."
+      error: "This application record is frozen. Restore it before assigning a supervisor."
     });
   }
 
   if (!isAdmittedStatus(application.status)) {
-    return renderHrDetailPage(res, {
+    return renderAdminDetailPage(res, {
       application,
       statusCode: 400,
-      error: "Admit the student first before assigning a county supervisor."
+      error: "Students must be admitted before a supervisor can be assigned."
     });
   }
 
@@ -8337,10 +8349,10 @@ app.post("/hr/applications/:id/supervisor", csrfProtection, ensureHrAdmin, async
     : null;
 
   if (selectedSupervisorId && !matchedSupervisor) {
-    return renderHrDetailPage(res, {
+    return renderAdminDetailPage(res, {
       application,
       statusCode: 400,
-      error: "Select a valid active supervisor from the current HR supervisor directory."
+      error: "Select a valid active supervisor from the supervisor directory."
     });
   }
 
@@ -8348,15 +8360,15 @@ app.post("/hr/applications/:id/supervisor", csrfProtection, ensureHrAdmin, async
   const nextSupervisorId = matchedSupervisor?.supervisorId || "";
 
   if (!nextSupervisorId && !previousAssignment) {
-    return renderHrDetailPage(res, {
+    return renderAdminDetailPage(res, {
       application,
       statusCode: 400,
-      error: "Select a supervisor from the list first. If the list is empty, create a supervisor manually or sync the HR supervisor directory."
+      error: "Select a supervisor from the list first."
     });
   }
 
   if ((previousAssignment?.supervisorId || "") === nextSupervisorId) {
-    return res.redirect(`/hr/applications/${req.params.id}?supervisorSaved=1`);
+    return res.redirect(`/admin/applications/${req.params.id}?supervisorSaved=1`);
   }
 
   const updatedAt = new Date().toISOString();
@@ -8365,17 +8377,17 @@ app.post("/hr/applications/:id/supervisor", csrfProtection, ensureHrAdmin, async
     ? normalizeSupervisorAssignment({
       ...matchedSupervisor,
       assignedAt: updatedAt,
-      assignedBy: req.session?.adminUsername || "hr"
+      assignedBy: req.session?.adminUsername || "admin"
     })
     : null;
   application.updatedAt = updatedAt;
   appendApplicationAudit(application, {
     scope: "application",
     action: matchedSupervisor ? "supervisor_assigned" : "supervisor_assignment_cleared",
-    ...getActorInfo(req, "hr_admin"),
+    ...getActorInfo(req, "department_admin"),
     note: matchedSupervisor
-      ? `HR assigned supervisor ${matchedSupervisor.fullName} to the admitted student.`
-      : "HR cleared the assigned supervisor from this admitted student record.",
+      ? `Department assigned supervisor ${matchedSupervisor.fullName} to the admitted student.`
+      : "Department cleared the assigned supervisor from this admitted student record.",
     at: updatedAt,
     metadata: {
       previousSupervisorId: previousAssignment?.supervisorId || "",
@@ -8389,7 +8401,7 @@ app.post("/hr/applications/:id/supervisor", csrfProtection, ensureHrAdmin, async
   await writeApplications(applications);
 
   return res.redirect(
-    `/hr/applications/${req.params.id}?${matchedSupervisor ? "supervisorSaved=1" : "supervisorCleared=1"}`
+    `/admin/applications/${req.params.id}?${matchedSupervisor ? "supervisorSaved=1" : "supervisorCleared=1"}`
   );
 });
 

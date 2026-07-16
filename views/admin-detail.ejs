@@ -263,6 +263,55 @@
         <h2>Attachment Joining Letter</h2>
         <p>Joining letters are uploaded by HR after the final admission decision in the HR portal.</p>
 
+        <h2>Supervisor Assignment</h2>
+        <p>Once a student is admitted, you can attach a county supervisor from the staff directory for this department.</p>
+
+        <% if (application.supervisorAssignment) { %>
+          <div class="summary">
+            <p><strong>Assigned Supervisor:</strong> <%= application.supervisorAssignment.fullName %></p>
+            <p><strong>Employee Number:</strong> <%= application.supervisorAssignment.employeeNumber || 'Not recorded' %></p>
+            <p><strong>Department:</strong> <%= application.supervisorAssignment.department ? getDepartmentLabel(application.supervisorAssignment.department) : 'Not recorded' %></p>
+            <p><strong>Job Title:</strong> <%= application.supervisorAssignment.jobTitle || 'Not recorded' %></p>
+            <p><strong>Work Station:</strong> <%= application.supervisorAssignment.workStation || 'Not recorded' %></p>
+            <p><strong>Email:</strong> <%= application.supervisorAssignment.email || 'Not recorded' %></p>
+            <p><strong>Phone:</strong> <%= application.supervisorAssignment.phone || 'Not recorded' %></p>
+            <p><strong>Assigned:</strong> <%= formatDate(application.supervisorAssignment.assignedAt) %></p>
+            <p><strong>Assigned By:</strong> <%= application.supervisorAssignment.assignedBy || 'Admin' %></p>
+          </div>
+        <% } else { %>
+          <p>No county supervisor assigned yet.</p>
+        <% } %>
+
+        <% if (application.status === 'Admitted') { %>
+          <form action="/admin/applications/<%= application.id %>/supervisor" method="post" class="form-grid">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <label class="full-width">
+              County Supervisor
+              <select name="supervisorId" <%= application.isFrozen ? 'disabled' : '' %>>
+                <option value="">Clear supervisor assignment</option>
+                <% supervisorOptions.forEach((supervisor) => { %>
+                  <option value="<%= supervisor.supervisorId %>" <%= application.supervisorAssignment && application.supervisorAssignment.supervisorId === supervisor.supervisorId ? 'selected' : '' %>>
+                    <%= supervisor.fullName %>
+                    <% if (supervisor.employeeNumber) { %> - <%= supervisor.employeeNumber %><% } %>
+                    <% if (supervisor.department) { %> - <%= getDepartmentLabel(supervisor.department) %><% } %>
+                    <% if (supervisor.workStation) { %> - <%= supervisor.workStation %><% } %>
+                    (Assigned: <%= supervisor.assignedStudents %>)
+                  </option>
+                <% }) %>
+              </select>
+              <% if (!supervisorOptions.length) { %>
+                <span class="field-hint">No active supervisors are available for this department yet.</span>
+              <% } %>
+            </label>
+
+            <div class="actions full-width">
+              <button class="btn" type="submit" <%= application.isFrozen ? 'disabled' : '' %>><%= application.supervisorAssignment ? 'Update Supervisor Assignment' : 'Assign Supervisor' %></button>
+            </div>
+          </form>
+        <% } else { %>
+          <p class="muted-note">Supervisor assignment becomes available after HR changes the final status to <strong>Admitted</strong>.</p>
+        <% } %>
+
         <h2>Update Application Status</h2>
         <p>When documents are correct, set status to <strong>Verified</strong> so HR can review the final admission decision.</p>
         <form action="/admin/applications/<%= application.id %>/status" method="post" class="form-grid">

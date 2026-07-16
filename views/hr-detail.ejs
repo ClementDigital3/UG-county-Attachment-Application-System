@@ -183,36 +183,7 @@
           <p>No county supervisor assigned yet.</p>
         <% } %>
 
-        <% if (application.status === 'Admitted') { %>
-          <form action="/hr/applications/<%= application.id %>/supervisor" method="post" class="form-grid">
-            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-            <label class="full-width">
-              County Supervisor
-              <select name="supervisorId">
-                <option value="">Clear supervisor assignment</option>
-                <% supervisorOptions.forEach((supervisor) => { %>
-                  <option value="<%= supervisor.supervisorId %>" <%= application.supervisorAssignment && application.supervisorAssignment.supervisorId === supervisor.supervisorId ? 'selected' : '' %>>
-                    <%= supervisor.fullName %>
-                    <% if (supervisor.employeeNumber) { %> - <%= supervisor.employeeNumber %><% } %>
-                    <% if (supervisor.department) { %> - <%= getDepartmentLabel(supervisor.department) %><% } %>
-                    <% if (supervisor.workStation) { %> - <%= supervisor.workStation %><% } %>
-                    (Assigned: <%= supervisor.assignedStudents %>)
-                  </option>
-                <% }) %>
-              </select>
-              <% if (!supervisorOptions.length) { %>
-                <span class="field-hint">No active supervisors are available for this department yet. Sync the supervisor directory first.</span>
-              <% } %>
-            </label>
 
-            <div class="actions full-width">
-              <button class="btn" type="submit"><%= application.supervisorAssignment ? 'Update Supervisor Assignment' : 'Assign Supervisor' %></button>
-              <a class="btn secondary" href="/hr/supervisors">Open Supervisor Directory</a>
-            </div>
-          </form>
-        <% } else { %>
-          <p class="muted-note">Supervisor assignment becomes available after HR changes the final status to <strong>Admitted</strong>.</p>
-        <% } %>
 
         <h2>Student Communication History</h2>
         <p>General HR broadcasts and workflow-triggered notifications for this student appear below. Use the main HR Communications page to send updates to all applicant contacts.</p>
