@@ -245,8 +245,9 @@ async function createJoiningLetterTemplatePdf({
   // Draw Right Address
   const rightAddressLines = [
     "When Replying, Please Address to:",
-    "County Human Resources Manager",
+    "",
     "Tel. +254-053-2016306",
+    "County Human Resources Manager",
     "Email: countyhrm@uasingishu.go.ke"
   ];
   let rightY = addressYStart;
@@ -311,13 +312,28 @@ async function createJoiningLetterTemplatePdf({
     color: rgb(0, 0, 0)
   });
 
-  const dateStr = generatedDateLabel.toUpperCase();
-  page.drawText(`DATE: ${dateStr}`, {
-    x: pageWidth - PAGE_MARGIN - 140,
+  // Underline for Date field exactly as in the image template
+  const dateStartX = pageWidth - PAGE_MARGIN - 120;
+  const dateEndX = pageWidth - PAGE_MARGIN;
+  page.drawText("DATE: ", {
+    x: dateStartX - 35,
     y: currentY,
     size: 10,
     font: boldFont,
     color: rgb(0, 0, 0)
+  });
+  page.drawLine({
+    start: { x: dateStartX, y: currentY - 2 },
+    end: { x: dateEndX, y: currentY - 2 },
+    thickness: 0.5,
+    color: rgb(0, 0, 0)
+  });
+  page.drawText(generatedDateLabel, {
+    x: dateStartX + 5,
+    y: currentY + 1,
+    size: 10,
+    font: regularFont,
+    color: rgb(0.1, 0.1, 0.1)
   });
 
   currentY -= 24;
@@ -368,8 +384,8 @@ async function createJoiningLetterTemplatePdf({
 
   currentY -= 18;
 
-  // 9. Main Body Paragraph
-  page.drawText("This is to inform you that your request to be attached at the County Government of Uasin Gishu has been", {
+  // 9. Main Body Paragraph (spelled Usain Gishu verbatim as shown in the original image text)
+  page.drawText("This is to inform you that your request to be attached at the County Government of Usain Gishu has been", {
     x: PAGE_MARGIN,
     y: currentY,
     size: 10,
@@ -449,15 +465,24 @@ async function createJoiningLetterTemplatePdf({
 
   currentY -= 10;
 
-  // 11. Signature Paragraph
-  currentY = drawWrappedText(page, "If you accept these conditions, please signify your acceptance of the conditions set out in this offer by signing the declaration of acceptance. Retain the original letter and return the duplicate on the reporting date.", {
+  // 11. Signature Paragraph (wrapped exactly as two lines matching the image format)
+  page.drawText("If you accept these conditions, please signify your acceptance of the conditions set out in this offer by signing", {
     x: PAGE_MARGIN,
     y: currentY,
-    maxWidth: contentWidth,
+    size: 10,
     font: regularFont,
-    fontSize: 10,
-    lineGap: 3
-  }) - 20;
+    color: rgb(0, 0, 0)
+  });
+  currentY -= 14;
+  page.drawText("the declaration of acceptance. Retain the original letter and return the duplicate on the reporting date.", {
+    x: PAGE_MARGIN,
+    y: currentY,
+    size: 10,
+    font: regularFont,
+    color: rgb(0, 0, 0)
+  });
+  
+  currentY -= 20;
 
   // 12. Ink Signature Graphic
   if (signatureImage) {
@@ -502,7 +527,7 @@ async function createJoiningLetterTemplatePdf({
 
   currentY -= 54;
 
-  // 13. Declaration section
+  // 13. Declaration section (verbatim dotted lines matching the image template exactly)
   page.drawText("DECLARATION OF ACCEPTANCE", {
     x: PAGE_MARGIN,
     y: currentY,
@@ -514,7 +539,7 @@ async function createJoiningLetterTemplatePdf({
   currentY -= 16;
 
   const decLine1 = "I ..............................................................ID/No...............................................Hereby declare that, I have read";
-  const decLine2 = `and understood the conditions set out in this letter dated ${generatedDateLabel} and hereby agree to abide by the`;
+  const decLine2 = "and understood the conditions set out in this letter dated......................................... and hereby agree to abide by the";
   const decLine3 = "conditions.";
   const decLine4 = "Signature:............................................................Date:........................................";
 
