@@ -321,11 +321,22 @@ function drawPartCSignatureStamp(page, {
     color: stampBlue
   });
 
-  // Line 3: Red Date Stamp (e.g. 15 JUL 2026)
+  if (signatureImage) {
+    const sig = signatureImage.scaleToFit(width * 0.55, height * 0.55);
+    page.drawImage(signatureImage, {
+      x: x + (width - sig.width) / 2 - 5,
+      y: y + (height - sig.height) / 2,
+      width: sig.width,
+      height: sig.height,
+      opacity: 0.55
+    });
+  }
+
+  // Line 3: Red Date Stamp (e.g. 15 JUL 2026) - drawn on top of signature for maximum visibility
   page.drawText(stampDateRed, {
     x: x + (36 * (width / 135)),
     y: y + height - (45 * fontSizeFactor),
-    size: 9.5 * fontSizeFactor,
+    size: 10.5 * fontSizeFactor,
     font: fonts.bold,
     color: stampRed
   });
@@ -338,17 +349,6 @@ function drawPartCSignatureStamp(page, {
     font: fonts.bold,
     color: stampBlue
   });
-
-  if (signatureImage) {
-    const sig = signatureImage.scaleToFit(width * 0.55, height * 0.55);
-    page.drawImage(signatureImage, {
-      x: x + (width - sig.width) / 2 - 5,
-      y: y + (height - sig.height) / 2,
-      width: sig.width,
-      height: sig.height,
-      opacity: 0.85
-    });
-  }
 }
 
 function drawPartCOverlay(page, {
