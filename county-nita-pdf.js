@@ -303,6 +303,17 @@ function drawPartCSignatureStamp(page, {
 
   const fontSizeFactor = height / 68;
 
+  if (signatureImage) {
+    const sig = signatureImage.scaleToFit(width * 0.55, height * 0.55);
+    page.drawImage(signatureImage, {
+      x: x + (width - sig.width) / 2 - 5,
+      y: y + (height - sig.height) / 2,
+      width: sig.width,
+      height: sig.height,
+      opacity: 1.0
+    });
+  }
+
   // Line 1: COUNTY HUMAN RESOURCE
   page.drawText("COUNTY HUMAN RESOURCE", {
     x: x + (10 * (width / 135)),
@@ -320,17 +331,6 @@ function drawPartCSignatureStamp(page, {
     font: fonts.bold,
     color: stampBlue
   });
-
-  if (signatureImage) {
-    const sig = signatureImage.scaleToFit(width * 0.55, height * 0.55);
-    page.drawImage(signatureImage, {
-      x: x + (width - sig.width) / 2 - 5,
-      y: y + (height - sig.height) / 2,
-      width: sig.width,
-      height: sig.height,
-      opacity: 1.0
-    });
-  }
 
   // Line 3: Red Date Stamp (e.g. 15 JUL 2026) - drawn on top of signature for maximum visibility
   page.drawText(stampDateRed, {
