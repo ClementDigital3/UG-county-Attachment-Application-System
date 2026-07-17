@@ -29,7 +29,7 @@ async function run() {
       countyName: "COUNTY GOVERNMENT OF UASIN GISHU"
     });
 
-    const destinationPath = path.join(ARTIFACTS_DIR, "sample_joining_letter.pdf");
+    const destinationPath = path.join(ARTIFACTS_DIR, "sample_joining_letter_v3.pdf");
     if (fs.existsSync(destinationPath)) {
       fs.unlinkSync(destinationPath);
     }
