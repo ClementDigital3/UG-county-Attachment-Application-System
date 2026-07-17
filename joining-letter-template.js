@@ -486,10 +486,10 @@ async function createJoiningLetterTemplatePdf({
 
   // 12. Ink Signature Graphic
   if (signatureImage) {
-    const sig = signatureImage.scaleToFit(100, 70);
+    const sig = signatureImage.scaleToFit(125, 75);
     page.drawImage(signatureImage, {
       x: PAGE_MARGIN + 2,
-      y: currentY + 5,
+      y: currentY + 8,
       width: sig.width,
       height: sig.height
     });
