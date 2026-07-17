@@ -14,8 +14,8 @@ async function embedLogo(pdfDoc, logoPath) {
   }
 
   const bytes = fs.readFileSync(logoPath);
-  const extension = path.extname(logoPath).toLowerCase();
-  return extension === ".png" ? pdfDoc.embedPng(bytes) : pdfDoc.embedJpg(bytes);
+  const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+  return isPng ? pdfDoc.embedPng(bytes) : pdfDoc.embedJpg(bytes);
 }
 
 function formatLetterDate(value, timeZone = "Africa/Nairobi") {
@@ -167,6 +167,7 @@ async function createJoiningLetterTemplatePdf({
   generatedAt,
   timeZone = "Africa/Nairobi",
   logoPath,
+  signaturePath,
   countyName = "COUNTY GOVERNMENT OF UASIN GISHU",
   signatoryName = "Josephat K Rotich",
   signatoryDesignation = "DIRECTOR, PERFORMANCE MANAGEMENT,",
@@ -184,6 +185,7 @@ async function createJoiningLetterTemplatePdf({
   };
 
   const logoImage = await embedLogo(pdfDoc, logoPath);
+  const signatureImage = await embedLogo(pdfDoc, signaturePath);
   const pageWidth = page.getWidth();
   const contentWidth = pageWidth - PAGE_MARGIN * 2;
   const generatedDateLabel = formatLetterDate(generatedAt || new Date().toISOString(), timeZone);
@@ -457,21 +459,23 @@ async function createJoiningLetterTemplatePdf({
     lineGap: 3
   }) - 20;
 
-  // 12. Ink Signature Scribble
-  const sigX = PAGE_MARGIN + 10;
-  const sigY = currentY + 12;
-  page.drawSvgPath("M 0 15 Q 12 35 15 10 T 25 15 Q 35 45 42 22 T 58 20 T 70 20", {
-    x: sigX,
-    y: sigY,
-    borderColor: rgb(0, 0.05, 0.45),
-    borderWidth: 1.2
-  });
-  page.drawLine({
-    start: { x: sigX - 8, y: sigY + 5 },
-    end: { x: sigX + 90, y: sigY + 5 },
-    thickness: 0.8,
-    color: rgb(0, 0.05, 0.45)
-  });
+  // 12. Ink Signature Graphic
+  if (signatureImage) {
+    const sig = signatureImage.scaleToFit(110, 45);
+    page.drawImage(signatureImage, {
+      x: PAGE_MARGIN + 10,
+      y: currentY + 12,
+      width: sig.width,
+      height: sig.height
+    });
+  } else {
+    page.drawLine({
+      start: { x: PAGE_MARGIN + 2, y: currentY + 16 },
+      end: { x: PAGE_MARGIN + 100, y: currentY + 16 },
+      thickness: 0.8,
+      color: rgb(0, 0, 0)
+    });
+  }
 
   // Signatory details
   page.drawText(signatoryName, {

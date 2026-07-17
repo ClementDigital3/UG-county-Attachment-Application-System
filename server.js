@@ -25,6 +25,7 @@ const PUBLIC_DIR = path.join(APP_ROOT, "public");
 const VIEWS_DIR = path.join(APP_ROOT, "views");
 const KENYA_INSTITUTIONS_FILE = path.join(APP_ROOT, "data", "kenya-institutions.json");
 const COUNTY_LOGO_JPG_FILE = path.join(PUBLIC_DIR, "uasin-gishu-logo.jpg");
+const COUNTY_SIGNATURE_PNG_FILE = path.join(PUBLIC_DIR, "director-signature.png");
 
 const FILE_TYPE_HEADERS = {
   pdf: Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d]), // %PDF-
@@ -8847,6 +8848,7 @@ app.post("/hr/applications/:id/joining-letter-template", csrfProtection, ensureH
       generatedAt,
       timeZone: DISPLAY_TIMEZONE,
       logoPath: COUNTY_LOGO_JPG_FILE,
+      signaturePath: COUNTY_SIGNATURE_PNG_FILE,
       countyName: "COUNTY GOVERNMENT OF UASIN GISHU"
     });
 
