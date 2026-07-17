@@ -6256,6 +6256,7 @@ app.get("/hr/periods", ensureHrAdmin, async (req, res) => {
       Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
     landingTickerText: settings.landingTickerText || "",
     applicationDeadline: settings.applicationDeadline || "",
+    nitaStampingDate: settings.nitaStampingDate || "",
     editableDepartments: DEPARTMENTS,
     maxApplicants: Number(settings.maxApplicants) || 0,
     updatedAt: settings.updatedAt,
@@ -6289,6 +6290,7 @@ app.post("/hr/periods", csrfProtection, ensureHrAdmin, async (req, res) => {
         Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
       landingTickerText: (req.body.landingTickerText || settings.landingTickerText || "").toString(),
       applicationDeadline: (req.body.applicationDeadline || settings.applicationDeadline || "").toString(),
+      nitaStampingDate: (req.body.nitaStampingDate || settings.nitaStampingDate || "").toString(),
       editableDepartments: DEPARTMENTS,
       maxApplicants: Number(settings.maxApplicants) || 0,
       updatedAt: settings.updatedAt,
@@ -6300,6 +6302,7 @@ app.post("/hr/periods", csrfProtection, ensureHrAdmin, async (req, res) => {
   updated.institutionMaxSharePercent = institutionRatio;
   updated.landingTickerText = (req.body.landingTickerText || "").toString().trim();
   updated.applicationDeadline = (req.body.applicationDeadline || "").toString().trim();
+  updated.nitaStampingDate = (req.body.nitaStampingDate || "").toString().trim();
 
   const selected = req.body.openPeriods;
   const selectedPeriods = new Set(Array.isArray(selected) ? selected : selected ? [selected] : []);
@@ -6317,6 +6320,7 @@ app.post("/hr/periods", csrfProtection, ensureHrAdmin, async (req, res) => {
           Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
         landingTickerText: updated.landingTickerText,
         applicationDeadline: updated.applicationDeadline,
+        nitaStampingDate: updated.nitaStampingDate,
         editableDepartments: DEPARTMENTS,
         maxApplicants: Number(settings.maxApplicants) || 0,
         updatedAt: settings.updatedAt,
@@ -6344,11 +6348,33 @@ app.post("/hr/periods", csrfProtection, ensureHrAdmin, async (req, res) => {
           Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
         landingTickerText: updated.landingTickerText,
         applicationDeadline: updated.applicationDeadline,
+        nitaStampingDate: updated.nitaStampingDate,
         editableDepartments: DEPARTMENTS,
         maxApplicants: Number(settings.maxApplicants) || 0,
         updatedAt: settings.updatedAt,
         saved: false,
         error: "Application deadline must be a valid date.",
+        formatDate
+      });
+    }
+  }
+
+  if (updated.nitaStampingDate) {
+    const stampingDateProbe = new Date(updated.nitaStampingDate);
+    if (Number.isNaN(stampingDateProbe.getTime())) {
+      return res.status(400).render("admin-periods", {
+        periodOptions: getPeriodOptions(settings),
+        departmentCapacities: settings.departmentCapacities || createDefaultDepartmentCapacities(0),
+        institutionMaxSharePercent:
+          Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
+        landingTickerText: updated.landingTickerText,
+        applicationDeadline: updated.applicationDeadline,
+        nitaStampingDate: updated.nitaStampingDate,
+        editableDepartments: DEPARTMENTS,
+        maxApplicants: Number(settings.maxApplicants) || 0,
+        updatedAt: settings.updatedAt,
+        saved: false,
+        error: "NITA stamping date must be a valid date.",
         formatDate
       });
     }

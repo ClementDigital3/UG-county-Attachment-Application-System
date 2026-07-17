@@ -75,6 +75,12 @@
               <input type="date" name="applicationDeadline" value="<%= applicationDeadline || '' %>" />
             </label>
 
+            <label>
+              NITA Stamping Date
+              <input type="date" name="nitaStampingDate" value="<%= nitaStampingDate || '' %>" />
+              <span class="field-hint">Defaults to verification date if left blank.</span>
+            </label>
+
             <div class="full-width period-admin-grid">
               <% periodOptions.forEach((period) => { %>
                 <label class="checkbox-card">
