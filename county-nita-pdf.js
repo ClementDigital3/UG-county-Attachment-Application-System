@@ -328,7 +328,7 @@ function drawPartCSignatureStamp(page, {
       y: y + (height - sig.height) / 2,
       width: sig.width,
       height: sig.height,
-      opacity: 0.55
+      opacity: 1.0
     });
   }
 
