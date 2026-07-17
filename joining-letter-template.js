@@ -482,21 +482,21 @@ async function createJoiningLetterTemplatePdf({
     color: rgb(0, 0, 0)
   });
   
-  currentY -= 20;
+  currentY -= 75;
 
   // 12. Ink Signature Graphic
   if (signatureImage) {
-    const sig = signatureImage.scaleToFit(110, 45);
+    const sig = signatureImage.scaleToFit(100, 70);
     page.drawImage(signatureImage, {
-      x: PAGE_MARGIN + 10,
-      y: currentY + 12,
+      x: PAGE_MARGIN + 2,
+      y: currentY + 5,
       width: sig.width,
       height: sig.height
     });
   } else {
     page.drawLine({
-      start: { x: PAGE_MARGIN + 2, y: currentY + 16 },
-      end: { x: PAGE_MARGIN + 100, y: currentY + 16 },
+      start: { x: PAGE_MARGIN + 2, y: currentY + 15 },
+      end: { x: PAGE_MARGIN + 100, y: currentY + 15 },
       thickness: 0.8,
       color: rgb(0, 0, 0)
     });
