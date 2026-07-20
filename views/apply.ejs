@@ -106,6 +106,21 @@
               </select>
             </label>
 
+            <label id="healthStationLabel" style="<%= formData.appliedDepartment === 'health' ? '' : 'display: none;' %>">
+              Preferred Health Station / Facility
+              <input
+                type="text"
+                id="preferredHealthStationInput"
+                name="preferredHealthStation"
+                value="<%= formData.preferredHealthStation || '' %>"
+                placeholder="e.g. MTRH, Uasin Gishu County Hospital, Huruma Sub-County Hospital..."
+                <%= formData.acceptedTerms === 'yes' ? '' : 'disabled' %>
+              />
+              <span class="field-hint">
+                Type your preferred hospital or health facility for attachment.
+              </span>
+            </label>
+
             <label>
               PWD / Special Applicant
               <select id="disabilityStatusSelect" name="disabilityStatus" <%= formData.acceptedTerms === 'yes' ? '' : 'disabled' %>>
@@ -409,6 +424,8 @@
     (() => {
       const termsCheckbox = document.getElementById("acceptedTermsGate");
       const departmentSelect = document.getElementById("appliedDepartmentSelect");
+      const healthStationLabel = document.getElementById("healthStationLabel");
+      const preferredHealthStationInput = document.getElementById("preferredHealthStationInput");
       const disabilityStatusSelect = document.getElementById("disabilityStatusSelect");
       const pwdReasonLabel = document.getElementById("pwdReasonLabel");
       const pwdReasonInput = document.getElementById("pwdReasonInput");
@@ -467,17 +484,25 @@
       }
 
       function syncDisabilityUi() {
-        const isPwdApplicant = ["pwd", "yes"].includes(disabilityStatusSelect.value);
-        const isSpecialApplicant = disabilityStatusSelect.value === "special";
-        pwdReasonLabel.classList.toggle("is-hidden", !isPwdApplicant);
-        specialApplicantReasonLabel.classList.toggle("is-hidden", !isSpecialApplicant);
-        pwdReasonInput.required = isPwdApplicant;
-        specialApplicantReasonInput.required = isSpecialApplicant;
+        const value = disabilityStatusSelect.value;
+        const isPwd = ["pwd", "yes"].includes(value);
+        const isSpecial = value === "special";
+
+        pwdReasonLabel.classList.toggle("is-hidden", !isPwd);
+        pwdReasonLabel.setAttribute("aria-hidden", isPwd ? "false" : "true");
+        pwdReasonInput.required = isPwd;
+
+        specialApplicantReasonLabel.classList.toggle("is-hidden", !isSpecial);
+        specialApplicantReasonLabel.setAttribute("aria-hidden", isSpecial ? "false" : "true");
+        specialApplicantReasonInput.required = isSpecial;
       }
 
       function syncInstitutionUi() {
-        const usingOtherInstitution = institutionSelect.value === "<%= otherInstitutionValue %>";
+        const value = institutionSelect.value.trim();
+        const usingOtherInstitution = Boolean(value) && value.toLowerCase().startsWith("other");
+
         otherInstitutionLabel.classList.toggle("is-hidden", !usingOtherInstitution);
+        otherInstitutionLabel.setAttribute("aria-hidden", usingOtherInstitution ? "false" : "true");
         otherInstitutionInput.required = usingOtherInstitution;
         otherInstitutionInput.disabled =
           !termsCheckbox.checked ||
@@ -493,6 +518,8 @@
         statusMetrics.innerHTML = "";
         departmentSelect.disabled = !termsCheckbox.checked;
         disabilityStatusSelect.disabled = !termsCheckbox.checked;
+        if (preferredHealthStationInput) preferredHealthStationInput.disabled = !termsCheckbox.checked;
+        if (healthStationLabel) healthStationLabel.style.display = departmentSelect.value === "health" ? "" : "none";
         pwdReasonInput.disabled = !termsCheckbox.checked || !["pwd", "yes"].includes(disabilityStatusSelect.value);
         specialApplicantReasonInput.disabled = !termsCheckbox.checked || disabilityStatusSelect.value !== "special";
         institutionSelect.disabled = true;
@@ -518,6 +545,8 @@
 
         departmentSelect.disabled = false;
         disabilityStatusSelect.disabled = false;
+        if (preferredHealthStationInput) preferredHealthStationInput.disabled = false;
+        if (healthStationLabel) healthStationLabel.style.display = department === "health" ? "" : "none";
         pwdReasonInput.disabled = !["pwd", "yes"].includes(disabilityStatus);
         specialApplicantReasonInput.disabled = disabilityStatus !== "special";
         syncDisabilityUi();

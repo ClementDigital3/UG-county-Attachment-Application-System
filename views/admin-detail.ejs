@@ -41,6 +41,9 @@
           <p><strong>Course Level:</strong> <%= getCourseLevelLabel(application.courseLevel) %></p>
           <p><strong>Course:</strong> <%= application.course %></p>
           <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
+          <% if (application.appliedDepartment === 'health' || application.preferredHealthStation) { %>
+            <p><strong>Preferred Health Station / Facility:</strong> <%= application.preferredHealthStation || 'Not specified' %></p>
+          <% } %>
           <p><strong>Period:</strong> <%= application.period ? getPeriodLabel(application.period) : 'Not set' %></p>
           <p><strong>Requested Dates:</strong> <%= application.startDate %> to <%= application.endDate %></p>
           <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
@@ -114,6 +117,11 @@
                 </option>
               <% }) %>
             </select>
+          </label>
+
+          <label>
+            Preferred Health Station / Facility
+            <input type="text" name="preferredHealthStation" value="<%= application.preferredHealthStation || '' %>" placeholder="e.g. MTRH, County Hospital..." />
           </label>
 
           <label>

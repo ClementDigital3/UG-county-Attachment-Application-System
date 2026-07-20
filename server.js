@@ -1261,6 +1261,7 @@ function ensureApplicationDefaults(application) {
     disabilityStatus: normalizeDisabilityStatus(application.disabilityStatus),
     disabilityReason: normalizeDisabilityReason(application.disabilityReason),
     appliedDepartment,
+    preferredHealthStation: (application.preferredHealthStation || "").toString().trim(),
     assignedDepartment: application.assignedDepartment || "",
     documents: normalizeStoredDocuments(application.documents || {}),
     documentSecurity: application.documentSecurity || {},
@@ -4971,6 +4972,7 @@ app.post("/apply", async (req, res) => {
       course,
       courseLevel,
       appliedDepartment,
+      preferredHealthStation,
       period,
       startDate,
       endDate,
@@ -5000,6 +5002,7 @@ app.post("/apply", async (req, res) => {
     let finalCourse = (course || "").trim();
     let finalCourseLevel = normalizeCourseLevel(courseLevel);
     let finalAppliedDepartment = (appliedDepartment || "").trim();
+    let finalPreferredHealthStation = (preferredHealthStation || "").trim();
     let finalPeriod = (period || "").trim();
     let finalStartDate = (startDate || "").trim();
     let finalEndDate = (endDate || "").trim();
@@ -5242,6 +5245,7 @@ app.post("/apply", async (req, res) => {
         course: finalCourse,
         courseLevel: finalCourseLevel,
         appliedDepartment: finalAppliedDepartment,
+        preferredHealthStation: finalPreferredHealthStation,
         assignedDepartment: "",
         period: finalPeriod,
         startDate: finalStartDate,
