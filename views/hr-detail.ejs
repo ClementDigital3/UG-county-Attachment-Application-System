@@ -62,6 +62,105 @@
           <p><strong>Department/HR Comment:</strong> <%= application.reviewerComment || 'No comment yet.' %></p>
         </div>
 
+        <h2>Edit Applicant Information</h2>
+        <form action="/hr/applications/<%= application.id %>/edit" method="post" class="form-grid">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <label>
+            Full Name *
+            <input type="text" name="fullName" value="<%= application.fullName %>" required />
+          </label>
+
+          <label>
+            Email Address *
+            <input type="email" name="email" value="<%= application.email %>" required />
+          </label>
+
+          <label>
+            Phone Number *
+            <input type="text" name="phone" value="<%= application.phone %>" required />
+          </label>
+
+          <label>
+            ID Number *
+            <input
+              type="text"
+              name="idNumber"
+              value="<%= application.idNumber || '' %>"
+              placeholder="Example: 12345678"
+              required
+            />
+          </label>
+
+          <label>
+            Institution *
+            <span class="field-hint">Use full institution name (no abbreviations).</span>
+            <input type="text" name="institution" value="<%= application.institution %>" required />
+          </label>
+
+          <label>
+            Course/Program *
+            <input type="text" name="course" value="<%= application.course %>" required />
+          </label>
+
+          <label>
+            Course Level *
+            <select name="courseLevel" required>
+              <option value="">Select course level</option>
+              <% (courseLevelOptions || []).forEach((option) => { %>
+                <option value="<%= option.key %>" <%= application.courseLevel === option.key ? 'selected' : '' %>>
+                  <%= option.label %>
+                </option>
+              <% }) %>
+            </select>
+          </label>
+
+          <label>
+            Applied Department *
+            <select name="appliedDepartment" required>
+              <option value="">Select department</option>
+              <% (departmentOptions || []).forEach((department) => { %>
+                <option value="<%= department.key %>" <%= application.appliedDepartment === department.key ? 'selected' : '' %>>
+                  <%= department.label %>
+                </option>
+              <% }) %>
+            </select>
+          </label>
+
+          <label>
+            Attachment Period *
+            <select name="period" required>
+              <option value="">Select period</option>
+              <% (periodOptions || []).forEach((period) => { %>
+                <option value="<%= period.key %>" <%= application.period === period.key ? 'selected' : '' %>>
+                  <%= period.label %> <%= period.quarterLabel ? `(${period.quarterLabel})` : '' %> - <%= period.statusLabel %>
+                </option>
+              <% }) %>
+            </select>
+          </label>
+
+          <label>
+            Attachment Start Date *
+            <input type="date" name="startDate" value="<%= application.startDate %>" required />
+          </label>
+
+          <label>
+            Attachment End Date *
+            <input type="date" name="endDate" value="<%= application.endDate %>" required />
+          </label>
+
+          <label class="full-width">
+            Cover Note / Self Introduction
+            <span class="field-hint">
+              Student brief explanation or self-introduction.
+            </span>
+            <textarea name="coverNote" rows="3"><%= application.coverNote %></textarea>
+          </label>
+
+          <div class="actions full-width">
+            <button class="btn" type="submit" <%= application.isFrozen ? 'disabled' : '' %>>Save Applicant Changes</button>
+          </div>
+        </form>
+
         <h2>Submitted Documents</h2>
         <% if (application.combinedDocument && application.combinedDocument.filename) { %>
           <ul>

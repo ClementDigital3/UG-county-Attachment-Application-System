@@ -4466,6 +4466,7 @@ async function renderAdminDetailPage(res, {
     getStatusClass,
     periodOptions,
     departmentOptions,
+    courseLevelOptions: COURSE_LEVELS,
     documentDefinitions: DOCUMENT_DEFINITIONS,
     combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION,
     nitaDocumentDefinition: NITA_DOCUMENT_DEFINITION,
@@ -4509,7 +4510,10 @@ async function renderHrDetailPage(res, {
     nitaDocumentDefinition: NITA_DOCUMENT_DEFINITION,
     countySignedNitaDefinition: COUNTY_SIGNED_NITA_DEFINITION,
     nitaResubmissionDefinition: NITA_RESUBMISSION_DEFINITION,
-    supervisorOptions
+    supervisorOptions,
+    courseLevelOptions: COURSE_LEVELS,
+    departmentOptions: DEPARTMENTS,
+    periodOptions: getPeriodOptions(settings)
   });
 }
 
@@ -8262,8 +8266,7 @@ app.post("/admin/applications/:id/edit", csrfProtection, ensureDepartmentAdmin, 
     appliedDepartment,
     period,
     startDate,
-    endDate,
-    coverNote
+    endDate
   ];
   const hasMissingText = requiredText.some((field) => !field || !field.trim());
   const start = new Date(startDate);
@@ -8552,7 +8555,9 @@ app.get("/hr/applications/:id", ensureHrAdmin, async (req, res) => {
   }
 
   const notice =
-    req.query.nitaCompleted === "1"
+    req.query.edited === "1"
+      ? "Applicant information updated successfully."
+      : req.query.nitaCompleted === "1"
         ? "HR confirmed the stamped NITA document."
         : req.query.supervisorSaved === "1"
       ? "Supervisor assigned successfully."
@@ -8833,6 +8838,167 @@ app.post("/hr/applications/:id/status", csrfProtection, ensureHrAdmin, async (re
   }
 
   return res.redirect(`/hr/applications/${req.params.id}?statusSaved=1`);
+});
+
+app.post("/hr/applications/:id/edit", csrfProtection, ensureHrAdmin, async (req, res) => {
+  const {
+    fullName,
+    email,
+    phone,
+    idNumber,
+    institution,
+    course,
+    courseLevel,
+    appliedDepartment,
+    period,
+    startDate,
+    endDate,
+    coverNote
+  } = req.body;
+
+  const applications = await readApplications();
+  const index = applications.findIndex((item) => item.id === req.params.id);
+
+  if (index === -1) {
+    return res.status(404).render("not-found");
+  }
+
+  const existingApplication = ensureApplicationDefaults(applications[index]);
+
+  if (isApplicationFrozen(existingApplication)) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: existingApplication,
+      error: "This application record is frozen under department review. Restore it before editing."
+    });
+  }
+
+  const requiredText = [
+    fullName,
+    email,
+    phone,
+    idNumber,
+    institution,
+    course,
+    courseLevel,
+    appliedDepartment,
+    period,
+    startDate,
+    endDate
+  ];
+  const hasMissingText = requiredText.some((field) => !field || !field.trim());
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const isValidPeriod = PERIODS.some((option) => option.key === period);
+  const validDepartment = isValidDepartment(appliedDepartment);
+
+  const draftApplication = ensureApplicationDefaults({
+    ...applications[index],
+    fullName: (fullName || "").trim(),
+    email: (email || "").trim().toLowerCase(),
+    phone: (phone || "").trim(),
+    idNumber: (idNumber || "").trim(),
+    institution: (institution || "").trim(),
+    course: (course || "").trim(),
+    courseLevel: normalizeCourseLevel(courseLevel),
+    appliedDepartment,
+    period,
+    startDate,
+    endDate,
+    coverNote: (coverNote || "").trim()
+  });
+
+  if (hasMissingText) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: "All required applicant fields must be filled."
+    });
+  }
+
+  const institutionValidationError = getInstitutionFullNameError(draftApplication.institution);
+  if (institutionValidationError) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: institutionValidationError
+    });
+  }
+
+  const coverNoteError = getCoverNoteError(draftApplication.coverNote);
+  if (coverNoteError) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: coverNoteError
+    });
+  }
+
+  const idNumberError = getIdNumberValidationError(draftApplication.idNumber);
+  if (idNumberError) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: idNumberError
+    });
+  }
+
+  if (!isValidPeriod) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: "Invalid attachment period selected."
+    });
+  }
+
+  if (!validDepartment) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: "Invalid department selected."
+    });
+  }
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: "Please provide valid attachment dates. End date must be after start date."
+    });
+  }
+
+  draftApplication.placementNumber =
+    generatePlacementNumber(applications, draftApplication.idNumber, draftApplication.id) ||
+    draftApplication.placementNumber ||
+    draftApplication.id;
+  draftApplication.updatedAt = new Date().toISOString();
+  appendApplicationAudit(draftApplication, {
+    scope: "application",
+    action: "applicant_details_updated_by_hr",
+    ...getActorInfo(req, "hr_admin"),
+    note: "HR review updated applicant profile details.",
+    at: draftApplication.updatedAt,
+    metadata: {
+      changedFields: [
+        "fullName",
+        "email",
+        "phone",
+        "idNumber",
+        "institution",
+        "course",
+        "courseLevel",
+        "appliedDepartment",
+        "period",
+        "startDate",
+        "endDate",
+        "coverNote"
+      ].filter((field) => (existingApplication[field] || "") !== (draftApplication[field] || ""))
+    }
+  });
+  applications[index] = draftApplication;
+  await writeApplications(applications);
+
+  return res.redirect(`/hr/applications/${req.params.id}?edited=1`);
 });
 
 app.post("/hr/applications/:id/joining-letter-template", csrfProtection, ensureHrAdmin, async (req, res) => {
