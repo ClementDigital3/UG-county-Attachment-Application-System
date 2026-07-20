@@ -5116,6 +5116,24 @@ app.post("/apply", async (req, res) => {
     finalOtherInstitution = resolvedInstitution.isOther ? finalInstitution : "";
 
     const applications = await readApplications();
+
+    // Check for duplicate application by ID Number (ignore Rejected applications)
+    const activeDuplicate = applications.find(
+      (app) =>
+        app.idNumber &&
+        app.idNumber.toString().trim().toLowerCase() === finalIdNumber.toLowerCase() &&
+        app.status !== "Rejected"
+    );
+
+    if (activeDuplicate) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: `An active application with ID Number ${finalIdNumber} already exists in the system (Status: ${activeDuplicate.status}). Multiple active applications are not allowed.`,
+        formData
+      });
+    }
+
     const capacitySummary = getCapacitySummary(settings, applications);
     const selectedDepartmentCapacity = Number(
       capacitySummary.departmentCapacities[finalAppliedDepartment] || 0
