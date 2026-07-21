@@ -83,7 +83,10 @@ async function createDatabase({
     throw new Error("MONGODB_URI is required when using MongoDB storage.");
   }
 
-  const client = new MongoClient(mongoUri);
+  const client = new MongoClient(mongoUri, {
+    serverSelectionTimeoutMS: 5000,
+    connectTimeoutMS: 5000
+  });
   await client.connect();
 
   const db = client.db(databaseName);
