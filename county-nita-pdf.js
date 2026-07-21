@@ -509,88 +509,94 @@ function drawPartCOverlay(page, {
 }
 
 async function loadPdfTextAnchors(sourceBytes) {
-  try {
-    const pdfjsModuleUrl = pathToFileURL(
-      path.join(__dirname, "node_modules", "pdfjs-dist", "legacy", "build", "pdf.mjs")
-    ).href;
-    const pdfjsLib = await import(pdfjsModuleUrl);
-    const standardFontDataUrl =
-      pathToFileURL(path.join(__dirname, "node_modules", "pdfjs-dist", "standard_fonts")).href + "/";
-    const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(sourceBytes),
-      disableWorker: true,
-      standardFontDataUrl,
-      verbosity: pdfjsLib.VerbosityLevel.ERRORS
-    });
-    const document = await loadingTask.promise;
-    const anchorMatchers = [
-      ["providerName", /^Name of Attachment Provider/i],
-      ["postal", /^Postal Address/i],
-      ["physical", /^Physical Address/i],
-      ["telephone", /^Telephone:/i],
-      ["officer", /^Name of Officer in charge of Training/i],
-      ["signedBy", /^Signed by \(Name\)/i],
-      ["signedAndStamped", /^Signed and Stamped/i]
-    ];
+  const parsePromise = (async () => {
+    try {
+      const pdfjsModuleUrl = pathToFileURL(
+        path.join(__dirname, "node_modules", "pdfjs-dist", "legacy", "build", "pdf.mjs")
+      ).href;
+      const pdfjsLib = await import(pdfjsModuleUrl);
+      const standardFontDataUrl =
+        pathToFileURL(path.join(__dirname, "node_modules", "pdfjs-dist", "standard_fonts")).href + "/";
+      const loadingTask = pdfjsLib.getDocument({
+        data: new Uint8Array(sourceBytes),
+        disableWorker: true,
+        standardFontDataUrl,
+        verbosity: pdfjsLib.VerbosityLevel.ERRORS
+      });
+      const document = await loadingTask.promise;
+      const anchorMatchers = [
+        ["providerName", /^Name of Attachment Provider/i],
+        ["postal", /^Postal Address/i],
+        ["physical", /^Physical Address/i],
+        ["telephone", /^Telephone:/i],
+        ["officer", /^Name of Officer in charge of Training/i],
+        ["signedBy", /^Signed by \(Name\)/i],
+        ["signedAndStamped", /^Signed and Stamped/i]
+      ];
 
-    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-      const page = await document.getPage(pageNumber);
-      const viewport = page.getViewport({ scale: 1 });
-      const textContent = await page.getTextContent();
-      const items = textContent.items
-        .map((item) => ({
-          str: (item.str || "").trim(),
-          x: item.transform[4],
-          y: item.transform[5],
-          width: item.width,
-          height: item.height
-        }))
-        .filter((item) => item.str);
-      const partCLabel = items.find((item) => /^PART C$/i.test(item.str));
-      const partDLabel = items.find((item) => /^PART D/i.test(item.str));
-      const regionXMin = partCLabel ? partCLabel.x - 6 : viewport.width * 0.48;
-      const regionYMax = partCLabel ? partCLabel.y + 18 : viewport.height;
-      const regionYMin = partDLabel ? partDLabel.y + 8 : 0;
-      const anchors = {};
+      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+        const page = await document.getPage(pageNumber);
+        const viewport = page.getViewport({ scale: 1 });
+        const textContent = await page.getTextContent();
+        const items = textContent.items
+          .map((item) => ({
+            str: (item.str || "").trim(),
+            x: item.transform[4],
+            y: item.transform[5],
+            width: item.width,
+            height: item.height
+          }))
+          .filter((item) => item.str);
+        const partCLabel = items.find((item) => /^PART C$/i.test(item.str));
+        const partDLabel = items.find((item) => /^PART D/i.test(item.str));
+        const regionXMin = partCLabel ? partCLabel.x - 6 : viewport.width * 0.48;
+        const regionYMax = partCLabel ? partCLabel.y + 18 : viewport.height;
+        const regionYMin = partDLabel ? partDLabel.y + 8 : 0;
+        const anchors = {};
 
-      for (const [key, matcher] of anchorMatchers) {
-        const regionMatches = items
-          .filter(
-            (item) =>
-              matcher.test(item.str) &&
-              item.x >= regionXMin &&
-              item.y >= regionYMin &&
-              item.y <= regionYMax
-          )
-          .sort((a, b) => b.x - a.x || b.y - a.y);
+        for (const [key, matcher] of anchorMatchers) {
+          const regionMatches = items
+            .filter(
+              (item) =>
+                matcher.test(item.str) &&
+                item.x >= regionXMin &&
+                item.y >= regionYMin &&
+                item.y <= regionYMax
+            )
+            .sort((a, b) => b.x - a.x || b.y - a.y);
 
-        const fallbackMatches = items
-          .filter((item) => matcher.test(item.str))
-          .sort((a, b) => b.x - a.x || b.y - a.y);
+          const fallbackMatches = items
+            .filter((item) => matcher.test(item.str))
+            .sort((a, b) => b.x - a.x || b.y - a.y);
 
-        const selected = regionMatches[0] || fallbackMatches[0] || null;
-        if (selected) {
-          anchors[key] = {
-            x: selected.x,
-            y: selected.y,
-            width: selected.width,
-            height: selected.height
+          const selected = regionMatches[0] || fallbackMatches[0] || null;
+          if (selected) {
+            anchors[key] = {
+              x: selected.x,
+              y: selected.y,
+              width: selected.width,
+              height: selected.height
+            };
+          }
+        }
+
+        if (anchorMatchers.every(([key]) => anchors[key])) {
+          return {
+            pageIndex: pageNumber - 1,
+            anchors
           };
         }
       }
-
-      if (anchorMatchers.every(([key]) => anchors[key])) {
-        return {
-          pageIndex: pageNumber - 1,
-          anchors
-        };
-      }
+    } catch (_error) {
+      return null;
     }
-  } catch (_error) {
-    return null;
-  }
 
-  return null;
+    return null;
+  })();
+
+  const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 250));
+
+  return Promise.race([parsePromise, timeoutPromise]);
 }
 
 function resolvePartCTarget(pdfAnchors, pageIndex, page) {

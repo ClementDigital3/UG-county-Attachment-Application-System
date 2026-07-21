@@ -5295,12 +5295,14 @@ app.post("/apply", async (req, res) => {
       applications.push(newApplication);
       await writeApplications(applications);
       const newIndex = applications.findIndex((application) => application.id === newApplication.id);
-      await sendAndPersistApplicationNotification({
+      sendAndPersistApplicationNotification({
         req,
         applications,
         index: newIndex,
         eventType: "application_submitted",
         initiatedBy: "system"
+      }).catch((notifError) => {
+        console.error("Background application notification error:", notifError);
       });
 
       return res.redirect(`/application/${newApplication.id}`);
