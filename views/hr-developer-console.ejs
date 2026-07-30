@@ -5,10 +5,7 @@
       <h1>Developer Console</h1>
       <div class="actions tight">
         <a class="btn secondary" href="/hr/applications">HR Queue</a>
-        <a class="btn secondary" href="/hr/departments">Department Status</a>
-        <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
         <a class="btn secondary" href="/hr/periods">Period & Slot Settings</a>
-        <a class="btn secondary" href="/hr/reports">Reports</a>
         <form action="/hr/logout" method="post">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
           <button class="btn secondary" type="submit">Logout</button>
@@ -21,34 +18,98 @@
     </p>
 
     <% if (notice) { %>
-      <div class="notice"><%= notice %></div>
+      <div class="notice"><%- notice %></div>
     <% } %>
 
     <% if (error) { %>
-      <div class="alert"><%= error %></div>
+      <div class="alert"><%- error %></div>
     <% } %>
   </section>
 
-  <div class="portal-grid" style="grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
-    <!-- Manage Developer Account Card -->
+  <!-- Multiple Developer Accounts Management Section -->
+  <div class="portal-grid" style="grid-template-columns: 1fr 2fr; gap: 30px; margin-top: 20px;">
+    <!-- Create Developer Account Form -->
     <section class="card">
-      <h2>Developer Credentials</h2>
+      <h2>Create Developer Account</h2>
+      <form action="/hr/developer-console/developer-credentials/create" method="post" class="form-grid">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <label class="full-width">
+          Username
+          <input type="text" name="username" placeholder="e.g. dev_jane" required autocomplete="username" />
+        </label>
+        <label class="full-width">
+          Display Name
+          <input type="text" name="displayName" placeholder="e.g. Jane Doe" required />
+        </label>
+        <label class="full-width">
+          Password
+          <input type="password" name="password" placeholder="Enter password" required autocomplete="new-password" />
+        </label>
+        <div class="actions full-width" style="margin-top: 10px;">
+          <button class="btn" type="submit">Create Developer Admin</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Active Developers List Table -->
+    <section class="card">
+      <h2>Active Developer Accounts (<%= developerAccounts.length %>)</h2>
+      <table class="table" style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr>
+            <th style="text-align: left; padding: 10px; border-bottom: 1.5px solid var(--border);">Username</th>
+            <th style="text-align: left; padding: 10px; border-bottom: 1.5px solid var(--border);">Display Name</th>
+            <th style="text-align: right; padding: 10px; border-bottom: 1.5px solid var(--border);">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% developerAccounts.forEach((dev) => { %>
+            <tr style="border-bottom: 1px solid var(--border);">
+              <td style="padding: 10px; font-family: monospace;"><%= dev.username %></td>
+              <td style="padding: 10px;"><%= dev.displayName %></td>
+              <td style="padding: 10px; text-align: right;">
+                <% if (dev.username === currentAdminUsername) { %>
+                  <span style="font-size: 12px; color: var(--success); font-weight: bold; margin-right: 10px;">Logged In (Self)</span>
+                <% } else { %>
+                  <form action="/hr/developer-console/developer-credentials/delete" method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete developer admin \'<%= dev.displayName %>\'?');">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <input type="hidden" name="username" value="<%= dev.username %>" />
+                    <button class="btn" type="submit" style="padding: 4px 8px; background: var(--danger); font-size: 12px; border-color: var(--danger);">Delete</button>
+                  </form>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <div class="portal-grid" style="grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+    <!-- Update Logged In Developer credentials Form -->
+    <section class="card">
+      <h2>Update My Credentials</h2>
       <form action="/hr/developer-console/developer-credentials" method="post" class="form-grid">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
         <label class="full-width">
-          Developer Username
-          <input type="text" name="username" value="<%= developerAccount.username %>" required />
+          My Username
+          <input type="text" name="username" value="<%= currentAdminUsername %>" required />
+        </label>
+        <label class="full-width">
+          My Display Name
+          <% const currentDevObj = developerAccounts.find(d => d.username === currentAdminUsername) || {}; %>
+          <input type="text" name="displayName" value="<%= currentDevObj.displayName || '' %>" required />
         </label>
         <label>
           New Password
-          <input type="password" name="newPassword" placeholder="Enter new password" />
+          <input type="password" name="newPassword" placeholder="Enter new password" autocomplete="new-password" />
         </label>
         <label>
           Confirm Password
-          <input type="password" name="confirmPassword" placeholder="Confirm new password" />
+          <input type="password" name="confirmPassword" placeholder="Confirm new password" autocomplete="new-password" />
         </label>
         <div class="actions full-width" style="margin-top: 10px;">
-          <button class="btn" type="submit">Update Developer Credentials</button>
+          <button class="btn" type="submit">Save My Changes</button>
         </div>
       </form>
     </section>

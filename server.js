@@ -637,12 +637,15 @@ function createDefaultHrAccount() {
   };
 }
 
-function createDefaultDeveloperAccount() {
-  return {
-    username: normalizeAdminUsername(DEVELOPER_USERNAME),
-    password: hashPassword((DEVELOPER_PASSWORD || "").toString()),
-    updatedAt: new Date().toISOString()
-  };
+function createDefaultDeveloperAccounts() {
+  return [
+    {
+      username: normalizeAdminUsername(DEVELOPER_USERNAME),
+      displayName: "System Developer",
+      password: hashPassword((DEVELOPER_PASSWORD || "").toString()),
+      updatedAt: new Date().toISOString()
+    }
+  ];
 }
 
 function createDefaultSettings() {
@@ -665,7 +668,7 @@ function createDefaultSettings() {
     departmentCapacities,
     departments: [...DEFAULT_DEPARTMENTS],
     hrAccount: createDefaultHrAccount(),
-    developerAccount: createDefaultDeveloperAccount(),
+    developerAccounts: createDefaultDeveloperAccounts(),
     updatedAt: new Date().toISOString()
   };
 }
@@ -1368,7 +1371,9 @@ async function readSettings() {
     SYSTEM_AUDIT_TRAIL_LIMIT
   );
   normalized.hrAccount = normalizeHrAccount(parsed?.hrAccount, normalized.hrAccount);
-  normalized.developerAccount = normalizeDeveloperAccount(parsed?.developerAccount, normalized.developerAccount);
+  normalized.developerAccounts = Array.isArray(parsed?.developerAccounts) && parsed.developerAccounts.length > 0
+    ? parsed.developerAccounts.map(dev => normalizeDeveloperAccount(dev))
+    : (parsed?.developerAccount ? [normalizeDeveloperAccount(parsed.developerAccount)] : createDefaultDeveloperAccounts());
   normalized.updatedAt = parsed?.updatedAt || normalized.updatedAt;
   return normalized;
 }
@@ -1383,12 +1388,12 @@ async function writeSettings(settings) {
         ? settings.hrAccount.password
         : hashPassword((settings?.hrAccount?.password || "").toString())
     },
-    developerAccount: {
-      ...normalizeDeveloperAccount(settings?.developerAccount),
-      password: isPasswordHash(settings?.developerAccount?.password)
-        ? settings.developerAccount.password
-        : hashPassword((settings?.developerAccount?.password || "").toString())
-    },
+    developerAccounts: (settings.developerAccounts || []).map(dev => ({
+      ...normalizeDeveloperAccount(dev),
+      password: isPasswordHash(dev.password)
+        ? dev.password
+        : hashPassword((dev.password || "").toString())
+    })),
     departments: settings.departments || DEPARTMENTS,
     supervisorsDirectory: normalizeSupervisorDirectory(settings?.supervisorsDirectory),
     supervisorsLastSyncedAt: (settings?.supervisorsLastSyncedAt || "").toString().trim(),
@@ -1444,11 +1449,12 @@ function normalizeHrAccount(account, fallback = createDefaultHrAccount()) {
   };
 }
 
-function normalizeDeveloperAccount(account, fallback = createDefaultDeveloperAccount()) {
+function normalizeDeveloperAccount(account) {
   return {
-    username: normalizeAdminUsername(account?.username) || fallback.username,
-    password: (account?.password || "").toString() || fallback.password,
-    updatedAt: (account?.updatedAt || fallback.updatedAt || new Date().toISOString()).toString()
+    username: normalizeAdminUsername(account?.username),
+    displayName: (account?.displayName || "System Developer").toString().trim(),
+    password: (account?.password || "").toString(),
+    updatedAt: (account?.updatedAt || new Date().toISOString()).toString()
   };
 }
 
@@ -1542,23 +1548,23 @@ async function findAdminUserByCredentials(usernameInput, passwordInput, departme
 
   if (!departmentScope) {
     const settings = await readSettings();
-    const developerAccount = normalizeDeveloperAccount(settings?.developerAccount);
+    const developerAccounts = settings.developerAccounts || createDefaultDeveloperAccounts();
+    const matchedDev = developerAccounts.find(
+      (item) => item.username === username && verifyPassword(password, item.password)
+    );
 
-    if (username === developerAccount.username && verifyPassword(password, developerAccount.password)) {
-      if (!isPasswordHash(developerAccount.password)) {
-        settings.developerAccount = {
-          ...developerAccount,
-          password: hashPassword(password),
-          updatedAt: new Date().toISOString()
-        };
+    if (matchedDev) {
+      if (!isPasswordHash(matchedDev.password)) {
+        matchedDev.password = hashPassword(password);
+        settings.developerAccounts = developerAccounts;
         settings.updatedAt = new Date().toISOString();
         await writeSettings(settings);
       }
       return {
-        username: developerAccount.username,
+        username: matchedDev.username,
         role: "developer",
         department: null,
-        displayName: "System Developer"
+        displayName: matchedDev.displayName || "System Developer"
       };
     }
 
@@ -6334,6 +6340,9 @@ app.get("/hr/home", async (req, res) => {
 });
 
 app.get("/hr/periods", ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied. Developer privileges required for period control.");
+  }
   clearHrDepartmentScope(req);
   const settings = await readSettings();
   return res.render("admin-periods", {
@@ -6354,6 +6363,9 @@ app.get("/hr/periods", ensureHrAdmin, async (req, res) => {
 });
 
 app.post("/hr/periods", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied. Developer privileges required for period control.");
+  }
   clearHrDepartmentScope(req);
   const settings = await readSettings();
   const previousOpenPeriods = { ...(settings.openPeriods || {}) };
@@ -7535,7 +7547,7 @@ app.get("/hr/developer-console", ensureHrAdmin, async (req, res) => {
 
   return res.render("hr-developer-console", {
     hrAccount: normalizeHrAccount(settings.hrAccount),
-    developerAccount: normalizeDeveloperAccount(settings.developerAccount),
+    developerAccounts: settings.developerAccounts || createDefaultDeveloperAccounts(),
     departments: DEPARTMENTS,
     notice,
     error
@@ -7548,6 +7560,7 @@ app.post("/hr/developer-console/developer-credentials", csrfProtection, ensureHr
   }
 
   const username = (req.body.username || "").toString().trim().toLowerCase();
+  const displayName = (req.body.displayName || "").toString().trim();
   const newPassword = (req.body.newPassword || "").toString();
   const confirmPassword = (req.body.confirmPassword || "").toString();
 
@@ -7556,9 +7569,21 @@ app.post("/hr/developer-console/developer-credentials", csrfProtection, ensureHr
   }
 
   const settings = await readSettings();
-  const developerAccount = normalizeDeveloperAccount(settings.developerAccount);
+  const developerAccounts = settings.developerAccounts || createDefaultDeveloperAccounts();
+  const index = developerAccounts.findIndex(d => d.username === req.session.adminUsername);
 
-  developerAccount.username = username;
+  if (index === -1) {
+    return res.redirect("/hr/developer-console?error=Your current developer session account was not found in database settings");
+  }
+
+  if (username !== req.session.adminUsername && developerAccounts.some(d => d.username === username)) {
+    return res.redirect(`/hr/developer-console?error=Username '${username}' is already taken by another Developer account`);
+  }
+
+  developerAccounts[index].username = username;
+  if (displayName) {
+    developerAccounts[index].displayName = displayName;
+  }
 
   if (newPassword) {
     if (newPassword !== confirmPassword) {
@@ -7567,11 +7592,11 @@ app.post("/hr/developer-console/developer-credentials", csrfProtection, ensureHr
     if (newPassword.length < 5) {
       return res.redirect("/hr/developer-console?error=Password must be at least 5 characters long");
     }
-    developerAccount.password = hashPassword(newPassword);
+    developerAccounts[index].password = hashPassword(newPassword);
   }
 
-  developerAccount.updatedAt = new Date().toISOString();
-  settings.developerAccount = developerAccount;
+  developerAccounts[index].updatedAt = new Date().toISOString();
+  settings.developerAccounts = developerAccounts;
   settings.updatedAt = new Date().toISOString();
 
   appendSettingsAudit(settings, {
@@ -7583,7 +7608,91 @@ app.post("/hr/developer-console/developer-credentials", csrfProtection, ensureHr
   });
 
   await writeSettings(settings);
-  return res.redirect("/hr/developer-console?notice=Developer credentials updated successfully");
+  req.session.adminUsername = username;
+  return res.redirect("/hr/developer-console?notice=Your developer credentials updated successfully");
+});
+
+app.post("/hr/developer-console/developer-credentials/create", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const username = (req.body.username || "").toString().trim().toLowerCase();
+  const displayName = (req.body.displayName || "").toString().trim();
+  const password = (req.body.password || "").toString();
+
+  if (!username || !displayName || !password) {
+    return res.redirect("/hr/developer-console?error=All fields are required to create a Developer account");
+  }
+
+  const settings = await readSettings();
+  const developerAccounts = settings.developerAccounts || createDefaultDeveloperAccounts();
+
+  if (developerAccounts.some((dev) => dev.username === username)) {
+    return res.redirect(`/hr/developer-console?error=Developer username '${username}' already exists`);
+  }
+
+  developerAccounts.push({
+    username,
+    displayName,
+    password: hashPassword(password),
+    updatedAt: new Date().toISOString()
+  });
+
+  settings.developerAccounts = developerAccounts;
+  settings.updatedAt = new Date().toISOString();
+
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "developer_account_created",
+    ...getActorInfo(req, "developer"),
+    note: `Developer created new developer account: ${displayName} (${username}).`,
+    metadata: { username, displayName }
+  });
+
+  await writeSettings(settings);
+  return res.redirect(`/hr/developer-console?notice=Developer account '${displayName}' created successfully`);
+});
+
+app.post("/hr/developer-console/developer-credentials/delete", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const username = (req.body.username || "").toString().trim().toLowerCase();
+
+  if (!username) {
+    return res.redirect("/hr/developer-console?error=Username is required to delete a Developer account");
+  }
+
+  if (username === req.session.adminUsername) {
+    return res.redirect("/hr/developer-console?error=You cannot delete your own logged-in Developer account");
+  }
+
+  const settings = await readSettings();
+  const developerAccounts = settings.developerAccounts || createDefaultDeveloperAccounts();
+
+  const index = developerAccounts.findIndex((dev) => dev.username === username);
+  if (index === -1) {
+    return res.redirect(`/hr/developer-console?error=Developer username '${username}' not found`);
+  }
+
+  const displayName = developerAccounts[index].displayName;
+  developerAccounts.splice(index, 1);
+
+  settings.developerAccounts = developerAccounts;
+  settings.updatedAt = new Date().toISOString();
+
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "developer_account_deleted",
+    ...getActorInfo(req, "developer"),
+    note: `Developer deleted developer account: ${displayName} (${username}).`,
+    metadata: { username, displayName }
+  });
+
+  await writeSettings(settings);
+  return res.redirect(`/hr/developer-console?notice=Developer account '${displayName}' deleted successfully`);
 });
 
 app.post("/hr/developer-console/hr-credentials", csrfProtection, ensureHrAdmin, async (req, res) => {
