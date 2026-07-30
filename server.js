@@ -6564,13 +6564,10 @@ app.get("/hr/admin-accounts", ensureHrAdmin, async (req, res) => {
 });
 
 app.get("/hr/account", ensureHrAdmin, async (req, res) => {
-  clearHrDepartmentScope(req);
-  let notice = null;
-  if (req.query.passwordChanged === "1") {
-    notice = "HR password updated successfully.";
+  if (req.session.adminRole === "developer") {
+    return res.redirect("/hr/developer-console");
   }
-
-  return renderHrAccountPage(res, { notice });
+  return res.redirect("/hr/applications");
 });
 
 app.get("/hr/audit", ensureHrAdmin, async (req, res) => {
@@ -7216,42 +7213,10 @@ app.post("/admin/supervisors/:supervisorId/delete", csrfProtection, ensureDepart
 });
 
 app.post("/hr/account/password", csrfProtection, ensureHrAdmin, async (req, res) => {
-  clearHrDepartmentScope(req);
-  const previousSettings = await readSettings();
-  const previousHrAccount = normalizeHrAccount(previousSettings?.hrAccount);
-  const result = await updateHrAccount({
-    username: req.body.username,
-    currentPassword: req.body.currentPassword,
-    newPassword: req.body.newPassword,
-    confirmPassword: req.body.confirmPassword
-  });
-
-  if (result.error) {
-    return renderHrAccountPage(res, {
-      statusCode: 400,
-      error: result.error
-    });
+  if (req.session.adminRole === "developer") {
+    return res.redirect("/hr/developer-console");
   }
-
-  req.session.adminUsername = result.hrAccount.username;
-  const updatedSettings = await readSettings();
-  appendSettingsAudit(updatedSettings, {
-    scope: "settings",
-    action: "hr_account_updated",
-    ...getActorInfo(req, "hr_admin"),
-    note:
-      previousHrAccount.username !== result.hrAccount.username
-        ? `HR account username changed from ${previousHrAccount.username} to ${result.hrAccount.username}.`
-        : "HR account password updated.",
-    metadata: {
-      previousUsername: previousHrAccount.username,
-      newUsername: result.hrAccount.username,
-      passwordChanged: Boolean(req.body.newPassword)
-    }
-  });
-  updatedSettings.updatedAt = new Date().toISOString();
-  await writeSettings(updatedSettings);
-  return res.redirect("/hr/account?passwordChanged=1");
+  return res.redirect("/hr/applications");
 });
 
 app.get("/hr/communications", ensureHrAdmin, async (req, res) => {
