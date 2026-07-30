@@ -109,7 +109,7 @@ const LEGACY_PERIOD_LABELS = {
   SEP_DEC: "September - December"
 };
 
-const DEPARTMENTS = [
+const DEFAULT_DEPARTMENTS = [
   { key: "ict", label: "ICT, E-Governonance & Innovation" },
   { key: "finance", label: "Finance and Economic Planning" },
   { key: "health", label: "Health Services" },
@@ -121,6 +121,8 @@ const DEPARTMENTS = [
   { key: "trade", label: "Trade, Cooperatives, Tourism and Industrialization" },
   { key: "public_service", label: "Public Service Management and Administration" }
 ];
+
+let DEPARTMENTS = [...DEFAULT_DEPARTMENTS];
 
 const DOCUMENT_DEFINITIONS = [
   {
@@ -225,6 +227,9 @@ const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 const HR_USERNAME = process.env.HR_USERNAME || DEFAULT_HR_USERNAME;
 const HR_PASSWORD = process.env.HR_PASSWORD || DEFAULT_HR_PASSWORD;
+const DEFAULT_DEVELOPER_USERNAME = "developer";
+const DEVELOPER_USERNAME = process.env.DEVELOPER_USERNAME || DEFAULT_DEVELOPER_USERNAME;
+const DEVELOPER_PASSWORD = process.env.DEVELOPER_PASSWORD || "dev123";
 const PRESENTATION_LOGIN_USERNAME = process.env.PRESENTATION_LOGIN_USERNAME || "";
 const PRESENTATION_LOGIN_PASSWORD = process.env.PRESENTATION_LOGIN_PASSWORD || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || DEFAULT_SESSION_SECRET;
@@ -632,6 +637,14 @@ function createDefaultHrAccount() {
   };
 }
 
+function createDefaultDeveloperAccount() {
+  return {
+    username: normalizeAdminUsername(DEVELOPER_USERNAME),
+    password: hashPassword((DEVELOPER_PASSWORD || "").toString()),
+    updatedAt: new Date().toISOString()
+  };
+}
+
 function createDefaultSettings() {
   const departmentCapacities = createDefaultDepartmentCapacities();
   const totalCapacity = Object.values(departmentCapacities).reduce((sum, value) => sum + value, 0);
@@ -650,7 +663,9 @@ function createDefaultSettings() {
     communicationBroadcasts: [],
     systemAuditTrail: [],
     departmentCapacities,
+    departments: [...DEFAULT_DEPARTMENTS],
     hrAccount: createDefaultHrAccount(),
+    developerAccount: createDefaultDeveloperAccount(),
     updatedAt: new Date().toISOString()
   };
 }
@@ -1311,6 +1326,14 @@ async function readSettings() {
   const parsed = await database.readSettings();
   const normalized = createDefaultSettings();
 
+  if (parsed?.departments && Array.isArray(parsed.departments) && parsed.departments.length > 0) {
+    DEPARTMENTS = parsed.departments;
+    normalized.departments = parsed.departments;
+  } else {
+    DEPARTMENTS = [...DEFAULT_DEPARTMENTS];
+    normalized.departments = [...DEFAULT_DEPARTMENTS];
+  }
+
   PERIODS.forEach((period) => {
     normalized.openPeriods[period.key] = Boolean(parsed?.openPeriods?.[period.key]);
   });
@@ -1320,7 +1343,7 @@ async function readSettings() {
     normalized.departmentCapacities[department.key] =
       Number.isInteger(rawCapacity) && rawCapacity >= 0
         ? rawCapacity
-        : normalized.departmentCapacities[department.key];
+        : 10;
   });
 
   normalized.maxApplicants = Object.values(normalized.departmentCapacities).reduce(
@@ -1345,6 +1368,7 @@ async function readSettings() {
     SYSTEM_AUDIT_TRAIL_LIMIT
   );
   normalized.hrAccount = normalizeHrAccount(parsed?.hrAccount, normalized.hrAccount);
+  normalized.developerAccount = normalizeDeveloperAccount(parsed?.developerAccount, normalized.developerAccount);
   normalized.updatedAt = parsed?.updatedAt || normalized.updatedAt;
   return normalized;
 }
@@ -1359,6 +1383,13 @@ async function writeSettings(settings) {
         ? settings.hrAccount.password
         : hashPassword((settings?.hrAccount?.password || "").toString())
     },
+    developerAccount: {
+      ...normalizeDeveloperAccount(settings?.developerAccount),
+      password: isPasswordHash(settings?.developerAccount?.password)
+        ? settings.developerAccount.password
+        : hashPassword((settings?.developerAccount?.password || "").toString())
+    },
+    departments: settings.departments || DEPARTMENTS,
     supervisorsDirectory: normalizeSupervisorDirectory(settings?.supervisorsDirectory),
     supervisorsLastSyncedAt: (settings?.supervisorsLastSyncedAt || "").toString().trim(),
     systemAuditTrail: normalizeAuditTrail(settings?.systemAuditTrail, SYSTEM_AUDIT_TRAIL_LIMIT)
@@ -1406,6 +1437,14 @@ function normalizeAdminUsername(username) {
 }
 
 function normalizeHrAccount(account, fallback = createDefaultHrAccount()) {
+  return {
+    username: normalizeAdminUsername(account?.username) || fallback.username,
+    password: (account?.password || "").toString() || fallback.password,
+    updatedAt: (account?.updatedAt || fallback.updatedAt || new Date().toISOString()).toString()
+  };
+}
+
+function normalizeDeveloperAccount(account, fallback = createDefaultDeveloperAccount()) {
   return {
     username: normalizeAdminUsername(account?.username) || fallback.username,
     password: (account?.password || "").toString() || fallback.password,
@@ -1503,6 +1542,26 @@ async function findAdminUserByCredentials(usernameInput, passwordInput, departme
 
   if (!departmentScope) {
     const settings = await readSettings();
+    const developerAccount = normalizeDeveloperAccount(settings?.developerAccount);
+
+    if (username === developerAccount.username && verifyPassword(password, developerAccount.password)) {
+      if (!isPasswordHash(developerAccount.password)) {
+        settings.developerAccount = {
+          ...developerAccount,
+          password: hashPassword(password),
+          updatedAt: new Date().toISOString()
+        };
+        settings.updatedAt = new Date().toISOString();
+        await writeSettings(settings);
+      }
+      return {
+        username: developerAccount.username,
+        role: "developer",
+        department: null,
+        displayName: "System Developer"
+      };
+    }
+
     const hrAccount = normalizeHrAccount(settings?.hrAccount);
 
     if (username === hrAccount.username && verifyPassword(password, hrAccount.password)) {
@@ -6134,7 +6193,7 @@ app.post(ADMIN_PORTAL_PATH, csrfProtection, async (req, res) => {
 
 app.get(HR_PORTAL_PATH, async (req, res) => {
   if (req.session?.isAdmin) {
-    if (req.session.adminRole === "hr_admin") {
+    if (req.session.adminRole === "hr_admin" || req.session.adminRole === "developer") {
       return res.redirect("/hr/applications");
     }
     if (req.session.adminRole === "department_admin") {
@@ -6175,10 +6234,10 @@ app.post(HR_PORTAL_PATH, csrfProtection, async (req, res) => {
 
   const adminUser = await findAdminUserByCredentials(username, password);
 
-  if (!adminUser || adminUser.role !== "hr_admin") {
+  if (!adminUser || (adminUser.role !== "hr_admin" && adminUser.role !== "developer")) {
     hrLoginRateLimiter.fail(rateLimitKey);
     return res.status(401).render("hr-login", {
-      error: "Invalid HR login credentials.",
+      error: "Invalid HR or Developer login credentials.",
       defaultRole: "hr_admin"
     });
   }
@@ -6187,7 +6246,7 @@ app.post(HR_PORTAL_PATH, csrfProtection, async (req, res) => {
   await establishAdminSession(req, {
     isAdmin: true,
     adminUsername: adminUser.username,
-    adminRole: "hr_admin",
+    adminRole: adminUser.role,
     adminDepartment: null,
     adminScopeDepartment: null
   });
@@ -7463,6 +7522,204 @@ app.post("/hr/admin-accounts/:username/toggle", csrfProtection, ensureHrAdmin, a
   settings.updatedAt = new Date().toISOString();
   await writeSettings(settings);
   return res.redirect("/hr/admin-accounts?toggled=1");
+});
+
+app.get("/hr/developer-console", ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied. Developer privileges required.");
+  }
+
+  const settings = await readSettings();
+  const notice = req.query.notice ? (req.query.notice).toString() : null;
+  const error = req.query.error ? (req.query.error).toString() : null;
+
+  return res.render("hr-developer-console", {
+    hrAccount: normalizeHrAccount(settings.hrAccount),
+    developerAccount: normalizeDeveloperAccount(settings.developerAccount),
+    departments: DEPARTMENTS,
+    notice,
+    error
+  });
+});
+
+app.post("/hr/developer-console/developer-credentials", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const username = (req.body.username || "").toString().trim().toLowerCase();
+  const newPassword = (req.body.newPassword || "").toString();
+  const confirmPassword = (req.body.confirmPassword || "").toString();
+
+  if (!username) {
+    return res.redirect("/hr/developer-console?error=Username cannot be empty");
+  }
+
+  const settings = await readSettings();
+  const developerAccount = normalizeDeveloperAccount(settings.developerAccount);
+
+  developerAccount.username = username;
+
+  if (newPassword) {
+    if (newPassword !== confirmPassword) {
+      return res.redirect("/hr/developer-console?error=Passwords do not match");
+    }
+    if (newPassword.length < 5) {
+      return res.redirect("/hr/developer-console?error=Password must be at least 5 characters long");
+    }
+    developerAccount.password = hashPassword(newPassword);
+  }
+
+  developerAccount.updatedAt = new Date().toISOString();
+  settings.developerAccount = developerAccount;
+  settings.updatedAt = new Date().toISOString();
+
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "developer_credentials_updated",
+    ...getActorInfo(req, "developer"),
+    note: "Developer updated their own security credentials.",
+    metadata: { username }
+  });
+
+  await writeSettings(settings);
+  return res.redirect("/hr/developer-console?notice=Developer credentials updated successfully");
+});
+
+app.post("/hr/developer-console/hr-credentials", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const username = (req.body.username || "").toString().trim().toLowerCase();
+  const newPassword = (req.body.newPassword || "").toString();
+  const confirmPassword = (req.body.confirmPassword || "").toString();
+
+  if (!username) {
+    return res.redirect("/hr/developer-console?error=Username cannot be empty");
+  }
+
+  const settings = await readSettings();
+  const hrAccount = normalizeHrAccount(settings.hrAccount);
+
+  hrAccount.username = username;
+
+  if (newPassword) {
+    if (newPassword !== confirmPassword) {
+      return res.redirect("/hr/developer-console?error=Passwords do not match");
+    }
+    if (newPassword.length < 5) {
+      return res.redirect("/hr/developer-console?error=Password must be at least 5 characters long");
+    }
+    hrAccount.password = hashPassword(newPassword);
+  }
+
+  hrAccount.updatedAt = new Date().toISOString();
+  settings.hrAccount = hrAccount;
+  settings.updatedAt = new Date().toISOString();
+
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "hr_credentials_updated_by_developer",
+    ...getActorInfo(req, "developer"),
+    note: "Developer updated Main HR Administrator credentials.",
+    metadata: { username }
+  });
+
+  await writeSettings(settings);
+  return res.redirect("/hr/developer-console?notice=Main HR credentials updated successfully");
+});
+
+app.post("/hr/developer-console/departments/add", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const key = (req.body.key || "").toString().trim().toLowerCase();
+  const label = (req.body.label || "").toString().trim();
+
+  if (!key || !label) {
+    return res.redirect("/hr/developer-console?error=All department fields are required");
+  }
+
+  if (!/^[a-z0-9_]+$/.test(key)) {
+    return res.redirect("/hr/developer-console?error=Department key must contain lowercase letters, numbers, and underscores only");
+  }
+
+  const settings = await readSettings();
+  const departments = settings.departments || [...DEFAULT_DEPARTMENTS];
+
+  if (departments.some((dept) => dept.key === key)) {
+    return res.redirect(`/hr/developer-console?error=Department key '${key}' already exists`);
+  }
+
+  departments.push({ key, label });
+  settings.departments = departments;
+
+  if (!settings.departmentCapacities) {
+    settings.departmentCapacities = {};
+  }
+  settings.departmentCapacities[key] = 10;
+  settings.maxApplicants = Object.values(settings.departmentCapacities).reduce((sum, val) => sum + val, 0);
+  settings.updatedAt = new Date().toISOString();
+
+  DEPARTMENTS = departments;
+  app.locals.departmentsList = DEPARTMENTS;
+
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "department_added",
+    ...getActorInfo(req, "developer"),
+    note: `Developer added department: ${label} (${key}).`,
+    metadata: { key, label }
+  });
+
+  await writeSettings(settings);
+  return res.redirect(`/hr/developer-console?notice=Department '${label}' added successfully`);
+});
+
+app.post("/hr/developer-console/departments/remove", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const departmentKey = (req.body.departmentKey || "").toString().trim();
+
+  if (!departmentKey) {
+    return res.redirect("/hr/developer-console?error=Department key is required");
+  }
+
+  const settings = await readSettings();
+  const departments = settings.departments || [...DEFAULT_DEPARTMENTS];
+
+  const index = departments.findIndex((dept) => dept.key === departmentKey);
+  if (index === -1) {
+    return res.redirect(`/hr/developer-console?error=Department key '${departmentKey}' not found`);
+  }
+
+  const label = departments[index].label;
+  departments.splice(index, 1);
+  settings.departments = departments;
+
+  if (settings.departmentCapacities) {
+    delete settings.departmentCapacities[departmentKey];
+  }
+  settings.maxApplicants = Object.values(settings.departmentCapacities || {}).reduce((sum, val) => sum + val, 0);
+  settings.updatedAt = new Date().toISOString();
+
+  DEPARTMENTS = departments;
+  app.locals.departmentsList = DEPARTMENTS;
+
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "department_removed",
+    ...getActorInfo(req, "developer"),
+    note: `Developer removed department: ${label} (${departmentKey}).`,
+    metadata: { departmentKey, label }
+  });
+
+  await writeSettings(settings);
+  return res.redirect(`/hr/developer-console?notice=Department '${label}' removed successfully`);
 });
 
 function renderReportsPage(res, {

@@ -1,0 +1,139 @@
+<%- include("partials/layout-open", { pageTitle: "Developer Settings Console", activePortal: "hr" }) %>
+<main class="container wide">
+  <section class="card">
+    <div class="row-between">
+      <h1>Developer Console</h1>
+      <div class="actions tight">
+        <a class="btn secondary" href="/hr/applications">HR Queue</a>
+        <a class="btn secondary" href="/hr/departments">Department Status</a>
+        <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+        <a class="btn secondary" href="/hr/periods">Period & Slot Settings</a>
+        <a class="btn secondary" href="/hr/reports">Reports</a>
+        <form action="/hr/logout" method="post">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <button class="btn secondary" type="submit">Logout</button>
+        </form>
+      </div>
+    </div>
+
+    <p>
+      System developer control center. Manage system configurations, custom departments list, and security credentials for all administrative entities.
+    </p>
+
+    <% if (notice) { %>
+      <div class="notice"><%= notice %></div>
+    <% } %>
+
+    <% if (error) { %>
+      <div class="alert"><%= error %></div>
+    <% } %>
+  </section>
+
+  <div class="portal-grid" style="grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+    <!-- Manage Developer Account Card -->
+    <section class="card">
+      <h2>Developer Credentials</h2>
+      <form action="/hr/developer-console/developer-credentials" method="post" class="form-grid">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <label class="full-width">
+          Developer Username
+          <input type="text" name="username" value="<%= developerAccount.username %>" required />
+        </label>
+        <label>
+          New Password
+          <input type="password" name="newPassword" placeholder="Enter new password" />
+        </label>
+        <label>
+          Confirm Password
+          <input type="password" name="confirmPassword" placeholder="Confirm new password" />
+        </label>
+        <div class="actions full-width" style="margin-top: 10px;">
+          <button class="btn" type="submit">Update Developer Credentials</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Manage HR Account Card -->
+    <section class="card">
+      <h2>Main HR Admin Credentials</h2>
+      <form action="/hr/developer-console/hr-credentials" method="post" class="form-grid">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <label class="full-width">
+          HR Administrator Username
+          <input type="text" name="username" value="<%= hrAccount.username %>" required />
+        </label>
+        <label>
+          New Password
+          <input type="password" name="newPassword" placeholder="Enter new password" />
+        </label>
+        <label>
+          Confirm Password
+          <input type="password" name="confirmPassword" placeholder="Confirm new password" />
+        </label>
+        <div class="actions full-width" style="margin-top: 10px;">
+          <button class="btn" type="submit">Update HR Credentials</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <!-- Dynamic Department Management Section -->
+  <section class="card" style="margin-top: 20px;">
+    <h2>Manage County Departments</h2>
+    <p>
+      Create or remove active attachment departments. Removing a department disables applications for it but preserves existing applications in the database.
+    </p>
+
+    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 30px; margin-top: 20px;">
+      <!-- Add Department Form -->
+      <div>
+        <h3>Add Department</h3>
+        <form action="/hr/developer-console/departments/add" method="post" class="form-grid">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <label class="full-width">
+            Department Key (Identifier)
+            <input type="text" name="key" placeholder="e.g. agriculture" required pattern="[a-z0-9_]+" title="Lowercase letters, numbers, and underscores only." />
+            <span class="field-hint">Used internally. lowercase letters, numbers, and underscores only.</span>
+          </label>
+          <label class="full-width">
+            Department Label (Display Name)
+            <input type="text" name="label" placeholder="e.g. Agriculture, Livestock & Fisheries" required />
+          </label>
+          <div class="actions full-width" style="margin-top: 10px;">
+            <button class="btn" type="submit">Add Department</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Current Departments Table -->
+      <div>
+        <h3>Active Departments (<%= departments.length %>)</h3>
+        <table class="table" style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr>
+              <th style="text-align: left; padding: 10px; border-bottom: 1.5px solid var(--border);">Key</th>
+              <th style="text-align: left; padding: 10px; border-bottom: 1.5px solid var(--border);">Display Label</th>
+              <th style="text-align: right; padding: 10px; border-bottom: 1.5px solid var(--border);">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% departments.forEach((dept) => { %>
+              <tr style="border-bottom: 1px solid var(--border);">
+                <td style="padding: 10px; font-family: monospace;"><%= dept.key %></td>
+                <td style="padding: 10px;"><%= dept.label %></td>
+                <td style="padding: 10px; text-align: right;">
+                  <form action="/hr/developer-console/departments/remove" method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to remove the department \'<%= dept.label %>\'? This will also remove its default slots configuration.');">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <input type="hidden" name="departmentKey" value="<%= dept.key %>" />
+                    <button class="btn" type="submit" style="padding: 4px 8px; background: var(--danger); font-size: 12px; border-color: var(--danger);">Remove</button>
+                  </form>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+<%- include("partials/layout-close") %>

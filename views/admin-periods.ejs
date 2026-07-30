@@ -12,6 +12,9 @@
               <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
               <a class="btn secondary" href="/hr/account">HR Account</a>
               <a class="btn secondary" href="/hr/applications">HR Queue</a>
+              <% if (currentAdminRole === 'developer') { %>
+                <a class="btn primary" href="/hr/developer-console">Developer Console</a>
+              <% } %>
             <% } else { %>
               <a class="btn secondary" href="/admin/reports">Reports</a>
               <a class="btn secondary" href="/admin/supervisors">Manage Supervisors</a>
