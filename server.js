@@ -1935,7 +1935,8 @@ function isSuperAdminSession(req) {
     return false;
   }
 
-  return (req.session.adminRole || "hr_admin") === "hr_admin";
+  const role = req.session.adminRole;
+  return role === "hr_admin" || role === "developer";
 }
 
 function getAdminScopeDepartment(req) {
@@ -4711,7 +4712,7 @@ app.locals.fileStorageProvider = fileStorage.provider;
 app.use((req, res, next) => {
   const adminScopeDepartment = getAdminScopeDepartment(req);
   const currentAdminRole = req.session?.adminRole || "";
-  const isHrAdmin = currentAdminRole === "hr_admin";
+  const isHrAdmin = currentAdminRole === "hr_admin" || currentAdminRole === "developer";
   res.locals.isSuperAdmin = isSuperAdminSession(req);
   res.locals.canManageOpenPeriods = isSuperAdminSession(req);
   res.locals.isHrAdmin = isHrAdmin;
