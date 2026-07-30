@@ -4352,8 +4352,8 @@ function ensureDepartmentAdmin(req, res, next) {
 
 function ensureHrAdmin(req, res, next) {
   if (req.session?.isAdmin && (req.session.adminRole === "hr_admin" || req.session.adminRole === "developer")) {
+    const path = req.path || "";
     if (req.session.adminRole === "developer") {
-      const path = req.path || "";
       const hrOnlySubstrings = [
         "/applications",
         "/departments",
@@ -4367,6 +4367,9 @@ function ensureHrAdmin(req, res, next) {
       if (hrOnlySubstrings.some(sub => path.includes(sub))) {
         return res.redirect("/hr/developer-console");
       }
+    }
+    if (req.session.adminRole === "hr_admin" && path.includes("/supervisors")) {
+      return res.redirect("/hr/applications");
     }
     return next();
   }
