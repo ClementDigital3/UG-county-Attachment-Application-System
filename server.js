@@ -3134,56 +3134,40 @@ function isTrackingReferenceInUse(applications, reference, excludeId = "") {
   });
 }
 
+function generateNextTrackingNumber(applications) {
+  let maxNum = 0;
+  for (const app of applications || []) {
+    const trackingStr = (app?.placementNumber || app?.referenceNo || app?.trackingNumber || app?.id || "").toString();
+    const match = trackingStr.match(/^ATT-(\d+)$/i);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > maxNum) {
+        maxNum = num;
+      }
+    }
+  }
+  const nextNum = maxNum + 1;
+  return `ATT-${String(nextNum).padStart(3, "0")}`;
+}
+
 function generateApplicationId(applications, idNumber) {
-  const base = buildTrackingNumberBase(idNumber);
-  if (!base) {
-    let id = "";
-
-    do {
-      id = `ATT-${Date.now()}-${crypto.randomInt(100, 1000)}`;
-    } while (applications.some((item) => (item.id || "").toUpperCase() === id));
-
-    return id;
+  const digits = getIdNumberDigits(idNumber);
+  if (digits) {
+    return digits;
   }
-
-  let candidate = base;
-  let suffix = 2;
-  while (isTrackingReferenceInUse(applications, candidate)) {
-    candidate = `${base}-${suffix}`;
-    suffix += 1;
-  }
-
-  return candidate;
+  return `${Date.now().toString().slice(-8)}${crypto.randomInt(10, 99)}`;
 }
 
 function generatePlacementNumber(applications, idNumber, excludeId = "") {
-  const base = buildTrackingNumberBase(idNumber);
-  if (!base) {
-    return "";
-  }
-
-  let candidate = base;
-  let suffix = 2;
-  while (isTrackingReferenceInUse(applications, candidate, excludeId)) {
-    candidate = `${base}-${suffix}`;
-    suffix += 1;
-  }
-
-  return candidate;
+  return generateNextTrackingNumber(applications);
 }
 
 function getTrackingNumber(application) {
-  const storedTracking = (application?.placementNumber || "").toString().trim();
-  if (/^ATT-/i.test(storedTracking)) {
-    return storedTracking;
+  const storedTracking = (application?.placementNumber || application?.referenceNo || application?.trackingNumber || "").toString().trim();
+  if (/^ATT-\d+/i.test(storedTracking)) {
+    return storedTracking.toUpperCase();
   }
-
-  const derivedTracking = buildTrackingNumberBase(application?.idNumber);
-  if (derivedTracking) {
-    return derivedTracking;
-  }
-
-  return (storedTracking || application?.id || "").toString().trim();
+  return (application?.id || "").toString().replace(/^ATT-/i, "");
 }
 
 function matchesTrackingNumber(application, trackingNumber) {

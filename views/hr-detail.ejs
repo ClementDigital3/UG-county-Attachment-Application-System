@@ -39,8 +39,8 @@
         <% } %>
 
         <div class="summary">
-          <p><strong>ID:</strong> <%= application.id %></p>
-          <p><strong>Tracking Number:</strong> <%= application.placementNumber || application.id %></p>
+          <p><strong>ID:</strong> <%= (application.id || application.idNumber || '').toString().replace(/^ATT-/i, '') %></p>
+          <p><strong>Tracking Number:</strong> <%= application.placementNumber || application.trackingNumber || application.referenceNo || application.id %></p>
           <p><strong>Name:</strong> <%= application.fullName %></p>
           <p><strong>Email:</strong> <%= application.email %></p>
           <p><strong>Phone:</strong> <%= application.phone %></p>

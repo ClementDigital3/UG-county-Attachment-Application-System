@@ -97,8 +97,8 @@
 
               <% applications.forEach((application) => { %>
                 <tr>
-                  <td class="table-number-cell"><%= application.id %></td>
-                  <td><%= application.placementNumber || application.id %></td>
+                  <td class="table-number-cell"><%= (application.id || application.idNumber || '').toString().replace(/^ATT-/i, '') %></td>
+                  <td><%= application.placementNumber || application.trackingNumber || application.referenceNo || application.id %></td>
                   <td><%= application.fullName %></td>
                   <td><%= application.email %></td>
                   <td><%= application.institution %></td>
