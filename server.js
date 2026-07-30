@@ -4333,7 +4333,7 @@ async function sendAndPersistApplicationNotification({
 }
 
 function ensureDepartmentAdmin(req, res, next) {
-  if (req.session?.isAdmin && req.session.adminRole === "department_admin") {
+  if (req.session?.isAdmin && (req.session.adminRole === "department_admin" || req.session.adminRole === "developer")) {
     return next();
   }
 
@@ -4341,7 +4341,7 @@ function ensureDepartmentAdmin(req, res, next) {
 }
 
 function ensureHrAdmin(req, res, next) {
-  if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
+  if (req.session?.isAdmin && (req.session.adminRole === "hr_admin" || req.session.adminRole === "developer")) {
     return next();
   }
 
@@ -4353,7 +4353,7 @@ function ensureHrAdmin(req, res, next) {
 }
 
 function setHrDepartmentScope(req, departmentKey) {
-  if (!req.session?.isAdmin || req.session.adminRole !== "hr_admin") {
+  if (!req.session?.isAdmin || (req.session.adminRole !== "hr_admin" && req.session.adminRole !== "developer")) {
     return;
   }
 
