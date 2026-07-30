@@ -4341,6 +4341,9 @@ async function sendAndPersistApplicationNotification({
 
 function ensureDepartmentAdmin(req, res, next) {
   if (req.session?.isAdmin && (req.session.adminRole === "department_admin" || req.session.adminRole === "developer")) {
+    if (req.session.adminRole === "developer") {
+      return res.redirect("/hr/developer-console");
+    }
     return next();
   }
 
@@ -4349,6 +4352,22 @@ function ensureDepartmentAdmin(req, res, next) {
 
 function ensureHrAdmin(req, res, next) {
   if (req.session?.isAdmin && (req.session.adminRole === "hr_admin" || req.session.adminRole === "developer")) {
+    if (req.session.adminRole === "developer") {
+      const path = req.path || "";
+      const hrOnlySubstrings = [
+        "/applications",
+        "/departments",
+        "/communications",
+        "/supervisors",
+        "/audit",
+        "/reports",
+        "/files",
+        "/backup"
+      ];
+      if (hrOnlySubstrings.some(sub => path.includes(sub))) {
+        return res.redirect("/hr/developer-console");
+      }
+    }
     return next();
   }
 
@@ -4723,7 +4742,9 @@ app.use((req, res, next) => {
     ? getDepartmentLabel(adminScopeDepartment)
     : null;
   res.locals.currentAdminUsername = req.session?.adminUsername || "";
-  res.locals.homePath = isHrAdmin ? "/hr/home" : "/";
+  res.locals.homePath = currentAdminRole === "developer"
+    ? "/hr/developer-console"
+    : (currentAdminRole === "hr_admin" ? "/hr/applications" : "/");
   res.locals.fileStorageProvider = fileStorage.provider;
   res.locals.fileStorageWarning = fileStorage.getProviderWarning();
   next();
@@ -6200,7 +6221,10 @@ app.post(ADMIN_PORTAL_PATH, csrfProtection, async (req, res) => {
 
 app.get(HR_PORTAL_PATH, async (req, res) => {
   if (req.session?.isAdmin) {
-    if (req.session.adminRole === "hr_admin" || req.session.adminRole === "developer") {
+    if (req.session.adminRole === "developer") {
+      return res.redirect("/hr/developer-console");
+    }
+    if (req.session.adminRole === "hr_admin") {
       return res.redirect("/hr/applications");
     }
     if (req.session.adminRole === "department_admin") {
@@ -6257,6 +6281,10 @@ app.post(HR_PORTAL_PATH, csrfProtection, async (req, res) => {
     adminDepartment: null,
     adminScopeDepartment: null
   });
+  
+  if (adminUser.role === "developer") {
+    return res.redirect("/hr/developer-console");
+  }
   return res.redirect("/hr/applications");
 });
 
