@@ -135,6 +135,14 @@
 
             <label>
               Institution *
+              <input
+                id="institutionSearchInput"
+                type="text"
+                class="field-search-input"
+                placeholder="🔍 Search institution..."
+                <%= formData.acceptedTerms === 'yes' && formData.appliedDepartment ? '' : 'disabled' %>
+                style="margin-bottom: 6px; width: 100%; padding: 8px 12px; font-size: 0.95rem; border: 1px solid #cbd5e1; border-radius: 6px;"
+              />
               <select
                 id="institutionSelect"
                 name="institution"
@@ -152,7 +160,7 @@
                 <option value="<%= otherInstitutionValue %>" <%= formData.institution === otherInstitutionValue ? 'selected' : '' %>>Other - type institution in full</option>
               </select>
               <span class="field-hint">
-                Choose from the ranked institution list. If your institution is missing, select <strong>Other</strong> and type the full institution name without abbreviations.
+                Type above to search or choose from the list. If your institution is missing, select <strong>Other</strong> and type the full name.
               </span>
             </label>
 
@@ -431,6 +439,7 @@
       const pwdReasonInput = document.getElementById("pwdReasonInput");
       const specialApplicantReasonLabel = document.getElementById("specialApplicantReasonLabel");
       const specialApplicantReasonInput = document.getElementById("specialApplicantReasonInput");
+      const institutionSearchInput = document.getElementById("institutionSearchInput");
       const institutionSelect = document.getElementById("institutionSelect");
       const otherInstitutionLabel = document.getElementById("otherInstitutionLabel");
       const otherInstitutionInput = document.getElementById("otherInstitutionInput");
@@ -441,7 +450,7 @@
       const statusMetrics = document.getElementById("institutionStatusMetrics");
       const submitButton = document.getElementById("applySubmitButton");
 
-      if (!termsCheckbox || !departmentSelect || !disabilityStatusSelect || !pwdReasonLabel || !pwdReasonInput || !specialApplicantReasonLabel || !specialApplicantReasonInput || !institutionSelect || !otherInstitutionLabel || !otherInstitutionInput || !applicationFields || !statusBox || !statusHeading || !statusMessage || !statusMetrics || !submitButton) {
+      if (!termsCheckbox || !departmentSelect || !disabilityStatusSelect || !pwdReasonLabel || !pwdReasonInput || !specialApplicantReasonLabel || !specialApplicantReasonInput || !institutionSearchInput || !institutionSelect || !otherInstitutionLabel || !otherInstitutionInput || !applicationFields || !statusBox || !statusHeading || !statusMessage || !statusMetrics || !submitButton) {
         return;
       }
 
@@ -523,6 +532,8 @@
         pwdReasonInput.disabled = !termsCheckbox.checked || !["pwd", "yes"].includes(disabilityStatusSelect.value);
         specialApplicantReasonInput.disabled = !termsCheckbox.checked || disabilityStatusSelect.value !== "special";
         institutionSelect.disabled = true;
+        institutionSearchInput.disabled = true;
+        institutionSearchInput.value = "";
         otherInstitutionInput.disabled = true;
         syncDisabilityUi();
         syncInstitutionUi();
@@ -551,6 +562,7 @@
         specialApplicantReasonInput.disabled = disabilityStatus !== "special";
         syncDisabilityUi();
         institutionSelect.disabled = !department;
+        institutionSearchInput.disabled = !department;
         syncInstitutionUi();
 
         if (!department) {
@@ -655,6 +667,39 @@
           statusMetrics.innerHTML = "";
         }
       }
+
+      function filterInstitutions() {
+        const filterText = institutionSearchInput.value.toLowerCase().trim();
+        const optgroups = institutionSelect.querySelectorAll("optgroup");
+        const options = institutionSelect.querySelectorAll("option");
+
+        options.forEach((opt) => {
+          const val = opt.value;
+          if (!val || val.toLowerCase().startsWith("other")) {
+            opt.hidden = false;
+            opt.style.display = "";
+            return;
+          }
+          const text = opt.textContent.toLowerCase();
+          const match = text.includes(filterText);
+          opt.hidden = !match;
+          opt.style.display = match ? "" : "none";
+        });
+
+        optgroups.forEach((group) => {
+          const visibleOpts = group.querySelectorAll("option");
+          let hasVisible = false;
+          visibleOpts.forEach((opt) => {
+            if (opt.style.display !== "none" && opt.value && !opt.value.toLowerCase().startsWith("other")) {
+              hasVisible = true;
+            }
+          });
+          group.hidden = !hasVisible;
+          group.style.display = hasVisible ? "" : "none";
+        });
+      }
+
+      institutionSearchInput.addEventListener("input", filterInstitutions);
 
       termsCheckbox.addEventListener("change", refreshAvailability);
       departmentSelect.addEventListener("change", refreshAvailability);
