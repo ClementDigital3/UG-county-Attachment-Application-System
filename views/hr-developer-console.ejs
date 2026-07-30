@@ -138,6 +138,54 @@
     </section>
   </div>
 
+  <!-- Department Admin Credentials Section -->
+  <section class="card" style="margin-top: 20px;">
+    <h2>Manage Department Credentials</h2>
+    <p>
+      Create or update the login credentials (username, display name, and password) for all county departments.
+    </p>
+
+    <table class="table" style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+      <thead>
+        <tr>
+          <th style="text-align: left; padding: 10px; border-bottom: 1.5px solid var(--border); width: 25%;">Department</th>
+          <th style="text-align: left; padding: 10px; border-bottom: 1.5px solid var(--border); width: 20%;">Admin Username</th>
+          <th style="text-align: left; padding: 10px; border-bottom: 1.5px solid var(--border); width: 25%;">Display Name</th>
+          <th style="text-align: left; padding: 10px; border-bottom: 1.5px solid var(--border); width: 20%;">Password / Reset</th>
+          <th style="text-align: right; padding: 10px; border-bottom: 1.5px solid var(--border); width: 10%;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% departments.forEach((dept) => { %>
+          <% const admin = departmentAdmins.find(adm => adm.department === dept.key); %>
+          <tr style="border-bottom: 1px solid var(--border);">
+            <form action="/hr/developer-console/department-admins/save" method="post">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <input type="hidden" name="department" value="<%= dept.key %>" />
+              
+              <td style="padding: 10px;">
+                <strong><%= dept.label %></strong>
+                <div style="font-size: 11px; color: var(--text-muted); font-family: monospace;"><%= dept.key %></div>
+              </td>
+              <td style="padding: 10px;">
+                <input type="text" name="username" value="<%= admin ? admin.username : '' %>" required style="width: 90%; padding: 4px 8px; font-size: 13px;" placeholder="e.g. <%= dept.key %>_admin" />
+              </td>
+              <td style="padding: 10px;">
+                <input type="text" name="displayName" value="<%= admin ? admin.displayName : dept.label + ' Admin' %>" required style="width: 90%; padding: 4px 8px; font-size: 13px;" />
+              </td>
+              <td style="padding: 10px;">
+                <input type="password" name="password" style="width: 90%; padding: 4px 8px; font-size: 13px;" placeholder="<%= admin ? '•••••• (Unchanged)' : 'Enter password' %>" <%= admin ? '' : 'required' %> />
+              </td>
+              <td style="padding: 10px; text-align: right;">
+                <button class="btn" type="submit" style="padding: 4px 12px; font-size: 12px;"><%= admin ? 'Save' : 'Create' %></button>
+              </td>
+            </form>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </section>
+
   <!-- Dynamic Department Management Section -->
   <section class="card" style="margin-top: 20px;">
     <h2>Manage County Departments</h2>

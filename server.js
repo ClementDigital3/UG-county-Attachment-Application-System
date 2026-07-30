@@ -7545,11 +7545,13 @@ app.get("/hr/developer-console", ensureHrAdmin, async (req, res) => {
   const settings = await readSettings();
   const notice = req.query.notice ? (req.query.notice).toString() : null;
   const error = req.query.error ? (req.query.error).toString() : null;
+  const departmentAdmins = await readDepartmentAdmins();
 
   return res.render("hr-developer-console", {
     hrAccount: normalizeHrAccount(settings.hrAccount),
     developerAccounts: settings.developerAccounts || createDefaultDeveloperAccounts(),
     departments: DEPARTMENTS,
+    departmentAdmins,
     notice,
     error
   });
@@ -7738,6 +7740,75 @@ app.post("/hr/developer-console/hr-credentials", csrfProtection, ensureHrAdmin, 
 
   await writeSettings(settings);
   return res.redirect("/hr/developer-console?notice=Main HR credentials updated successfully");
+});
+
+app.post("/hr/developer-console/department-admins/save", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const department = (req.body.department || "").toString().trim();
+  const username = (req.body.username || "").toString().trim().toLowerCase();
+  const displayName = (req.body.displayName || "").toString().trim();
+  const password = (req.body.password || "").toString();
+
+  if (!department || !username || !displayName) {
+    return res.redirect("/hr/developer-console?error=Department, Username, and Display Name are required");
+  }
+
+  if (!isValidDepartment(department)) {
+    return res.redirect(`/hr/developer-console?error=Invalid department key '${department}'`);
+  }
+
+  const admins = await readDepartmentAdmins();
+  const existingIndex = admins.findIndex((adm) => adm.department === department);
+
+  if (admins.some((adm, idx) => adm.username === username && idx !== existingIndex)) {
+    return res.redirect(`/hr/developer-console?error=Username '${username}' is already taken by another department`);
+  }
+
+  if (existingIndex !== -1) {
+    admins[existingIndex].username = username;
+    admins[existingIndex].displayName = displayName;
+    if (password) {
+      if (password.length < 5) {
+        return res.redirect("/hr/developer-console?error=Password must be at least 5 characters long");
+      }
+      admins[existingIndex].password = hashPassword(password);
+    }
+    admins[existingIndex].updatedAt = new Date().toISOString();
+  } else {
+    if (!password) {
+      return res.redirect("/hr/developer-console?error=Password is required to create new department credentials");
+    }
+    if (password.length < 5) {
+      return res.redirect("/hr/developer-console?error=Password must be at least 5 characters long");
+    }
+    admins.push({
+      username,
+      displayName,
+      department,
+      password: hashPassword(password),
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  await saveDepartmentAdmins(admins);
+
+  const settings = await readSettings();
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "department_admin_credentials_saved_by_developer",
+    ...getActorInfo(req, "developer"),
+    note: `Developer updated credentials for department admin: ${displayName} (${username}) of department ${department}.`,
+    metadata: { department, username, displayName }
+  });
+  settings.updatedAt = new Date().toISOString();
+  await writeSettings(settings);
+
+  return res.redirect(`/hr/developer-console?notice=Credentials for '${displayName}' saved successfully`);
 });
 
 app.post("/hr/developer-console/departments/add", csrfProtection, ensureHrAdmin, async (req, res) => {
