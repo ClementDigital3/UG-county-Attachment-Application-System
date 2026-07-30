@@ -4,12 +4,19 @@
         <div class="row-between">
           <h1><%= pageTitle %></h1>
           <div class="actions tight">
-            <% if (isHrAdmin) { %>
-              <a class="btn secondary" href="/hr/departments">Department Status</a>
-              <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
-              <a class="btn secondary" href="/hr/applications">HR Queue</a>
-              <a class="btn secondary" href="/hr/audit">Audit Trail</a>
-            <% } else { %>
+             <% if (isHrAdmin) { %>
+               <% if (currentAdminRole === 'developer') { %>
+                 <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+                 <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+                 <a class="btn secondary" href="/hr/account">HR Account</a>
+                 <a class="btn primary" href="/hr/developer-console">Developer Console</a>
+               <% } else { %>
+                 <a class="btn secondary" href="/hr/departments">Department Status</a>
+                 <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+                 <a class="btn secondary" href="/hr/applications">HR Queue</a>
+                 <a class="btn secondary" href="/hr/audit">Audit Trail</a>
+               <% } %>
+             <% } else { %>
               <a class="btn secondary" href="/admin/supervisors">Manage Supervisors</a>
               <a class="btn secondary" href="/admin/account">Account Settings</a>
               <a class="btn secondary" href="/admin/applications">Applications</a>

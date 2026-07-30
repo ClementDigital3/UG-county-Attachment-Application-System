@@ -4,13 +4,20 @@
         <div class="row-between">
           <h1>HR Audit Trail</h1>
           <div class="actions tight">
-            <a class="btn secondary" href="/hr/departments">Department Status</a>
-            <a class="btn secondary" href="/hr/communications">Communications</a>
-            <a class="btn secondary" href="/hr/reports">Reports</a>
-            <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
-            <a class="btn secondary" href="/hr/account">HR Account</a>
-            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
-            <a class="btn secondary" href="/hr/applications">HR Queue</a>
+            <% if (currentAdminRole === 'developer') { %>
+              <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+              <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+              <a class="btn secondary" href="/hr/account">HR Account</a>
+              <a class="btn primary" href="/hr/developer-console">Developer Console</a>
+            <% } else { %>
+              <a class="btn secondary" href="/hr/departments">Department Status</a>
+              <a class="btn secondary" href="/hr/communications">Communications</a>
+              <a class="btn secondary" href="/hr/reports">Reports</a>
+              <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+              <a class="btn secondary" href="/hr/account">HR Account</a>
+              <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+              <a class="btn secondary" href="/hr/applications">HR Queue</a>
+            <% } %>
             <form action="/hr/logout" method="post">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <button class="btn secondary" type="submit">Logout</button>
