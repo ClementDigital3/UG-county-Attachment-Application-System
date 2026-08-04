@@ -4539,7 +4539,7 @@ async function renderAdminDetailPage(res, {
     getStatusClass,
     periodOptions,
     departmentOptions,
-    courseLevelOptions: COURSE_LEVELS,
+    courseLevelOptions: COURSE_LEVEL_OPTIONS,
     documentDefinitions: DOCUMENT_DEFINITIONS,
     combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION,
     nitaDocumentDefinition: NITA_DOCUMENT_DEFINITION,
@@ -4584,7 +4584,7 @@ async function renderHrDetailPage(res, {
     countySignedNitaDefinition: COUNTY_SIGNED_NITA_DEFINITION,
     nitaResubmissionDefinition: NITA_RESUBMISSION_DEFINITION,
     supervisorOptions,
-    courseLevelOptions: COURSE_LEVELS,
+    courseLevelOptions: COURSE_LEVEL_OPTIONS,
     departmentOptions: DEPARTMENTS,
     periodOptions: getPeriodOptions(settings)
   });
