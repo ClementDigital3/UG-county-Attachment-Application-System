@@ -499,7 +499,9 @@
 
       function syncInstitutionUi() {
         const value = institutionSelect.value.trim();
-        const usingOtherInstitution = Boolean(value) && value.toLowerCase().startsWith("other");
+        const usingOtherInstitution =
+          Boolean(value) &&
+          (value.toLowerCase().startsWith("other") || value === "<%= otherInstitutionValue %>");
 
         otherInstitutionLabel.classList.toggle("is-hidden", !usingOtherInstitution);
         otherInstitutionLabel.setAttribute("aria-hidden", usingOtherInstitution ? "false" : "true");
@@ -666,7 +668,7 @@
 
         options.forEach((opt) => {
           const val = opt.value;
-          if (!val || val.toLowerCase().startsWith("other")) {
+          if (!val || val.toLowerCase().startsWith("other") || val === "<%= otherInstitutionValue %>") {
             opt.hidden = false;
             opt.style.display = "";
             return;
