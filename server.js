@@ -6645,6 +6645,13 @@ app.post("/hr/backup/restore", ensureHrAdmin, backupUploadMiddleware, async (req
   }
 });
 
+app.use("/hr/supervisors*", ensureHrAdmin, (req, res) => {
+  if (req.session.adminRole === "developer") {
+    return res.redirect("/hr/developer-console");
+  }
+  return res.redirect("/hr/applications");
+});
+
 app.get("/hr/supervisors", ensureHrAdmin, async (req, res) => {
   clearHrDepartmentScope(req);
   let notice = null;
