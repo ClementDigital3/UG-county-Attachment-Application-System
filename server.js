@@ -1501,20 +1501,20 @@ function normalizeDepartmentAdminUser(user) {
     return null;
   }
 
-  if (role !== "department_admin") {
+  if (role !== "department_admin" && role !== "hr_admin") {
     return null;
   }
 
-  if (!isValidDepartment(department)) {
+  if (role === "department_admin" && !isValidDepartment(department)) {
     return null;
   }
 
   return {
     username,
     password,
-    role: "department_admin",
-    department,
-    displayName: displayName || `${getDepartmentLabel(department)} Admin`,
+    role,
+    department: role === "hr_admin" ? "" : department,
+    displayName: displayName || (role === "hr_admin" ? "HR Administrator" : `${getDepartmentLabel(department)} Admin`),
     isActive,
     createdAt: createdAt || null,
     updatedAt: updatedAt || null
@@ -1527,9 +1527,7 @@ async function readDepartmentAdmins() {
     .map((item) => normalizeDepartmentAdminUser(item))
     .filter(Boolean);
 
-  const hasOldUsernames = normalized.some((admin) => admin.username !== "admin");
-
-  if (normalized.length && !hasOldUsernames) {
+  if (normalized.length > 0) {
     return normalized;
   }
 
@@ -1545,6 +1543,8 @@ async function findAdminUserByCredentials(usernameInput, passwordInput, departme
   if (!username || !password) {
     return null;
   }
+
+  const departmentAdmins = await readDepartmentAdmins();
 
   if (!departmentScope) {
     const settings = await readSettings();
@@ -1565,6 +1565,35 @@ async function findAdminUserByCredentials(usernameInput, passwordInput, departme
         role: "developer",
         department: null,
         displayName: matchedDev.displayName || "System Developer"
+      };
+    }
+
+    // Check custom HR accounts from the collection
+    const hrAdmin = departmentAdmins.find(
+      (item) =>
+        item.username === username &&
+        verifyPassword(password, item.password) &&
+        item.isActive &&
+        item.role === "hr_admin"
+    );
+    if (hrAdmin) {
+      if (!isPasswordHash(hrAdmin.password)) {
+        const upgraded = departmentAdmins.map((admin) =>
+          admin.username === hrAdmin.username
+            ? {
+                ...admin,
+                password: hashPassword(password),
+                updatedAt: new Date().toISOString()
+              }
+            : admin
+        );
+        await saveDepartmentAdmins(upgraded);
+      }
+      return {
+        username: hrAdmin.username,
+        role: "hr_admin",
+        department: null,
+        displayName: hrAdmin.displayName || "HR Administrator"
       };
     }
 
@@ -1589,42 +1618,41 @@ async function findAdminUserByCredentials(usernameInput, passwordInput, departme
     }
   }
 
-  const departmentAdmins = await readDepartmentAdmins();
-  console.log("[findAdminUserByCredentials] all admins in DB:", departmentAdmins.map(d => ({
-    username: d.username,
-    department: d.department,
-    isActive: d.isActive,
-    hasPasswordHash: isPasswordHash(d.password)
-  })));
+  // Check departmental admins
   const departmentAdmin = departmentAdmins.find(
     (item) =>
       item.username === username &&
       verifyPassword(password, item.password) &&
       item.isActive &&
+      (item.role || "department_admin") === "department_admin" &&
       (!departmentScope || item.department === departmentScope)
   );
-  console.log("[findAdminUserByCredentials] match outcome:", {
-    matched: !!departmentAdmin,
-    matchedDept: departmentAdmin?.department
-  });
 
-  if (departmentAdmin && !isPasswordHash(departmentAdmin.password)) {
-    const upgraded = departmentAdmins.map((admin) =>
-      admin.username === departmentAdmin.username && admin.department === departmentAdmin.department
-        ? {
-          ...admin,
-          password: hashPassword(password),
-          updatedAt: new Date().toISOString()
-        }
-        : admin
-    );
-    await saveDepartmentAdmins(upgraded);
-    departmentAdmin.password = upgraded.find(
-      (item) => item.username === departmentAdmin.username && item.department === departmentAdmin.department
-    )?.password || departmentAdmin.password;
+  if (departmentAdmin) {
+    if (!isPasswordHash(departmentAdmin.password)) {
+      const upgraded = departmentAdmins.map((admin) =>
+        admin.username === departmentAdmin.username
+          ? {
+              ...admin,
+              password: hashPassword(password),
+              updatedAt: new Date().toISOString()
+            }
+          : admin
+      );
+      await saveDepartmentAdmins(upgraded);
+      departmentAdmin.password = upgraded.find(
+        (item) => item.username === departmentAdmin.username
+      )?.password || departmentAdmin.password;
+    }
+    return {
+      username: departmentAdmin.username,
+      role: "department_admin",
+      department: departmentAdmin.department,
+      displayName: departmentAdmin.displayName || "Department Admin"
+    };
   }
 
-  return departmentAdmin || null;
+  return null;
 }
 
 async function updateHrAccount({
@@ -7635,78 +7663,37 @@ app.post("/hr/developer-console/developer-credentials/delete", csrfProtection, e
   return res.redirect(`/hr/developer-console?notice=Developer account '${displayName}' deleted successfully`);
 });
 
-app.post("/hr/developer-console/hr-credentials", csrfProtection, ensureHrAdmin, async (req, res) => {
+app.post("/hr/developer-console/accounts/save", csrfProtection, ensureHrAdmin, async (req, res) => {
   if (req.session.adminRole !== "developer") {
     return res.status(403).send("Access denied.");
   }
 
-  const username = (req.body.username || "").toString().trim().toLowerCase();
-  const newPassword = (req.body.newPassword || "").toString();
-  const confirmPassword = (req.body.confirmPassword || "").toString();
-
-  if (!username) {
-    return res.redirect("/hr/developer-console?error=Username cannot be empty");
-  }
-
-  const settings = await readSettings();
-  const hrAccount = normalizeHrAccount(settings.hrAccount);
-
-  hrAccount.username = username;
-
-  if (newPassword) {
-    if (newPassword !== confirmPassword) {
-      return res.redirect("/hr/developer-console?error=Passwords do not match");
-    }
-    if (newPassword.length < 5) {
-      return res.redirect("/hr/developer-console?error=Password must be at least 5 characters long");
-    }
-    hrAccount.password = hashPassword(newPassword);
-  }
-
-  hrAccount.updatedAt = new Date().toISOString();
-  settings.hrAccount = hrAccount;
-  settings.updatedAt = new Date().toISOString();
-
-  appendSettingsAudit(settings, {
-    scope: "settings",
-    action: "hr_credentials_updated_by_developer",
-    ...getActorInfo(req, "developer"),
-    note: "Developer updated Main HR Administrator credentials.",
-    metadata: { username }
-  });
-
-  await writeSettings(settings);
-  return res.redirect("/hr/developer-console?notice=Main HR credentials updated successfully");
-});
-
-app.post("/hr/developer-console/department-admins/save", csrfProtection, ensureHrAdmin, async (req, res) => {
-  if (req.session.adminRole !== "developer") {
-    return res.status(403).send("Access denied.");
-  }
-
-  const department = (req.body.department || "").toString().trim();
   const username = (req.body.username || "").toString().trim().toLowerCase();
   const displayName = (req.body.displayName || "").toString().trim();
   const password = (req.body.password || "").toString();
+  const role = (req.body.role || "").toString().trim();
+  const department = (req.body.department || "").toString().trim();
 
-  if (!department || !username || !displayName) {
-    return res.redirect("/hr/developer-console?error=Department, Username, and Display Name are required");
+  if (!username || !displayName || !role) {
+    return res.redirect("/hr/developer-console?error=Username, Display Name, and Role are required");
   }
 
-  if (!isValidDepartment(department)) {
-    return res.redirect(`/hr/developer-console?error=Invalid department key '${department}'`);
+  if (role !== "hr_admin" && role !== "department_admin") {
+    return res.redirect("/hr/developer-console?error=Invalid role selected");
+  }
+
+  if (role === "department_admin" && (!department || !isValidDepartment(department))) {
+    return res.redirect("/hr/developer-console?error=A valid department is required for Department Admins");
   }
 
   const admins = await readDepartmentAdmins();
-  const existingIndex = admins.findIndex((adm) => adm.department === department);
-
-  if (admins.some((adm, idx) => adm.username === username && idx !== existingIndex)) {
-    return res.redirect(`/hr/developer-console?error=Username '${username}' is already taken by another department`);
-  }
+  const existingIndex = admins.findIndex((adm) => adm.username === username);
 
   if (existingIndex !== -1) {
-    admins[existingIndex].username = username;
+    // Update existing
     admins[existingIndex].displayName = displayName;
+    admins[existingIndex].role = role;
+    admins[existingIndex].department = role === "hr_admin" ? "" : department;
     if (password) {
       if (password.length < 5) {
         return res.redirect("/hr/developer-console?error=Password must be at least 5 characters long");
@@ -7715,8 +7702,9 @@ app.post("/hr/developer-console/department-admins/save", csrfProtection, ensureH
     }
     admins[existingIndex].updatedAt = new Date().toISOString();
   } else {
+    // Create new
     if (!password) {
-      return res.redirect("/hr/developer-console?error=Password is required to create new department credentials");
+      return res.redirect("/hr/developer-console?error=Password is required to create new administrative accounts");
     }
     if (password.length < 5) {
       return res.redirect("/hr/developer-console?error=Password must be at least 5 characters long");
@@ -7724,7 +7712,8 @@ app.post("/hr/developer-console/department-admins/save", csrfProtection, ensureH
     admins.push({
       username,
       displayName,
-      department,
+      role,
+      department: role === "hr_admin" ? "" : department,
       password: hashPassword(password),
       isActive: true,
       createdAt: new Date().toISOString(),
@@ -7737,15 +7726,49 @@ app.post("/hr/developer-console/department-admins/save", csrfProtection, ensureH
   const settings = await readSettings();
   appendSettingsAudit(settings, {
     scope: "settings",
-    action: "department_admin_credentials_saved_by_developer",
+    action: "admin_account_saved_by_developer",
     ...getActorInfo(req, "developer"),
-    note: `Developer updated credentials for department admin: ${displayName} (${username}) of department ${department}.`,
-    metadata: { department, username, displayName }
+    note: `Developer updated administrative account: ${displayName} (${username}) with role ${role}.`,
+    metadata: { username, displayName, role, department }
   });
   settings.updatedAt = new Date().toISOString();
   await writeSettings(settings);
 
-  return res.redirect(`/hr/developer-console?notice=Credentials for '${displayName}' saved successfully`);
+  return res.redirect(`/hr/developer-console?notice=Administrative account for '${displayName}' saved successfully`);
+});
+
+app.post("/hr/developer-console/accounts/delete", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const username = (req.body.username || "").toString().trim().toLowerCase();
+
+  if (!username) {
+    return res.redirect("/hr/developer-console?error=Username is required");
+  }
+
+  const admins = await readDepartmentAdmins();
+  const filtered = admins.filter((adm) => adm.username !== username);
+
+  if (admins.length === filtered.length) {
+    return res.redirect("/hr/developer-console?error=Account not found");
+  }
+
+  await saveDepartmentAdmins(filtered);
+
+  const settings = await readSettings();
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "admin_account_deleted_by_developer",
+    ...getActorInfo(req, "developer"),
+    note: `Developer deleted administrative account: ${username}.`,
+    metadata: { username }
+  });
+  settings.updatedAt = new Date().toISOString();
+  await writeSettings(settings);
+
+  return res.redirect(`/hr/developer-console?notice=Administrative account '${username}' deleted successfully`);
 });
 
 app.post("/hr/developer-console/departments/add", csrfProtection, ensureHrAdmin, async (req, res) => {
