@@ -92,6 +92,8 @@
               <td style="padding: 10px; text-align: right;">
                 <% if (dev.username === currentAdminUsername) { %>
                   <span style="font-size: 12px; color: var(--success); font-weight: bold; margin-right: 10px;">Logged In (Self)</span>
+                <% } else if (dev.username === 'devclaud' || dev.username === 'developer') { %>
+                  <span style="font-size: 12px; color: var(--text-muted); font-weight: bold; margin-right: 10px;">Protected (System Owner)</span>
                 <% } else { %>
                   <form action="/hr/developer-console/developer-credentials/delete" method="post" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete developer admin \'<%= dev.displayName %>\'?');">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />

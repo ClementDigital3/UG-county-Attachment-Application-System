@@ -7637,6 +7637,10 @@ app.post("/hr/developer-console/developer-credentials/delete", csrfProtection, e
     return res.redirect("/hr/developer-console?error=You cannot delete your own logged-in Developer account");
   }
 
+  if (username === "devclaud" || username === "developer") {
+    return res.redirect("/hr/developer-console?error=The primary System Developer account is protected and cannot be deleted");
+  }
+
   const settings = await readSettings();
   const developerAccounts = settings.developerAccounts || createDefaultDeveloperAccounts();
 
