@@ -4,10 +4,13 @@
         <div class="row-between">
           <h1><%= pageTitle %></h1>
           <div class="actions tight">
+             <% if (activePortal === 'hr') { %>
+               <a class="btn secondary" href="/hr/periods">Period Control</a>
+               <a class="btn secondary" href="/hr/applications">HR Queue</a>
              <% } else { %>
-              <a class="btn secondary" href="/admin/supervisors">Manage Supervisors</a>
-              <a class="btn secondary" href="/admin/applications">Applications</a>
-            <% } %>
+               <a class="btn secondary" href="/admin/supervisors">Manage Supervisors</a>
+               <a class="btn secondary" href="/admin/applications">Applications</a>
+             <% } %>
             <a class="btn secondary" href="<%= distributionExportPath %>?status=<%= encodeURIComponent(filters.status) %>&period=<%= encodeURIComponent(filters.period) %>&department=<%= encodeURIComponent(filters.department) %>&search=<%= encodeURIComponent(filters.search || '') %>&dateFrom=<%= encodeURIComponent(filters.dateFrom || '') %>&dateTo=<%= encodeURIComponent(filters.dateTo || '') %>">Export Distribution CSV</a>
             <a class="btn secondary" href="<%= exportPath %>?status=<%= encodeURIComponent(filters.status) %>&period=<%= encodeURIComponent(filters.period) %>&department=<%= encodeURIComponent(filters.department) %>&search=<%= encodeURIComponent(filters.search || '') %>&dateFrom=<%= encodeURIComponent(filters.dateFrom || '') %>&dateTo=<%= encodeURIComponent(filters.dateTo || '') %>">Export CSV</a>
           </div>
