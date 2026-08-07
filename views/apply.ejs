@@ -139,10 +139,20 @@
                 id="institutionSearchInput"
                 type="text"
                 class="field-search-input"
-                placeholder="🔍 Search institution..."
+                placeholder="🔍 Type to search institution..."
+                list="institutionSuggestions"
+                value="<%= formData.institution === otherInstitutionValue ? (formData.otherInstitution || '') : (formData.institution || '') %>"
                 <%= formData.acceptedTerms === 'yes' && formData.appliedDepartment ? '' : 'disabled' %>
                 style="margin-bottom: 6px;"
               />
+              <datalist id="institutionSuggestions">
+                <% institutionGroups.forEach((group) => { %>
+                  <% group.institutions.forEach((institution) => { %>
+                    <option value="<%= institution %>"></option>
+                  <% }) %>
+                <% }) %>
+                <option value="Other - type institution in full"></option>
+              </datalist>
               <select
                 id="institutionSelect"
                 name="institution"
@@ -662,10 +672,13 @@
       }
 
       function filterInstitutions() {
-        const filterText = institutionSearchInput.value.toLowerCase().trim();
+        const text = institutionSearchInput.value.trim();
+        const filterText = text.toLowerCase();
+        
+        const options = Array.from(institutionSelect.querySelectorAll("option"));
         const optgroups = institutionSelect.querySelectorAll("optgroup");
-        const options = institutionSelect.querySelectorAll("option");
 
+        // First, filter the select list options dynamically so fallback UI matches
         options.forEach((opt) => {
           const val = opt.value;
           if (!val || val.toLowerCase().startsWith("other") || val === "<%= otherInstitutionValue %>") {
@@ -673,8 +686,8 @@
             opt.style.display = "";
             return;
           }
-          const text = opt.textContent.toLowerCase();
-          const match = text.includes(filterText);
+          const optText = opt.textContent.toLowerCase();
+          const match = optText.includes(filterText);
           opt.hidden = !match;
           opt.style.display = match ? "" : "none";
         });
@@ -690,6 +703,28 @@
           group.hidden = !hasVisible;
           group.style.display = hasVisible ? "" : "none";
         });
+
+        // Second, sync datalist selection to the hidden/backed select component
+        const exactMatch = options.find(opt => opt.value && opt.value.toLowerCase() === filterText);
+        
+        if (exactMatch) {
+          // Normal option match
+          institutionSelect.value = exactMatch.value;
+          otherInstitutionInput.value = "";
+        } else if (text === "") {
+          institutionSelect.value = "";
+          otherInstitutionInput.value = "";
+        } else if (filterText.startsWith("other") || text === "Other - type institution in full") {
+          // Direct other selection
+          institutionSelect.value = "<%= otherInstitutionValue %>";
+          otherInstitutionInput.value = "";
+        } else {
+          // Custom entry entered - treat as Other and populate otherInstitution field
+          institutionSelect.value = "<%= otherInstitutionValue %>";
+          otherInstitutionInput.value = text;
+        }
+
+        refreshAvailability();
       }
 
       institutionSearchInput.addEventListener("input", filterInstitutions);
