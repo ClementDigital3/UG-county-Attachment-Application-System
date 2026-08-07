@@ -1,4 +1,49 @@
 <%- include("partials/layout-open", { pageTitle: "Apply - County Attachment Portal", activePortal: "student" }) %>
+<style>
+  .autocomplete-wrapper {
+    position: relative;
+    width: 100%;
+  }
+  .suggestions-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--card-bg, #ffffff);
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+  }
+  .suggestions-dropdown.is-hidden {
+    display: none;
+  }
+  .suggestion-item {
+    padding: 10px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border, #eee);
+    font-size: 14px;
+    color: var(--text, #333);
+    text-align: left;
+  }
+  .suggestion-item:last-child {
+    border-bottom: none;
+  }
+  .suggestion-item:hover, .suggestion-item.is-active {
+    background: var(--border, #f3f4f6);
+  }
+  .suggestion-item-other {
+    background: #fffbeb !important;
+    font-weight: bold;
+    color: #b45309 !important;
+    border-top: 1px dashed #f59e0b;
+  }
+  .suggestion-item-other:hover {
+    background: #fef3c7 !important;
+  }
+</style>
 <main class="container">
   <section class="card">
     <h1>Attachment Application Form</h1>
@@ -135,42 +180,35 @@
 
             <label>
               Institution *
-              <input
-                id="institutionSearchInput"
-                type="text"
-                class="field-search-input"
-                placeholder="🔍 Type to search institution..."
-                list="institutionSuggestions"
-                value="<%= formData.institution === otherInstitutionValue ? (formData.otherInstitution || '') : (formData.institution || '') %>"
-                <%= formData.acceptedTerms === 'yes' && formData.appliedDepartment ? '' : 'disabled' %>
-                style="margin-bottom: 6px;"
-              />
-              <datalist id="institutionSuggestions">
-                <% institutionGroups.forEach((group) => { %>
-                  <% group.institutions.forEach((institution) => { %>
-                    <option value="<%= institution %>"></option>
-                  <% }) %>
-                <% }) %>
-                <option value="Other - type institution in full"></option>
-              </datalist>
+              <div class="autocomplete-wrapper">
+                <input
+                  id="institutionSearchInput"
+                  type="text"
+                  class="field-search-input"
+                  placeholder="🔍 Start typing your institution name..."
+                  value="<%= formData.institution === otherInstitutionValue ? (formData.otherInstitution || '') : (formData.institution || '') %>"
+                  <%= formData.acceptedTerms === 'yes' && formData.appliedDepartment ? '' : 'disabled' %>
+                  style="margin-bottom: 6px; width: 100%;"
+                  autocomplete="off"
+                />
+                <div id="institutionSuggestionsList" class="suggestions-dropdown is-hidden"></div>
+              </div>
               <select
                 id="institutionSelect"
                 name="institution"
                 required
-                <%= formData.acceptedTerms === 'yes' && formData.appliedDepartment ? '' : 'disabled' %>
+                style="display: none;"
               >
                 <option value="">Select institution</option>
                 <% institutionGroups.forEach((group) => { %>
-                  <optgroup label="<%= group.category %>">
-                    <% group.institutions.forEach((institution) => { %>
-                      <option value="<%= institution %>" <%= formData.institution === institution ? 'selected' : '' %>><%= institution %></option>
-                    <% }) %>
-                  </optgroup>
+                  <% group.institutions.forEach((institution) => { %>
+                    <option value="<%= institution %>" <%= formData.institution === institution ? 'selected' : '' %>><%= institution %></option>
+                  <% }) %>
                 <% }) %>
                 <option value="<%= otherInstitutionValue %>" <%= formData.institution === otherInstitutionValue ? 'selected' : '' %>>Other - type institution in full</option>
               </select>
               <span class="field-hint">
-                Type above to search or choose from the list. If your institution is missing, select <strong>Other</strong> and type the full name.
+                Start typing your institution name above. Suggestions will display as you type. If your institution is not listed, select the **Other** option that appears.
               </span>
             </label>
 
@@ -671,63 +709,133 @@
         }
       }
 
-      function filterInstitutions() {
+      const allInstitutions = [
+        <% institutionGroups.forEach((group) => { %>
+          <% group.institutions.forEach((institution) => { %>
+            "<%= institution.replace(/"/g, '\\"') %>",
+          <% }) %>
+        <% }) %>
+      ];
+
+      const suggestionsList = document.getElementById("institutionSuggestionsList");
+      let activeSuggestionIndex = -1;
+
+      function renderSuggestions() {
         const text = institutionSearchInput.value.trim();
-        const filterText = text.toLowerCase();
+        const query = text.toLowerCase();
         
-        const options = Array.from(institutionSelect.querySelectorAll("option"));
-        const optgroups = institutionSelect.querySelectorAll("optgroup");
+        if (!query) {
+          suggestionsList.innerHTML = "";
+          suggestionsList.classList.add("is-hidden");
+          return;
+        }
 
-        // First, filter the select list options dynamically so fallback UI matches
-        options.forEach((opt) => {
-          const val = opt.value;
-          if (!val || val.toLowerCase().startsWith("other") || val === "<%= otherInstitutionValue %>") {
-            opt.hidden = false;
-            opt.style.display = "";
-            return;
-          }
-          const optText = opt.textContent.toLowerCase();
-          const match = optText.includes(filterText);
-          opt.hidden = !match;
-          opt.style.display = match ? "" : "none";
+        // Filter institutions matching query
+        const matches = allInstitutions.filter(inst => inst.toLowerCase().includes(query));
+        const matchesToShow = matches.slice(0, 8);
+        
+        let html = "";
+        matchesToShow.forEach((match) => {
+          html += `<div class="suggestion-item" data-value="${match}">${match}</div>`;
         });
 
-        optgroups.forEach((group) => {
-          const visibleOpts = group.querySelectorAll("option");
-          let hasVisible = false;
-          visibleOpts.forEach((opt) => {
-            if (opt.style.display !== "none" && opt.value && !opt.value.toLowerCase().startsWith("other")) {
-              hasVisible = true;
-            }
+        // Always append "Other" suggestion option
+        const otherText = "Other - type institution in full";
+        html += `<div class="suggestion-item suggestion-item-other" data-value="${otherText}">➕ Other (My institution is not listed)</div>`;
+
+        suggestionsList.innerHTML = html;
+        suggestionsList.classList.remove("is-hidden");
+        activeSuggestionIndex = -1;
+
+        // Click event listener
+        suggestionsList.querySelectorAll(".suggestion-item").forEach(item => {
+          item.addEventListener("mousedown", (e) => {
+            const val = e.currentTarget.getAttribute("data-value");
+            selectSuggestion(val);
           });
-          group.hidden = !hasVisible;
-          group.style.display = hasVisible ? "" : "none";
         });
+      }
 
-        // Second, sync datalist selection to the hidden/backed select component
-        const exactMatch = options.find(opt => opt.value && opt.value.toLowerCase() === filterText);
-        
-        if (exactMatch) {
-          // Normal option match
-          institutionSelect.value = exactMatch.value;
-          otherInstitutionInput.value = "";
-        } else if (text === "") {
-          institutionSelect.value = "";
-          otherInstitutionInput.value = "";
-        } else if (filterText.startsWith("other") || text === "Other - type institution in full") {
-          // Direct other selection
+      function selectSuggestion(value) {
+        if (value === "Other - type institution in full" || value === "<%= otherInstitutionValue %>") {
+          institutionSearchInput.value = "Other - type institution in full";
           institutionSelect.value = "<%= otherInstitutionValue %>";
           otherInstitutionInput.value = "";
         } else {
-          // Custom entry entered - treat as Other and populate otherInstitution field
-          institutionSelect.value = "<%= otherInstitutionValue %>";
-          otherInstitutionInput.value = text;
+          institutionSearchInput.value = value;
+          institutionSelect.value = value;
+          otherInstitutionInput.value = "";
         }
-
+        
+        suggestionsList.innerHTML = "";
+        suggestionsList.classList.add("is-hidden");
         refreshAvailability();
       }
 
-      institutionSearchInput.addEventListener("input", filterInstitutions);
+      function highlightSuggestion(items) {
+        items.forEach((item, index) => {
+          if (index === activeSuggestionIndex) {
+            item.classList.add("is-active");
+            item.scrollIntoView({ block: "nearest" });
+          } else {
+            item.classList.remove("is-active");
+          }
+        });
+      }
+
+      // Hide list on clicking outside & handle custom entry validation on blur
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".autocomplete-wrapper")) {
+          suggestionsList.classList.add("is-hidden");
+          
+          const text = institutionSearchInput.value.trim();
+          if (text) {
+            const exactMatch = allInstitutions.find(inst => inst.toLowerCase() === text.toLowerCase());
+            if (exactMatch) {
+              selectSuggestion(exactMatch);
+            } else if (text !== "Other - type institution in full") {
+              // Custom input entered - treat as other and copy text
+              institutionSelect.value = "<%= otherInstitutionValue %>";
+              otherInstitutionInput.value = text;
+              refreshAvailability();
+            }
+          }
+        }
+      });
+
+      institutionSearchInput.addEventListener("input", renderSuggestions);
+      institutionSearchInput.addEventListener("focus", renderSuggestions);
+
+      institutionSearchInput.addEventListener("keydown", (e) => {
+        const items = suggestionsList.querySelectorAll(".suggestion-item");
+        if (items.length === 0) return;
+
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          activeSuggestionIndex = (activeSuggestionIndex + 1) % items.length;
+          highlightSuggestion(items);
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          activeSuggestionIndex = (activeSuggestionIndex - 1 + items.length) % items.length;
+          highlightSuggestion(items);
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (activeSuggestionIndex >= 0 && activeSuggestionIndex < items.length) {
+            const val = items[activeSuggestionIndex].getAttribute("data-value");
+            selectSuggestion(val);
+          } else {
+            const text = institutionSearchInput.value.trim();
+            const exactMatch = allInstitutions.find(inst => inst.toLowerCase() === text.toLowerCase());
+            if (exactMatch) {
+              selectSuggestion(exactMatch);
+            } else {
+              selectSuggestion("Other - type institution in full");
+              otherInstitutionInput.value = text;
+              refreshAvailability();
+            }
+          }
+        }
+      });
 
       termsCheckbox.addEventListener("change", refreshAvailability);
       departmentSelect.addEventListener("change", refreshAvailability);
@@ -739,7 +847,6 @@
       institutionSelect.addEventListener("change", refreshAvailability);
       otherInstitutionInput.addEventListener("input", refreshAvailability);
       otherInstitutionInput.addEventListener("change", refreshAvailability);
-
 
       refreshAvailability();
     })();
