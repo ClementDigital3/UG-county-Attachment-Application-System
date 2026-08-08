@@ -2786,3 +2786,18 @@ html, body {
     font-size: 16px !important;
   }
 }
+
+/* Logout Button Color Overrides */
+form[action*="logout"] button,
+form[action*="logout"] .btn {
+  background: var(--danger, #dc2626) !important;
+  color: #ffffff !important;
+  border-color: var(--danger, #dc2626) !important;
+  font-weight: bold !important;
+}
+form[action*="logout"] button:hover,
+form[action*="logout"] .btn:hover {
+  background: #b91c1c !important;
+  border-color: #b91c1c !important;
+  opacity: 0.95;
+}
