@@ -30,3 +30,9 @@
     at app.listen (C:\Users\Real Sylph\Desktop\Attachment Application System\node_modules\express\lib\application.js:635:24)
     at startServer (C:\Users\Real Sylph\Desktop\Attachment Application System\server.js:9069:7)
     at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[2026-08-07T02:37:54.058Z] Unhandled Rejection: TypeError: Cannot read properties of null (reading 'password')
+    at C:\Users\Real Sylph\Desktop\Attachment Application System\server.js:1860:38
+    at Array.map (<anonymous>)
+    at saveDepartmentAdmins (C:\Users\Real Sylph\Desktop\Attachment Application System\server.js:1858:6)
+    at C:\Users\Real Sylph\Desktop\Attachment Application System\server.js:7726:9
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)

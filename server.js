@@ -1540,7 +1540,10 @@ async function findAdminUserByCredentials(usernameInput, passwordInput, departme
   const username = normalizeAdminUsername(usernameInput);
   const password = (passwordInput || "").toString();
 
+  console.log(`[findAdminUserByCredentials] Attempt for username: '${username}' with departmentScope: '${departmentScope}'`);
+
   if (!username || !password) {
+    console.log(`[findAdminUserByCredentials] Rejected: missing username or password`);
     return null;
   }
 
@@ -4363,6 +4366,7 @@ function ensureDepartmentAdmin(req, res, next) {
 }
 
 function ensureHrAdmin(req, res, next) {
+  console.log(`[ensureHrAdmin] path: '${req.path}', session.isAdmin: ${req.session?.isAdmin}, session.adminRole: '${req.session?.adminRole}'`);
   if (req.session?.isAdmin && (req.session.adminRole === "hr_admin" || req.session.adminRole === "developer")) {
     const path = req.path || "";
     if (req.session.adminRole === "developer") {
@@ -6279,6 +6283,7 @@ app.post(HR_PORTAL_PATH, csrfProtection, async (req, res) => {
   }
 
   const adminUser = await findAdminUserByCredentials(username, password);
+  console.log(`[HR-Portal POST] User lookup result for username '${username}':`, adminUser ? { username: adminUser.username, role: adminUser.role } : "null");
 
   if (!adminUser || (adminUser.role !== "hr_admin" && adminUser.role !== "developer")) {
     hrLoginRateLimiter.fail(rateLimitKey);
