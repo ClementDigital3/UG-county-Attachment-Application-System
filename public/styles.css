@@ -2801,3 +2801,42 @@ form[action*="logout"] .btn:hover {
   border-color: #b91c1c !important;
   opacity: 0.95;
 }
+
+/* Password Visibility Toggle Styles */
+.password-toggle-wrapper {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+.password-toggle-wrapper input {
+  padding-right: 42px !important;
+}
+.password-toggle-btn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  cursor: pointer;
+  color: var(--muted, #666);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  width: 24px;
+  height: 24px;
+  opacity: 0.6;
+  box-shadow: none !important;
+}
+.password-toggle-btn:hover {
+  opacity: 1;
+  background: none !important;
+}
+.password-toggle-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+}
