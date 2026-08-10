@@ -43,7 +43,7 @@ const EICAR_SIGNATURE =
 const STATUS_OPTIONS = ["Pending", "Needs Correction", "Verified", "Admitted", "Rejected"];
 const FINAL_DECISION_STATUSES = new Set(["Admitted", "Rejected"]);
 const HR_VISIBLE_STATUSES = new Set(["Verified", "Admitted", "Rejected"]);
-const DEFAULT_INSTITUTION_MAX_SHARE_PERCENT = 40;
+const DEFAULT_INSTITUTION_MAX_SHARE_PERCENT = 30;
 const PASSWORD_HASH_PREFIX = "scrypt";
 const APP_AUDIT_TRAIL_LIMIT = 80;
 const SYSTEM_AUDIT_TRAIL_LIMIT = 150;
@@ -1355,6 +1355,9 @@ async function readSettings() {
         parsed.departmentCapacities[dept.key] = 10;
       }
     });
+    if (parsed.institutionMaxSharePercent === undefined) {
+      parsed.institutionMaxSharePercent = DEFAULT_INSTITUTION_MAX_SHARE_PERCENT;
+    }
     parsed.updatedAt = new Date().toISOString();
     await database.writeSettings(parsed);
     DEPARTMENTS = [...DEFAULT_DEPARTMENTS];
