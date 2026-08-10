@@ -110,16 +110,28 @@ const LEGACY_PERIOD_LABELS = {
 };
 
 const DEFAULT_DEPARTMENTS = [
-  { key: "ict", label: "ICT, E-Governonance & Innovation" },
-  { key: "finance", label: "Finance and Economic Planning" },
-  { key: "health", label: "Health Services" },
-  { key: "agriculture", label: "Agriculture, Livestock and Fisheries" },
+  { key: "agriculture", label: "Agriculture & Agri-Business" },
+  { key: "livestock_fisheries", label: "Livestock & Fisheries" },
+  { key: "devolution", label: "Devolution & Administration" },
+  { key: "public_service", label: "Public Service Management" },
+  { key: "partnerships", label: "Partnerships, Liaison and Linkages" },
+  { key: "education", label: "Education, Vocational Training & Culture" },
+  { key: "gender", label: "Gender & Social Protection" },
+  { key: "environment", label: "Environment, Natural Resources & Climate Change" },
+  { key: "water", label: "Water, Irrigation, Sanitation & Energy" },
+  { key: "economic_planning", label: "Economic Planning" },
+  { key: "finance", label: "Finance" },
+  { key: "health", label: "Health Service" },
+  { key: "ict", label: "ICT, E-Government & Innovation" },
+  { key: "youth_sports", label: "Youth & Sports" },
+  { key: "housing_urban", label: "Housing & Urban Development" },
+  { key: "lands", label: "Lands & Physical Planning" },
+  { key: "cooperative", label: "Cooperative & Enterprise Development" },
+  { key: "trade", label: "Trade, Industry & Investment, Tourism" },
   { key: "roads", label: "Roads, Transport and Public Works" },
-  { key: "education", label: "Education, Vocational Training, Youth and Sports" },
-  { key: "lands", label: "Lands, Housing, Physical Planning and Urban Development" },
-  { key: "water", label: "Water, Irrigation, Environment and Climate Change" },
-  { key: "trade", label: "Trade, Cooperatives, Tourism and Industrialization" },
-  { key: "public_service", label: "Public Service Management and Administration" }
+  { key: "county_attorney", label: "County Attorney's Office" },
+  { key: "city_eldoret", label: "City of Eldoret" },
+  { key: "urwasco", label: "URWASCO" }
 ];
 
 let DEPARTMENTS = [...DEFAULT_DEPARTMENTS];
@@ -1329,7 +1341,25 @@ async function readSettings() {
   const parsed = await database.readSettings();
   const normalized = createDefaultSettings();
 
-  if (parsed?.departments && Array.isArray(parsed.departments) && parsed.departments.length > 0) {
+  const dbDepts = parsed?.departments || [];
+  const needsMigration = dbDepts.length !== DEFAULT_DEPARTMENTS.length || 
+    DEFAULT_DEPARTMENTS.some((d) => !dbDepts.some(x => x.key === d.key));
+
+  if (needsMigration) {
+    parsed.departments = [...DEFAULT_DEPARTMENTS];
+    if (!parsed.departmentCapacities) {
+      parsed.departmentCapacities = {};
+    }
+    DEFAULT_DEPARTMENTS.forEach((dept) => {
+      if (parsed.departmentCapacities[dept.key] === undefined) {
+        parsed.departmentCapacities[dept.key] = 10;
+      }
+    });
+    parsed.updatedAt = new Date().toISOString();
+    await database.writeSettings(parsed);
+    DEPARTMENTS = [...DEFAULT_DEPARTMENTS];
+    normalized.departments = [...DEFAULT_DEPARTMENTS];
+  } else if (parsed?.departments && Array.isArray(parsed.departments) && parsed.departments.length > 0) {
     DEPARTMENTS = parsed.departments;
     normalized.departments = parsed.departments;
   } else {
@@ -1526,6 +1556,29 @@ async function readDepartmentAdmins() {
   const normalized = (await database.readDepartmentAdmins())
     .map((item) => normalizeDepartmentAdminUser(item))
     .filter(Boolean);
+
+  // Check if any active department does not have an admin account in normalized
+  const missingDepts = DEPARTMENTS.filter(
+    (dept) => !normalized.some((adm) => adm.role === "department_admin" && adm.department === dept.key)
+  );
+
+  if (missingDepts.length > 0 && normalized.length > 0) {
+    // Append default admins for the missing departments
+    const newDefaults = missingDepts.map((department) => ({
+      username: "admin",
+      password: hashPassword("admin123"),
+      role: "department_admin",
+      department: department.key,
+      displayName: `${department.label} Admin`,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+    
+    const combined = [...normalized, ...newDefaults];
+    await database.writeDepartmentAdmins(combined);
+    return combined.map((item) => normalizeDepartmentAdminUser(item)).filter(Boolean);
+  }
 
   if (normalized.length > 0) {
     return normalized;
