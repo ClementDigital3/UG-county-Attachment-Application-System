@@ -4749,10 +4749,13 @@ async function renderHrAuditPage(res, {
   statusCode = 200
 } = {}) {
   const settings = await readSettings();
+  const filteredAuditTrail = (settings.systemAuditTrail || [])
+    .filter((entry) => entry.scope !== "testing-feedback");
+
   return res.status(statusCode).render("hr-audit", {
     error,
     notice,
-    auditTrail: normalizeAuditTrail(settings.systemAuditTrail, SYSTEM_AUDIT_TRAIL_LIMIT),
+    auditTrail: normalizeAuditTrail(filteredAuditTrail, SYSTEM_AUDIT_TRAIL_LIMIT),
     formatDate
   });
 }
@@ -7573,13 +7576,18 @@ app.get("/hr/developer-console", ensureHrAdmin, async (req, res) => {
   const error = req.query.error ? (req.query.error).toString() : null;
   const departmentAdmins = await readDepartmentAdmins();
 
+  const feedbacks = (settings.systemAuditTrail || [])
+    .filter((entry) => entry.scope === "testing-feedback");
+
   return res.render("hr-developer-console", {
     hrAccount: normalizeHrAccount(settings.hrAccount),
     developerAccounts: settings.developerAccounts || createDefaultDeveloperAccounts(),
     departments: DEPARTMENTS,
     departmentAdmins,
+    feedbacks,
     notice,
-    error
+    error,
+    formatDate
   });
 });
 

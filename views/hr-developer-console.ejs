@@ -295,6 +295,39 @@
       </div>
     </div>
   </section>
+
+  <!-- System Feedback Logs Section -->
+  <section class="card" style="margin-top: 2rem;">
+    <h2>System Feedback Logs (<%= feedbacks.length %>)</h2>
+    <p>View observation notes, suggestions, and bug reports submitted by system testers.</p>
+    
+    <div style="overflow-x: auto; margin-top: 1rem;">
+      <table class="table" style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr style="border-bottom: 1.5px solid var(--border);">
+            <th style="text-align: left; padding: 10px; font-size: 0.9rem;">Date & Time</th>
+            <th style="text-align: left; padding: 10px; font-size: 0.9rem;">Tester Name / Org</th>
+            <th style="text-align: left; padding: 10px; font-size: 0.9rem;">Observation / Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if (feedbacks.length === 0) { %>
+            <tr>
+              <td colspan="3" style="padding: 20px; text-align: center; color: var(--muted); font-size: 0.9rem;">No feedback logs received yet.</td>
+            </tr>
+          <% } else { %>
+            <% feedbacks.forEach((log) => { %>
+              <tr style="border-bottom: 1px solid var(--border); transition: background 0.2s;" onmouseover="this.style.background='rgba(var(--text-rgb), 0.02)'" onmouseout="this.style.background='transparent'">
+                <td style="padding: 10px; white-space: nowrap; color: var(--muted); font-size: 0.85rem;"><%= formatDate(log.at) %></td>
+                <td style="padding: 10px; font-weight: 600; font-size: 0.85rem;"><%= log.actorUsername %></td>
+                <td style="padding: 10px; line-height: 1.5; font-size: 0.85rem;"><%= log.note %></td>
+              </tr>
+            <% }) %>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </section>
 </main>
 <script>
   function toggleDeptSelect() {
