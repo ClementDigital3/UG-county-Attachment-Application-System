@@ -12,6 +12,7 @@ const { createCountyEndorsedNitaPdf } = require("./county-nita-pdf");
 const { createNotificationService } = require("./notification-service");
 const { createJoiningLetterTemplatePdf } = require("./joining-letter-template");
 const backupsService = require("./backups-service");
+const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -633,6 +634,30 @@ function ensureDirectoryExists(dirPath) {
 }
 
 ensureDirectoryExists(UPLOAD_DIR);
+
+function getFileHash(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(filePath);
+    stream.on("error", (err) => reject(err));
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+  });
+}
+
+async function getPdfPageCount(filePath) {
+  try {
+    const fileBuffer = fs.readFileSync(filePath);
+    const pdfDoc = await PDFDocument.load(fileBuffer, {
+      updateMetadata: false,
+      ignoreEncryption: true
+    });
+    return pdfDoc.getPageCount();
+  } catch (error) {
+    console.error("Failed to parse PDF page count:", error);
+    return null;
+  }
+}
 
 function createDefaultDepartmentCapacities(defaultCapacity = 10) {
   return DEPARTMENTS.reduce((acc, department) => {
@@ -5205,6 +5230,57 @@ app.post("/apply", async (req, res) => {
       });
     }
 
+    // Verify file contents for duplication and page count
+    const combinedFile = files[COMBINED_DOCUMENT_FIELD]?.[0];
+    const nitaFile = files[NITA_DOCUMENT_FIELD]?.[0];
+
+    let combinedHash = "";
+    let nitaHash = "";
+    try {
+      combinedHash = await getFileHash(combinedFile.path);
+      nitaHash = await getFileHash(nitaFile.path);
+    } catch (hashError) {
+      console.error("Failed to compute file hashes:", hashError);
+    }
+
+    if (combinedHash && nitaHash && combinedHash === nitaHash) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: "You have uploaded the same duplicate file for both the Combined Document and the NITA Document. Please upload separate, correct documents.",
+        formData
+      });
+    }
+
+    const combinedPages = await getPdfPageCount(combinedFile.path);
+    if (combinedPages === null) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: "The uploaded Combined Document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
+        formData
+      });
+    }
+
+    if (combinedPages < 2) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: "The uploaded Combined Document is too short (only 1 page). A valid Combined Document must contain your National ID, School Letter, Insurance Cover, and Transcripts scanned together (minimum 2 pages).",
+        formData
+      });
+    }
+
+    const nitaPages = await getPdfPageCount(nitaFile.path);
+    if (nitaPages === null) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: "The uploaded NITA Document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
+        formData
+      });
+    }
+
     if (!termsAccepted) {
       cleanupUploadedFiles(files);
       return renderApplyPage(res, {
@@ -5975,6 +6051,20 @@ app.post("/track/nita-resubmit", async (req, res) => {
       return renderTrackPage(res, {
         statusCode: 400,
         error: scanError.message || "Stamped NITA document security scan failed.",
+        result: currentApplication,
+        formData: {
+          idNumber,
+          email
+        }
+      });
+    }
+
+    const nitaPages = await getPdfPageCount(uploadedFile.path);
+    if (nitaPages === null) {
+      cleanupUploadedFiles({ [NITA_RESUBMISSION_FIELD]: [uploadedFile] });
+      return renderTrackPage(res, {
+        statusCode: 400,
+        error: "The uploaded NITA document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
         result: currentApplication,
         formData: {
           idNumber,
@@ -9502,8 +9592,6 @@ app.use((error, _req, res, _next) => {
 app.use((_req, res) => {
   res.status(404).render("not-found");
 });
-
-const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 
 async function ensureTestingNitaTemplate() {
   const filePath = path.join(__dirname, "public", "testing-nita-template.pdf");
