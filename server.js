@@ -5289,6 +5289,38 @@ app.post("/apply", async (req, res) => {
       console.error("Failed to read NITA file bytes:", readErr);
     }
 
+    // Verify NITA page orientation and rotation
+    if (nitaBytes) {
+      try {
+        const nitaPdf = await PDFDocument.load(nitaBytes);
+        const firstPage = nitaPdf.getPages()[0];
+        if (firstPage) {
+          const { width, height } = firstPage.getSize();
+          const rotation = firstPage.getRotation().angle;
+
+          if (rotation !== 0 && rotation !== 360) {
+            cleanupUploadedFiles(files);
+            return renderApplyPage(res, {
+              statusCode: 400,
+              error: `The uploaded NITA Document is rotated by ${rotation} degrees. Please re-save or scan it in its correct, non-rotated landscape orientation.`,
+              formData
+            });
+          }
+
+          if (width < height) {
+            cleanupUploadedFiles(files);
+            return renderApplyPage(res, {
+              statusCode: 400,
+              error: "The uploaded NITA Document is in portrait orientation. The NITA contract form is a landscape document. Please scan and upload it in landscape orientation (horizontal) so that county stamps align correctly.",
+              formData
+            });
+          }
+        }
+      } catch (pdfErr) {
+        console.error("Failed to read NITA layout dimensions:", pdfErr);
+      }
+    }
+
     const nitaAnchors = nitaBytes ? await loadPdfTextAnchors(nitaBytes) : null;
     if (!nitaAnchors) {
       cleanupUploadedFiles(files);
@@ -5879,12 +5911,45 @@ app.post("/track/resubmit", async (req, res) => {
         });
       }
 
-      // Verify NITA Part C layout alignment using pdfjs anchor matching
       let nitaBytes;
       try {
         nitaBytes = fs.readFileSync(nitaFile.path);
       } catch (readErr) {
         console.error("Failed to read NITA file bytes:", readErr);
+      }
+
+      // Verify NITA page orientation and rotation
+      if (nitaBytes) {
+        try {
+          const nitaPdf = await PDFDocument.load(nitaBytes);
+          const firstPage = nitaPdf.getPages()[0];
+          if (firstPage) {
+            const { width, height } = firstPage.getSize();
+            const rotation = firstPage.getRotation().angle;
+
+            if (rotation !== 0 && rotation !== 360) {
+              cleanupUploadedFiles(files);
+              return renderTrackPage(res, {
+                statusCode: 400,
+                error: `The uploaded NITA Document is rotated by ${rotation} degrees. Please re-save or scan it in its correct, non-rotated landscape orientation.`,
+                result: currentApplication,
+                formData: { idNumber, email }
+              });
+            }
+
+            if (width < height) {
+              cleanupUploadedFiles(files);
+              return renderTrackPage(res, {
+                statusCode: 400,
+                error: "The uploaded NITA Document is in portrait orientation. The NITA contract form is a landscape document. Please scan and upload it in landscape orientation (horizontal) so that county stamps align correctly.",
+                result: currentApplication,
+                formData: { idNumber, email }
+              });
+            }
+          }
+        } catch (pdfErr) {
+          console.error("Failed to read NITA layout dimensions:", pdfErr);
+        }
       }
 
       const nitaAnchors = nitaBytes ? await loadPdfTextAnchors(nitaBytes) : null;
