@@ -746,5 +746,6 @@ async function createCountyEndorsedNitaPdf({
 }
 
 module.exports = {
-  createCountyEndorsedNitaPdf
+  createCountyEndorsedNitaPdf,
+  loadPdfTextAnchors
 };

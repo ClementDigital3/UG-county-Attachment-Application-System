@@ -8,7 +8,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { createDatabase } = require("./database");
 const { createFileStorage } = require("./file-storage");
-const { createCountyEndorsedNitaPdf } = require("./county-nita-pdf");
+const { createCountyEndorsedNitaPdf, loadPdfTextAnchors } = require("./county-nita-pdf");
 const { createNotificationService } = require("./notification-service");
 const { createJoiningLetterTemplatePdf } = require("./joining-letter-template");
 const backupsService = require("./backups-service");
@@ -5281,6 +5281,24 @@ app.post("/apply", async (req, res) => {
       });
     }
 
+    // Verify NITA Part C layout alignment using pdfjs anchor matching
+    let nitaBytes;
+    try {
+      nitaBytes = fs.readFileSync(nitaFile.path);
+    } catch (readErr) {
+      console.error("Failed to read NITA file bytes:", readErr);
+    }
+
+    const nitaAnchors = nitaBytes ? await loadPdfTextAnchors(nitaBytes) : null;
+    if (!nitaAnchors) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: "The uploaded NITA Document could not be recognized or aligned for county endorsement. Please upload a clear, correctly formatted digital NITA PDF contract where Part C text is recognizable (not an image, screenshot, or scanned photo) so that the signature and stamp can be placed accurately.",
+        formData
+      });
+    }
+
     if (!termsAccepted) {
       cleanupUploadedFiles(files);
       return renderApplyPage(res, {
@@ -5799,6 +5817,86 @@ app.post("/track/resubmit", async (req, res) => {
           email
         }
       });
+    }
+
+    // Verify re-uploaded file contents for corruption, duplication, and alignment
+    const combinedFile = files[COMBINED_DOCUMENT_FIELD]?.[0];
+    const nitaFile = files[NITA_DOCUMENT_FIELD]?.[0];
+
+    if (combinedFile && nitaFile) {
+      let combinedHash = "";
+      let nitaHash = "";
+      try {
+        combinedHash = await getFileHash(combinedFile.path);
+        nitaHash = await getFileHash(nitaFile.path);
+      } catch (hashError) {
+        console.error("Failed to compute file hashes:", hashError);
+      }
+
+      if (combinedHash && nitaHash && combinedHash === nitaHash) {
+        cleanupUploadedFiles(files);
+        return renderTrackPage(res, {
+          statusCode: 400,
+          error: "You have uploaded the same duplicate file for both the Combined Document and the NITA Document. Please upload separate, correct documents.",
+          result: currentApplication,
+          formData: { idNumber, email }
+        });
+      }
+    }
+
+    if (combinedFile) {
+      const combinedPages = await getPdfPageCount(combinedFile.path);
+      if (combinedPages === null) {
+        cleanupUploadedFiles(files);
+        return renderTrackPage(res, {
+          statusCode: 400,
+          error: "The uploaded Combined Document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
+          result: currentApplication,
+          formData: { idNumber, email }
+        });
+      }
+
+      if (combinedPages < 2) {
+        cleanupUploadedFiles(files);
+        return renderTrackPage(res, {
+          statusCode: 400,
+          error: "The uploaded Combined Document is too short (only 1 page). A valid Combined Document must contain your National ID, School Letter, Insurance Cover, and Transcripts scanned together (minimum 2 pages).",
+          result: currentApplication,
+          formData: { idNumber, email }
+        });
+      }
+    }
+
+    if (nitaFile) {
+      const nitaPages = await getPdfPageCount(nitaFile.path);
+      if (nitaPages === null) {
+        cleanupUploadedFiles(files);
+        return renderTrackPage(res, {
+          statusCode: 400,
+          error: "The uploaded NITA Document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
+          result: currentApplication,
+          formData: { idNumber, email }
+        });
+      }
+
+      // Verify NITA Part C layout alignment using pdfjs anchor matching
+      let nitaBytes;
+      try {
+        nitaBytes = fs.readFileSync(nitaFile.path);
+      } catch (readErr) {
+        console.error("Failed to read NITA file bytes:", readErr);
+      }
+
+      const nitaAnchors = nitaBytes ? await loadPdfTextAnchors(nitaBytes) : null;
+      if (!nitaAnchors) {
+        cleanupUploadedFiles(files);
+        return renderTrackPage(res, {
+          statusCode: 400,
+          error: "The uploaded NITA Document could not be recognized or aligned for county endorsement. Please upload a clear, correctly formatted digital NITA PDF contract where Part C text is recognizable (not an image, screenshot, or scanned photo) so that the signature and stamp can be placed accurately.",
+          result: currentApplication,
+          formData: { idNumber, email }
+        });
+      }
     }
 
     return (async () => {
