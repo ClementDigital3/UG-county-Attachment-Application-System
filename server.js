@@ -5271,17 +5271,7 @@ app.post("/apply", async (req, res) => {
       });
     }
 
-    const nitaPages = await getPdfPageCount(nitaFile.path);
-    if (nitaPages === null) {
-      cleanupUploadedFiles(files);
-      return renderApplyPage(res, {
-        statusCode: 400,
-        error: "The uploaded NITA Document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
-        formData
-      });
-    }
-
-    // Verify NITA Part C layout alignment using pdfjs anchor matching
+    // Read and verify NITA Document page count and layout alignment
     let nitaBytes;
     try {
       nitaBytes = fs.readFileSync(nitaFile.path);
@@ -5289,20 +5279,30 @@ app.post("/apply", async (req, res) => {
       console.error("Failed to read NITA file bytes:", readErr);
     }
 
-    // Verify NITA page orientation and rotation
     if (nitaBytes) {
       try {
         const nitaPdf = await PDFDocument.load(nitaBytes);
-        const firstPage = nitaPdf.getPages()[0];
-        if (firstPage) {
-          const { width, height } = firstPage.getSize();
-          const rotation = firstPage.getRotation().angle;
+        const pages = nitaPdf.getPages();
+
+        if (pages.length < 2) {
+          cleanupUploadedFiles(files);
+          return renderApplyPage(res, {
+            statusCode: 400,
+            error: "The uploaded NITA Document is too short (only 1 page). A valid NITA Document must contain all pages of the contract (minimum 2 pages).",
+            formData
+          });
+        }
+
+        for (let i = 0; i < pages.length; i++) {
+          const page = pages[i];
+          const { width, height } = page.getSize();
+          const rotation = page.getRotation().angle;
 
           if (rotation !== 0 && rotation !== 360) {
             cleanupUploadedFiles(files);
             return renderApplyPage(res, {
               statusCode: 400,
-              error: `The uploaded NITA Document is rotated by ${rotation} degrees. Please re-save or scan it in its correct, non-rotated landscape orientation.`,
+              error: `Page ${i + 1} of the uploaded NITA Document is rotated by ${rotation} degrees. Please re-save or scan it in its correct, non-rotated landscape orientation.`,
               formData
             });
           }
@@ -5311,22 +5311,24 @@ app.post("/apply", async (req, res) => {
             cleanupUploadedFiles(files);
             return renderApplyPage(res, {
               statusCode: 400,
-              error: "The uploaded NITA Document is in portrait orientation. The NITA contract form is a landscape document. Please scan and upload it in landscape orientation (horizontal) so that county stamps align correctly.",
+              error: `Page ${i + 1} of the uploaded NITA Document is in portrait orientation. The NITA contract form is a landscape document. Please scan and upload all pages of the NITA document in landscape orientation (horizontal) so that county stamps align correctly.`,
               formData
             });
           }
         }
       } catch (pdfErr) {
-        console.error("Failed to read NITA layout dimensions:", pdfErr);
+        cleanupUploadedFiles(files);
+        return renderApplyPage(res, {
+          statusCode: 400,
+          error: "The uploaded NITA Document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
+          formData
+        });
       }
-    }
-
-    const nitaAnchors = nitaBytes ? await loadPdfTextAnchors(nitaBytes) : null;
-    if (!nitaAnchors) {
+    } else {
       cleanupUploadedFiles(files);
       return renderApplyPage(res, {
         statusCode: 400,
-        error: "The uploaded NITA Document could not be recognized or aligned for county endorsement. Please upload a clear, correctly formatted digital NITA PDF contract where Part C text is recognizable (not an image, screenshot, or scanned photo) so that the signature and stamp can be placed accurately.",
+        error: "The uploaded NITA Document is empty or could not be read.",
         formData
       });
     }
@@ -5900,17 +5902,6 @@ app.post("/track/resubmit", async (req, res) => {
     }
 
     if (nitaFile) {
-      const nitaPages = await getPdfPageCount(nitaFile.path);
-      if (nitaPages === null) {
-        cleanupUploadedFiles(files);
-        return renderTrackPage(res, {
-          statusCode: 400,
-          error: "The uploaded NITA Document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
-          result: currentApplication,
-          formData: { idNumber, email }
-        });
-      }
-
       let nitaBytes;
       try {
         nitaBytes = fs.readFileSync(nitaFile.path);
@@ -5918,20 +5909,31 @@ app.post("/track/resubmit", async (req, res) => {
         console.error("Failed to read NITA file bytes:", readErr);
       }
 
-      // Verify NITA page orientation and rotation
       if (nitaBytes) {
         try {
           const nitaPdf = await PDFDocument.load(nitaBytes);
-          const firstPage = nitaPdf.getPages()[0];
-          if (firstPage) {
-            const { width, height } = firstPage.getSize();
-            const rotation = firstPage.getRotation().angle;
+          const pages = nitaPdf.getPages();
+
+          if (pages.length < 2) {
+            cleanupUploadedFiles(files);
+            return renderTrackPage(res, {
+              statusCode: 400,
+              error: "The uploaded NITA Document is too short (only 1 page). A valid NITA Document must contain all pages of the contract (minimum 2 pages).",
+              result: currentApplication,
+              formData: { idNumber, email }
+            });
+          }
+
+          for (let i = 0; i < pages.length; i++) {
+            const page = pages[i];
+            const { width, height } = page.getSize();
+            const rotation = page.getRotation().angle;
 
             if (rotation !== 0 && rotation !== 360) {
               cleanupUploadedFiles(files);
               return renderTrackPage(res, {
                 statusCode: 400,
-                error: `The uploaded NITA Document is rotated by ${rotation} degrees. Please re-save or scan it in its correct, non-rotated landscape orientation.`,
+                error: `Page ${i + 1} of the uploaded NITA Document is rotated by ${rotation} degrees. Please re-save or scan it in its correct, non-rotated landscape orientation.`,
                 result: currentApplication,
                 formData: { idNumber, email }
               });
@@ -5941,23 +5943,26 @@ app.post("/track/resubmit", async (req, res) => {
               cleanupUploadedFiles(files);
               return renderTrackPage(res, {
                 statusCode: 400,
-                error: "The uploaded NITA Document is in portrait orientation. The NITA contract form is a landscape document. Please scan and upload it in landscape orientation (horizontal) so that county stamps align correctly.",
+                error: `Page ${i + 1} of the uploaded NITA Document is in portrait orientation. The NITA contract form is a landscape document. Please scan and upload all pages of the NITA document in landscape orientation (horizontal) so that county stamps align correctly.`,
                 result: currentApplication,
                 formData: { idNumber, email }
               });
             }
           }
         } catch (pdfErr) {
-          console.error("Failed to read NITA layout dimensions:", pdfErr);
+          cleanupUploadedFiles(files);
+          return renderTrackPage(res, {
+            statusCode: 400,
+            error: "The uploaded NITA Document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
+            result: currentApplication,
+            formData: { idNumber, email }
+          });
         }
-      }
-
-      const nitaAnchors = nitaBytes ? await loadPdfTextAnchors(nitaBytes) : null;
-      if (!nitaAnchors) {
+      } else {
         cleanupUploadedFiles(files);
         return renderTrackPage(res, {
           statusCode: 400,
-          error: "The uploaded NITA Document could not be recognized or aligned for county endorsement. Please upload a clear, correctly formatted digital NITA PDF contract where Part C text is recognizable (not an image, screenshot, or scanned photo) so that the signature and stamp can be placed accurately.",
+          error: "The uploaded NITA Document is empty or could not be read.",
           result: currentApplication,
           formData: { idNumber, email }
         });
