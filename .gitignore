@@ -11,6 +11,8 @@ temp_test/
 Thumbs.db
 npm-debug.log*
 temp_*.log
+*.log
+server-errors.log
 temp_*.png
 temp_*.pdf
 *-county-endorsed-nita.pdf

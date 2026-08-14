@@ -47,14 +47,14 @@
           <div class="site-header-nav">
             <nav class="site-menu" aria-label="Portal menu">
               <a class="menu-link <%= activePortal === 'home' ? 'is-active' : '' %>" href="<%= homePath || '/' %>">Home</a>
-              <% if (activePortal !== 'hr') { %>
+              <% if (activePortal !== 'hr' && activePortal !== 'admin') { %>
                 <a class="menu-link <%= activePortal === 'student' ? 'is-active' : '' %>" href="/apply">Apply</a>
               <% } %>
-              <a class="menu-link <%= activePortal === 'hr' ? 'is-active' : '' %>" href="<%= hrPortalPath %>">HR Portal</a>
+              <a class="menu-link <%= (activePortal === 'hr' || activePortal === 'admin') ? 'is-active' : '' %>" href="<%= hrPortalPath %>">Staff Portal</a>
             </nav>
 
             <div class="site-header-tools">
-              <% if (activePortal !== 'hr') { %>
+              <% if (activePortal !== 'hr' && activePortal !== 'admin') { %>
                 <a class="site-track-link <%= activePortal === 'track' ? 'is-active' : '' %>" href="/track">
                   Track
                 </a>

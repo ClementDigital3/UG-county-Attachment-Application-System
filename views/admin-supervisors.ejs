@@ -1,0 +1,249 @@
+<%- include("partials/layout-open", { pageTitle: "Department Supervisors", activePortal: "hr" }) %>
+<main class="container wide">
+      <section class="card">
+        <div class="row-between">
+          <h1><%= adminScopeDepartmentLabel %> Supervisors</h1>
+          <div class="actions tight">
+            <a class="btn secondary" href="/admin/reports">Department Report</a>
+            <a class="btn secondary" href="/admin/applications">Review Queue</a>
+            <form action="/admin/logout" method="post">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <button class="btn secondary" type="submit">Logout</button>
+            </form>
+          </div>
+        </div>
+
+        <% if (error) { %>
+          <div class="alert"><%= error %></div>
+        <% } %>
+
+        <% if (notice) { %>
+          <div class="notice"><%= notice %></div>
+        <% } %>
+
+        <div class="summary">
+          <p><strong>Department Scope:</strong> <%= adminScopeDepartmentLabel %></p>
+          <p><strong>Total Supervisors:</strong> <%= supervisors.length %></p>
+          <p><strong>Assigned Students:</strong> <%= assignedApplications.length %></p>
+        </div>
+
+        <h2>Supervisor Directory</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Employee Number</th>
+                <th>Job Title</th>
+                <th>Work Station</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th class="table-count-cell">Assigned Students</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (!supervisors.length) { %>
+                <tr>
+                  <td class="table-empty-state" colspan="8"><strong>No supervisors are loaded yet for this department.</strong> Create a supervisor manually below.</td>
+                </tr>
+              <% } %>
+
+              <% supervisors.forEach((supervisor) => { %>
+                <tr>
+                  <td>
+                    <strong><%= supervisor.fullName %></strong>
+                    <div class="muted-note">
+                      <%= supervisor.source === 'manual' ? 'Manually created' : 'API synced' %>
+                    </div>
+                    <% if (!supervisor.canSupervise || !supervisor.isActive) { %>
+                      <div class="badge <%= !supervisor.isActive ? 'rejected' : 'warning' %>" style="display: inline-block; margin-top: 0.25rem; font-size: 0.75rem;">
+                        <%= !supervisor.isActive ? 'Inactive' : 'Unavailable' %>
+                      </div>
+                    <% } %>
+                  </td>
+                  <td><%= supervisor.employeeNumber || 'Not recorded' %></td>
+                  <td><%= supervisor.jobTitle || 'Not recorded' %></td>
+                  <td><%= supervisor.workStation || 'Not recorded' %></td>
+                  <td><%= supervisor.email || 'Not recorded' %></td>
+                  <td><%= supervisor.phone || 'Not recorded' %></td>
+                  <td class="table-count-cell"><%= supervisor.assignedStudents %></td>
+                  <td class="table-action-cell" style="white-space: nowrap;">
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                      <button type="button" class="link-btn edit-btn"
+                        data-id="<%= supervisor.supervisorId %>"
+                        data-fullname="<%= supervisor.fullName %>"
+                        data-employeenumber="<%= supervisor.employeeNumber || '' %>"
+                        data-jobtitle="<%= supervisor.jobTitle || '' %>"
+                        data-workstation="<%= supervisor.workStation || '' %>"
+                        data-email="<%= supervisor.email || '' %>"
+                        data-phone="<%= supervisor.phone || '' %>"
+                        data-maxstudents="<%= supervisor.maxStudents || 5 %>">
+                        Edit
+                      </button>
+                      <span class="muted-note">|</span>
+                      <form action="/admin/supervisors/<%= supervisor.supervisorId %>/toggle-active" method="post" style="display:inline; margin:0;">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                        <button type="submit" class="link-btn">
+                          <%= supervisor.isActive ? 'Deactivate' : 'Activate' %>
+                        </button>
+                      </form>
+                      <% if (supervisor.source === 'manual') { %>
+                        <span class="muted-note">|</span>
+                        <form action="/admin/supervisors/<%= supervisor.supervisorId %>/delete" method="post" style="display:inline; margin:0;" onsubmit="return confirm('Are you sure you want to delete <%= supervisor.fullName %>? This will clear their assignment profile.');">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <button type="submit" class="link-btn danger-text">Delete</button>
+                        </form>
+                      <% } %>
+                    </div>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Edit Supervisor Form (hidden by default) -->
+      <section class="card" id="edit-supervisor-section" style="display: none; border: 1px solid var(--primary-light);">
+        <h2>Edit Supervisor Profile</h2>
+        <form id="edit-supervisor-form" action="" method="post" class="form-grid">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          
+          <label>
+            Full Name *
+            <input type="text" name="fullName" id="edit-fullName" required />
+          </label>
+          
+          <label>
+            Employee Number
+            <input type="text" name="employeeNumber" id="edit-employeeNumber" placeholder="e.g. UGC-HR-002" />
+          </label>
+
+          <label>
+            Job Title
+            <input type="text" name="jobTitle" id="edit-jobTitle" placeholder="e.g. Senior Officer" />
+          </label>
+
+          <label>
+            Work Station
+            <input type="text" name="workStation" id="edit-workStation" placeholder="e.g. HQ Block B" />
+          </label>
+
+          <label>
+            Email Address
+            <input type="email" name="email" id="edit-email" placeholder="e.g. officer@uasingishu.go.ke" />
+          </label>
+
+          <label>
+            Phone Number
+            <input type="tel" name="phone" id="edit-phone" placeholder="e.g. 0700000000" />
+          </label>
+
+          <label>
+            Department
+            <input type="text" value="<%= adminScopeDepartmentLabel %>" disabled style="background-color: var(--surface);" />
+          </label>
+
+          <label>
+            Max Students Capacity
+            <input type="number" name="maxStudents" id="edit-maxStudents" min="1" max="100" required />
+          </label>
+
+          <div class="actions full-width" style="margin-top: 1rem;">
+            <button class="btn" type="submit">Save Changes</button>
+            <button class="btn secondary" type="button" onclick="cancelEdit()">Cancel</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Create Supervisor Form -->
+      <section class="card">
+        <h2>Add Manual Supervisor Profile</h2>
+        <p class="muted-note">Use this form to add supervisors manually for your department.</p>
+        <form action="/admin/supervisors/create" method="post" class="form-grid">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          
+          <label>
+            Full Name *
+            <input type="text" name="fullName" required placeholder="Darius Kimutai" />
+          </label>
+          
+          <label>
+            Employee Number
+            <input type="text" name="employeeNumber" placeholder="e.g. UGC-ICT-05" />
+          </label>
+
+          <label>
+            Job Title
+            <input type="text" name="jobTitle" placeholder="e.g. Systems Administrator" />
+          </label>
+
+          <label>
+            Work Station
+            <input type="text" name="workStation" placeholder="e.g. ICT Plaza 4th Floor" />
+          </label>
+
+          <label>
+            Email Address
+            <input type="email" name="email" placeholder="e.g. dkimutai@uasingishu.go.ke" />
+          </label>
+
+          <label>
+            Phone Number
+            <input type="tel" name="phone" placeholder="e.g. 0712345678" />
+          </label>
+
+          <label>
+            Department
+            <input type="text" value="<%= adminScopeDepartmentLabel %>" disabled style="background-color: var(--surface);" />
+          </label>
+
+          <label>
+            Max Students Capacity
+            <input type="number" name="maxStudents" value="5" min="1" max="100" required />
+          </label>
+
+          <div class="actions full-width" style="margin-top: 1.25rem;">
+            <button class="btn" type="submit">Create Supervisor</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script>
+      function cancelEdit() {
+        document.getElementById('edit-supervisor-section').style.display = 'none';
+        document.getElementById('edit-supervisor-form').action = '';
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.edit-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-id');
+            const fullName = btn.getAttribute('data-fullname');
+            const employeeNumber = btn.getAttribute('data-employeenumber');
+            const jobTitle = btn.getAttribute('data-jobtitle');
+            const workStation = btn.getAttribute('data-workstation');
+            const email = btn.getAttribute('data-email');
+            const phone = btn.getAttribute('data-phone');
+            const maxStudents = btn.getAttribute('data-maxstudents');
+
+            document.getElementById('edit-fullName').value = fullName;
+            document.getElementById('edit-employeeNumber').value = employeeNumber;
+            document.getElementById('edit-jobTitle').value = jobTitle;
+            document.getElementById('edit-workStation').value = workStation;
+            document.getElementById('edit-email').value = email;
+            document.getElementById('edit-phone').value = phone;
+            document.getElementById('edit-maxStudents').value = maxStudents;
+
+            document.getElementById('edit-supervisor-form').action = '/admin/supervisors/' + id + '/edit';
+            
+            const section = document.getElementById('edit-supervisor-section');
+            section.style.display = 'block';
+            section.scrollIntoView({ behavior: 'smooth' });
+          });
+        });
+      });
+    </script>
+<%- include("partials/layout-close") %>

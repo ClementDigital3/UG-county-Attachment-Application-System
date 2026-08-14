@@ -1,4 +1,49 @@
 <%- include("partials/layout-open", { pageTitle: "Apply - County Attachment Portal", activePortal: "student" }) %>
+<style>
+  .autocomplete-wrapper {
+    position: relative;
+    width: 100%;
+  }
+  .suggestions-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--card-bg, #ffffff);
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+  }
+  .suggestions-dropdown.is-hidden {
+    display: none;
+  }
+  .suggestion-item {
+    padding: 10px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border, #eee);
+    font-size: 14px;
+    color: var(--text, #333);
+    text-align: left;
+  }
+  .suggestion-item:last-child {
+    border-bottom: none;
+  }
+  .suggestion-item:hover, .suggestion-item.is-active {
+    background: var(--border, #f3f4f6);
+  }
+  .suggestion-item-other {
+    background: #fffbeb !important;
+    font-weight: bold;
+    color: #b45309 !important;
+    border-top: 1px dashed #f59e0b;
+  }
+  .suggestion-item-other:hover {
+    background: #fef3c7 !important;
+  }
+</style>
 <main class="container">
   <section class="card">
     <h1>Attachment Application Form</h1>
@@ -106,6 +151,21 @@
               </select>
             </label>
 
+            <label id="healthStationLabel" style="<%= formData.appliedDepartment === 'health' ? '' : 'display: none;' %>">
+              Preferred Health Station / Facility
+              <input
+                type="text"
+                id="preferredHealthStationInput"
+                name="preferredHealthStation"
+                value="<%= formData.preferredHealthStation || '' %>"
+                placeholder="e.g. MTRH, Uasin Gishu County Hospital, Huruma Sub-County Hospital..."
+                <%= formData.acceptedTerms === 'yes' ? '' : 'disabled' %>
+              />
+              <span class="field-hint">
+                Type your preferred hospital or health facility for attachment.
+              </span>
+            </label>
+
             <label>
               PWD / Special Applicant
               <select id="disabilityStatusSelect" name="disabilityStatus" <%= formData.acceptedTerms === 'yes' ? '' : 'disabled' %>>
@@ -120,24 +180,35 @@
 
             <label>
               Institution *
+              <div class="autocomplete-wrapper">
+                <input
+                  id="institutionSearchInput"
+                  type="text"
+                  class="field-search-input"
+                  placeholder="🔍 Start typing your institution name..."
+                  value="<%= formData.institution === otherInstitutionValue ? (formData.otherInstitution || '') : (formData.institution || '') %>"
+                  <%= formData.acceptedTerms === 'yes' && formData.appliedDepartment ? '' : 'disabled' %>
+                  style="margin-bottom: 6px; width: 100%;"
+                  autocomplete="off"
+                />
+                <div id="institutionSuggestionsList" class="suggestions-dropdown is-hidden"></div>
+              </div>
               <select
                 id="institutionSelect"
                 name="institution"
                 required
-                <%= formData.acceptedTerms === 'yes' && formData.appliedDepartment ? '' : 'disabled' %>
+                style="display: none;"
               >
                 <option value="">Select institution</option>
                 <% institutionGroups.forEach((group) => { %>
-                  <optgroup label="<%= group.category %>">
-                    <% group.institutions.forEach((institution) => { %>
-                      <option value="<%= institution %>" <%= formData.institution === institution ? 'selected' : '' %>><%= institution %></option>
-                    <% }) %>
-                  </optgroup>
+                  <% group.institutions.forEach((institution) => { %>
+                    <option value="<%= institution %>" <%= formData.institution === institution ? 'selected' : '' %>><%= institution %></option>
+                  <% }) %>
                 <% }) %>
                 <option value="<%= otherInstitutionValue %>" <%= formData.institution === otherInstitutionValue ? 'selected' : '' %>>Other - type institution in full</option>
               </select>
               <span class="field-hint">
-                Choose from the ranked institution list. If your institution is missing, select <strong>Other</strong> and type the full institution name without abbreviations.
+                Start typing your institution name above. Suggestions will display as you type. If your institution is not listed, select the **Other** option that appears.
               </span>
             </label>
 
@@ -380,16 +451,7 @@
                 name="<%= nitaDocumentDefinition.key %>"
                 accept="<%= nitaDocumentDefinition.accept %>"
                 required
-              />
-              <button type="button" class="btn secondary use-test-nita-btn" data-target-name="<%= nitaDocumentDefinition.key %>" style="margin-top: 0.5rem; padding: 0.35rem 0.7rem; font-size: 0.78rem; display: inline-flex; align-items: center; gap: 0.3rem; border-radius: 8px; font-weight: 600; width: fit-content; cursor: pointer;">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align: middle;">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="7 10 12 15 17 10"></polyline>
-                  <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-                <span>Use Default Test NITA Form</span>
-              </button>
-            </label>
+              </label>
 
             <div class="full-width actions">
               <button id="applySubmitButton" class="btn" type="submit" <%= showApplicationFields && formData.acceptedTerms === 'yes' ? '' : 'disabled' %>>
@@ -409,11 +471,14 @@
     (() => {
       const termsCheckbox = document.getElementById("acceptedTermsGate");
       const departmentSelect = document.getElementById("appliedDepartmentSelect");
+      const healthStationLabel = document.getElementById("healthStationLabel");
+      const preferredHealthStationInput = document.getElementById("preferredHealthStationInput");
       const disabilityStatusSelect = document.getElementById("disabilityStatusSelect");
       const pwdReasonLabel = document.getElementById("pwdReasonLabel");
       const pwdReasonInput = document.getElementById("pwdReasonInput");
       const specialApplicantReasonLabel = document.getElementById("specialApplicantReasonLabel");
       const specialApplicantReasonInput = document.getElementById("specialApplicantReasonInput");
+      const institutionSearchInput = document.getElementById("institutionSearchInput");
       const institutionSelect = document.getElementById("institutionSelect");
       const otherInstitutionLabel = document.getElementById("otherInstitutionLabel");
       const otherInstitutionInput = document.getElementById("otherInstitutionInput");
@@ -424,7 +489,7 @@
       const statusMetrics = document.getElementById("institutionStatusMetrics");
       const submitButton = document.getElementById("applySubmitButton");
 
-      if (!termsCheckbox || !departmentSelect || !disabilityStatusSelect || !pwdReasonLabel || !pwdReasonInput || !specialApplicantReasonLabel || !specialApplicantReasonInput || !institutionSelect || !otherInstitutionLabel || !otherInstitutionInput || !applicationFields || !statusBox || !statusHeading || !statusMessage || !statusMetrics || !submitButton) {
+      if (!termsCheckbox || !departmentSelect || !disabilityStatusSelect || !pwdReasonLabel || !pwdReasonInput || !specialApplicantReasonLabel || !specialApplicantReasonInput || !institutionSearchInput || !institutionSelect || !otherInstitutionLabel || !otherInstitutionInput || !applicationFields || !statusBox || !statusHeading || !statusMessage || !statusMetrics || !submitButton) {
         return;
       }
 
@@ -467,17 +532,27 @@
       }
 
       function syncDisabilityUi() {
-        const isPwdApplicant = ["pwd", "yes"].includes(disabilityStatusSelect.value);
-        const isSpecialApplicant = disabilityStatusSelect.value === "special";
-        pwdReasonLabel.classList.toggle("is-hidden", !isPwdApplicant);
-        specialApplicantReasonLabel.classList.toggle("is-hidden", !isSpecialApplicant);
-        pwdReasonInput.required = isPwdApplicant;
-        specialApplicantReasonInput.required = isSpecialApplicant;
+        const value = disabilityStatusSelect.value;
+        const isPwd = ["pwd", "yes"].includes(value);
+        const isSpecial = value === "special";
+
+        pwdReasonLabel.classList.toggle("is-hidden", !isPwd);
+        pwdReasonLabel.setAttribute("aria-hidden", isPwd ? "false" : "true");
+        pwdReasonInput.required = isPwd;
+
+        specialApplicantReasonLabel.classList.toggle("is-hidden", !isSpecial);
+        specialApplicantReasonLabel.setAttribute("aria-hidden", isSpecial ? "false" : "true");
+        specialApplicantReasonInput.required = isSpecial;
       }
 
       function syncInstitutionUi() {
-        const usingOtherInstitution = institutionSelect.value === "<%= otherInstitutionValue %>";
+        const value = institutionSelect.value.trim();
+        const usingOtherInstitution =
+          Boolean(value) &&
+          (value.toLowerCase().startsWith("other") || value === "<%= otherInstitutionValue %>");
+
         otherInstitutionLabel.classList.toggle("is-hidden", !usingOtherInstitution);
+        otherInstitutionLabel.setAttribute("aria-hidden", usingOtherInstitution ? "false" : "true");
         otherInstitutionInput.required = usingOtherInstitution;
         otherInstitutionInput.disabled =
           !termsCheckbox.checked ||
@@ -493,9 +568,13 @@
         statusMetrics.innerHTML = "";
         departmentSelect.disabled = !termsCheckbox.checked;
         disabilityStatusSelect.disabled = !termsCheckbox.checked;
+        if (preferredHealthStationInput) preferredHealthStationInput.disabled = !termsCheckbox.checked;
+        if (healthStationLabel) healthStationLabel.style.display = departmentSelect.value === "health" ? "" : "none";
         pwdReasonInput.disabled = !termsCheckbox.checked || !["pwd", "yes"].includes(disabilityStatusSelect.value);
         specialApplicantReasonInput.disabled = !termsCheckbox.checked || disabilityStatusSelect.value !== "special";
         institutionSelect.disabled = true;
+        institutionSearchInput.disabled = true;
+        institutionSearchInput.value = "";
         otherInstitutionInput.disabled = true;
         syncDisabilityUi();
         syncInstitutionUi();
@@ -518,10 +597,13 @@
 
         departmentSelect.disabled = false;
         disabilityStatusSelect.disabled = false;
+        if (preferredHealthStationInput) preferredHealthStationInput.disabled = false;
+        if (healthStationLabel) healthStationLabel.style.display = department === "health" ? "" : "none";
         pwdReasonInput.disabled = !["pwd", "yes"].includes(disabilityStatus);
         specialApplicantReasonInput.disabled = disabilityStatus !== "special";
         syncDisabilityUi();
         institutionSelect.disabled = !department;
+        institutionSearchInput.disabled = !department;
         syncInstitutionUi();
 
         if (!department) {
@@ -627,6 +709,134 @@
         }
       }
 
+      const allInstitutions = [
+        <% institutionGroups.forEach((group) => { %>
+          <% group.institutions.forEach((institution) => { %>
+            "<%= institution.replace(/"/g, '\\"') %>",
+          <% }) %>
+        <% }) %>
+      ];
+
+      const suggestionsList = document.getElementById("institutionSuggestionsList");
+      let activeSuggestionIndex = -1;
+
+      function renderSuggestions() {
+        const text = institutionSearchInput.value.trim();
+        const query = text.toLowerCase();
+        
+        if (!query) {
+          suggestionsList.innerHTML = "";
+          suggestionsList.classList.add("is-hidden");
+          return;
+        }
+
+        // Filter institutions matching query
+        const matches = allInstitutions.filter(inst => inst.toLowerCase().includes(query));
+        const matchesToShow = matches.slice(0, 8);
+        
+        let html = "";
+        matchesToShow.forEach((match) => {
+          html += `<div class="suggestion-item" data-value="${match}">${match}</div>`;
+        });
+
+        // Always append "Other" suggestion option
+        const otherText = "Other - type institution in full";
+        html += `<div class="suggestion-item suggestion-item-other" data-value="${otherText}">➕ Other (My institution is not listed)</div>`;
+
+        suggestionsList.innerHTML = html;
+        suggestionsList.classList.remove("is-hidden");
+        activeSuggestionIndex = -1;
+
+        // Click event listener
+        suggestionsList.querySelectorAll(".suggestion-item").forEach(item => {
+          item.addEventListener("mousedown", (e) => {
+            const val = e.currentTarget.getAttribute("data-value");
+            selectSuggestion(val);
+          });
+        });
+      }
+
+      function selectSuggestion(value) {
+        if (value === "Other - type institution in full" || value === "<%= otherInstitutionValue %>") {
+          institutionSearchInput.value = "Other - type institution in full";
+          institutionSelect.value = "<%= otherInstitutionValue %>";
+          otherInstitutionInput.value = "";
+        } else {
+          institutionSearchInput.value = value;
+          institutionSelect.value = value;
+          otherInstitutionInput.value = "";
+        }
+        
+        suggestionsList.innerHTML = "";
+        suggestionsList.classList.add("is-hidden");
+        refreshAvailability();
+      }
+
+      function highlightSuggestion(items) {
+        items.forEach((item, index) => {
+          if (index === activeSuggestionIndex) {
+            item.classList.add("is-active");
+            item.scrollIntoView({ block: "nearest" });
+          } else {
+            item.classList.remove("is-active");
+          }
+        });
+      }
+
+      // Hide list on clicking outside & handle custom entry validation on blur
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".autocomplete-wrapper")) {
+          suggestionsList.classList.add("is-hidden");
+          
+          const text = institutionSearchInput.value.trim();
+          if (text) {
+            const exactMatch = allInstitutions.find(inst => inst.toLowerCase() === text.toLowerCase());
+            if (exactMatch) {
+              selectSuggestion(exactMatch);
+            } else if (text !== "Other - type institution in full") {
+              // Custom input entered - treat as other and copy text
+              institutionSelect.value = "<%= otherInstitutionValue %>";
+              otherInstitutionInput.value = text;
+              refreshAvailability();
+            }
+          }
+        }
+      });
+
+      institutionSearchInput.addEventListener("input", renderSuggestions);
+      institutionSearchInput.addEventListener("focus", renderSuggestions);
+
+      institutionSearchInput.addEventListener("keydown", (e) => {
+        const items = suggestionsList.querySelectorAll(".suggestion-item");
+        if (items.length === 0) return;
+
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          activeSuggestionIndex = (activeSuggestionIndex + 1) % items.length;
+          highlightSuggestion(items);
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          activeSuggestionIndex = (activeSuggestionIndex - 1 + items.length) % items.length;
+          highlightSuggestion(items);
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (activeSuggestionIndex >= 0 && activeSuggestionIndex < items.length) {
+            const val = items[activeSuggestionIndex].getAttribute("data-value");
+            selectSuggestion(val);
+          } else {
+            const text = institutionSearchInput.value.trim();
+            const exactMatch = allInstitutions.find(inst => inst.toLowerCase() === text.toLowerCase());
+            if (exactMatch) {
+              selectSuggestion(exactMatch);
+            } else {
+              selectSuggestion("Other - type institution in full");
+              otherInstitutionInput.value = text;
+              refreshAvailability();
+            }
+          }
+        }
+      });
+
       termsCheckbox.addEventListener("change", refreshAvailability);
       departmentSelect.addEventListener("change", refreshAvailability);
       disabilityStatusSelect.addEventListener("change", refreshAvailability);
@@ -637,55 +847,6 @@
       institutionSelect.addEventListener("change", refreshAvailability);
       otherInstitutionInput.addEventListener("input", refreshAvailability);
       otherInstitutionInput.addEventListener("change", refreshAvailability);
-      // Test NITA Pre-population Logic
-      document.addEventListener("click", async (e) => {
-        const btn = e.target.closest(".use-test-nita-btn");
-        if (!btn) return;
-        
-        const targetName = btn.dataset.targetName;
-        const fileInput = document.querySelector(`input[type="file"][name="${targetName}"]`);
-        if (!fileInput) return;
-
-        const originalText = btn.innerHTML;
-        btn.disabled = true;
-        btn.innerHTML = `
-          <span class="loading-spinner" style="margin-right: 0.2rem; vertical-align: middle;"></span>
-          <span>Loading template...</span>
-        `;
-
-        try {
-          const response = await fetch("/testing-nita-template.pdf");
-          if (!response.ok) throw new Error("Failed to fetch template");
-          const blob = await response.blob();
-          const file = new File([blob], "testing-nita-template.pdf", { type: "application/pdf" });
-          
-          const dataTransfer = new DataTransfer();
-          dataTransfer.items.add(file);
-          fileInput.files = dataTransfer.files;
-
-          fileInput.dispatchEvent(new Event("change", { bubbles: true }));
-
-          btn.style.background = "var(--success)";
-          btn.style.color = "#ffffff";
-          btn.innerHTML = `
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.2rem; vertical-align: middle;">
-              <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
-            <span>Test NITA Loaded!</span>
-          `;
-        } catch (err) {
-          console.error(err);
-          btn.style.background = "var(--danger)";
-          btn.style.color = "#ffffff";
-          btn.innerHTML = `<span>Error loading template</span>`;
-          setTimeout(() => {
-            btn.disabled = false;
-            btn.style.background = "";
-            btn.style.color = "";
-            btn.innerHTML = originalText;
-          }, 2000);
-        }
-      });
 
       refreshAvailability();
     })();

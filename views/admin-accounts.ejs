@@ -4,10 +4,14 @@
         <div class="row-between">
           <h1>Department Access Records</h1>
           <div class="actions tight">
-            <a class="btn secondary" href="/hr/departments">Department Review</a>
-            <a class="btn secondary" href="/hr/reports">Reports</a>
-            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
-            <a class="btn secondary" href="/hr/applications">HR Queue</a>
+            <% if (currentAdminRole === 'developer') { %>
+              <a class="btn primary" href="/hr/developer-console">Developer Console</a>
+              <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+            <% } else { %>
+              <a class="btn secondary" href="/hr/departments">Department Status</a>
+              <a class="btn secondary" href="/hr/reports">Reports</a>
+              <a class="btn secondary" href="/hr/applications">HR Queue</a>
+            <% } %>
             <form action="/hr/logout" method="post">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <button class="btn secondary" type="submit">Logout</button>
@@ -113,7 +117,6 @@
 
                 <div class="actions full-width">
                   <button class="btn" type="submit">Save Record Details</button>
-                  <a class="btn secondary" href="/hr/departments/<%= account.department %>/open">Open Department Review</a>
                 </div>
               </form>
 

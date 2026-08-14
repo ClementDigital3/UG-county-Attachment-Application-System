@@ -4,11 +4,7 @@
         <div class="row-between">
           <h1>Department Review Application</h1>
           <div class="actions tight">
-            <a class="btn secondary" href="/hr/applications">HR Queue</a>
-            <a class="btn secondary" href="/admin/departments">Department Access</a>
-            <a class="btn secondary" href="/hr/audit">Audit Trail</a>
             <a class="btn secondary" href="/admin/reports">Department Report</a>
-            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
             <a class="btn secondary" href="/admin/applications">Back to List</a>
           </div>
         </div>
@@ -33,8 +29,8 @@
         <% } %>
 
         <div class="summary">
-          <p><strong>ID:</strong> <%= application.id %></p>
-          <p><strong>Tracking Number:</strong> <%= application.placementNumber || application.id %></p>
+          <p><strong>ID:</strong> <%= (application.id || application.idNumber || '').toString().replace(/^ATT-/i, '') %></p>
+          <p><strong>Tracking Number:</strong> <%= application.placementNumber || application.trackingNumber || application.referenceNo || application.id %></p>
           <p><strong>Name:</strong> <%= application.fullName %></p>
           <p><strong>Email:</strong> <%= application.email %></p>
           <p><strong>Phone:</strong> <%= application.phone %></p>
@@ -45,6 +41,9 @@
           <p><strong>Course Level:</strong> <%= getCourseLevelLabel(application.courseLevel) %></p>
           <p><strong>Course:</strong> <%= application.course %></p>
           <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
+          <% if (application.appliedDepartment === 'health' || application.preferredHealthStation) { %>
+            <p><strong>Preferred Health Station / Facility:</strong> <%= application.preferredHealthStation || 'Not specified' %></p>
+          <% } %>
           <p><strong>Period:</strong> <%= application.period ? getPeriodLabel(application.period) : 'Not set' %></p>
           <p><strong>Requested Dates:</strong> <%= application.startDate %> to <%= application.endDate %></p>
           <p><strong>Status:</strong> <span class="badge <%= getStatusClass(application.status) %>"><%= application.status %></span></p>
@@ -121,6 +120,11 @@
           </label>
 
           <label>
+            Preferred Health Station / Facility
+            <input type="text" name="preferredHealthStation" value="<%= application.preferredHealthStation || '' %>" placeholder="e.g. MTRH, County Hospital..." />
+          </label>
+
+          <label>
             Attachment Period *
             <select name="period" required>
               <option value="">Select period</option>
@@ -143,11 +147,11 @@
           </label>
 
           <label class="full-width">
-            Cover Note / Self Introduction *
+            Cover Note / Self Introduction
             <span class="field-hint">
-              Student must briefly explain themselves and their attachment request here. This replaces a separate application letter.
+              Student brief explanation or self-introduction.
             </span>
-            <textarea name="coverNote" rows="5" required><%= application.coverNote %></textarea>
+            <textarea name="coverNote" rows="5"><%= application.coverNote %></textarea>
           </label>
 
           <div class="actions full-width">
@@ -266,6 +270,55 @@
 
         <h2>Attachment Joining Letter</h2>
         <p>Joining letters are uploaded by HR after the final admission decision in the HR portal.</p>
+
+        <h2>Supervisor Assignment</h2>
+        <p>Once a student is admitted, you can attach a county supervisor from the staff directory for this department.</p>
+
+        <% if (application.supervisorAssignment) { %>
+          <div class="summary">
+            <p><strong>Assigned Supervisor:</strong> <%= application.supervisorAssignment.fullName %></p>
+            <p><strong>Employee Number:</strong> <%= application.supervisorAssignment.employeeNumber || 'Not recorded' %></p>
+            <p><strong>Department:</strong> <%= application.supervisorAssignment.department ? getDepartmentLabel(application.supervisorAssignment.department) : 'Not recorded' %></p>
+            <p><strong>Job Title:</strong> <%= application.supervisorAssignment.jobTitle || 'Not recorded' %></p>
+            <p><strong>Work Station:</strong> <%= application.supervisorAssignment.workStation || 'Not recorded' %></p>
+            <p><strong>Email:</strong> <%= application.supervisorAssignment.email || 'Not recorded' %></p>
+            <p><strong>Phone:</strong> <%= application.supervisorAssignment.phone || 'Not recorded' %></p>
+            <p><strong>Assigned:</strong> <%= formatDate(application.supervisorAssignment.assignedAt) %></p>
+            <p><strong>Assigned By:</strong> <%= application.supervisorAssignment.assignedBy || 'Admin' %></p>
+          </div>
+        <% } else { %>
+          <p>No county supervisor assigned yet.</p>
+        <% } %>
+
+        <% if (application.status === 'Admitted') { %>
+          <form action="/admin/applications/<%= application.id %>/supervisor" method="post" class="form-grid">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <label class="full-width">
+              County Supervisor
+              <select name="supervisorId" <%= application.isFrozen ? 'disabled' : '' %>>
+                <option value="">Clear supervisor assignment</option>
+                <% supervisorOptions.forEach((supervisor) => { %>
+                  <option value="<%= supervisor.supervisorId %>" <%= application.supervisorAssignment && application.supervisorAssignment.supervisorId === supervisor.supervisorId ? 'selected' : '' %>>
+                    <%= supervisor.fullName %>
+                    <% if (supervisor.employeeNumber) { %> - <%= supervisor.employeeNumber %><% } %>
+                    <% if (supervisor.department) { %> - <%= getDepartmentLabel(supervisor.department) %><% } %>
+                    <% if (supervisor.workStation) { %> - <%= supervisor.workStation %><% } %>
+                    (Assigned: <%= supervisor.assignedStudents %>)
+                  </option>
+                <% }) %>
+              </select>
+              <% if (!supervisorOptions.length) { %>
+                <span class="field-hint">No active supervisors are available for this department yet.</span>
+              <% } %>
+            </label>
+
+            <div class="actions full-width">
+              <button class="btn" type="submit" <%= application.isFrozen ? 'disabled' : '' %>><%= application.supervisorAssignment ? 'Update Supervisor Assignment' : 'Assign Supervisor' %></button>
+            </div>
+          </form>
+        <% } else { %>
+          <p class="muted-note">Supervisor assignment becomes available after HR changes the final status to <strong>Admitted</strong>.</p>
+        <% } %>
 
         <h2>Update Application Status</h2>
         <p>When documents are correct, set status to <strong>Verified</strong> so HR can review the final admission decision.</p>

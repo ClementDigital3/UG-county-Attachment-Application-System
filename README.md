@@ -41,20 +41,14 @@ Before full public county-wide production use, the items in `Production Readines
 - MongoDB for data, sessions, and files
 - MongoDB GridFS for uploaded/generated documents
 
-### Storage
+### Storage & Performance Indexes
 
-MongoDB is the only active storage backend.
+MongoDB is the only active storage backend (supporting GridFS for files). 
 
-MongoDB stores:
-
-- application records
-- HR and department settings
-- sessions
-- uploaded student documents
-- generated NITA documents
-- joining letters
-- supervisor directory data
-- audit and workflow history
+To ensure sub-millisecond query performance and high system capacity (holding 100 to 10,000+ records), the database is configured with the following optimized indexes:
+- **`idx_applications_idNumber`:** Index on `{ idNumber: 1 }` to optimize student status tracking queries.
+- **`idx_applications_submitted_placement`:** Composite index on `{ submittedAt: -1, placementNumber: -1 }` to offload sorting for HR and Admin queue lists.
+- **`idx_sessions_expires`:** MongoDB TTL (Time-To-Live) index on `{ expiresAt: 1 }` configured with `expireAfterSeconds: 0`. This offloads session pruning to a native background thread in MongoDB, removing blocking write operations from the page-load pathway.
 
 `STORAGE_ROOT` is only a temporary workspace used while files are being uploaded or generated before being stored in MongoDB GridFS.
 
@@ -67,16 +61,16 @@ The code supports:
 
 Email should be treated as the primary official notification channel unless SMS delivery is fully validated in production.
 
-### AI Assistant
+### AI Assistant and Testing Feedback Widgets
 
-The public pages include a floating `Ask County Assistant` widget.
+The student-facing pages include two floating, circular action widgets positioned on the bottom-right of the screen:
 
-It works in two modes:
+- **Ask County Assistant:** A green circular toggle button (`bottom: 1.2rem; right: 1.2rem;`) that opens an AI chat panel directly above it. It works in two modes:
+  - live AI mode when `OPENAI_API_KEY` is configured.
+  - fallback guidance mode when the live AI provider is unavailable.
+- **System Feedback:** A gold circular toggle button (`bottom: 5.2rem; right: 1.2rem;`) that opens a tester feedback form. Feedback submissions are transmitted via AJAX, protected by CSRF, rate-limited, and recorded directly to the HR audit trail for review.
 
-- live AI mode when `OPENAI_API_KEY` is configured
-- fallback guidance mode when the live AI provider is unavailable
-
-The fallback mainly answers portal-related questions. Live AI mode can answer normal/general questions and also use portal context.
+Both widgets are highly optimized for mobile devices (including Xiaomi/Redmi viewports) utilizing direct inline `onclick` event handlers and pointer-events locks to prevent event swallowing.
 
 ## Application Workflow
 

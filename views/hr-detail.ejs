@@ -4,15 +4,18 @@
         <div class="row-between">
           <h1>HR Review Application</h1>
           <div class="actions tight">
-            <a class="btn secondary" href="/hr/departments">Department Review</a>
-            <a class="btn secondary" href="/hr/communications">Communications</a>
-            <a class="btn secondary" href="/hr/supervisors">Supervisors</a>
-            <a class="btn secondary" href="/hr/audit">Audit Trail</a>
-            <a class="btn secondary" href="/hr/reports">Reports</a>
-            <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
-            <a class="btn secondary" href="/hr/account">HR Account</a>
-            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
-            <a class="btn secondary" href="/hr/applications">Back to HR Queue</a>
+            <% if (currentAdminRole === 'developer') { %>
+              <a class="btn primary" href="/hr/developer-console">Developer Console</a>
+              <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+              <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+            <% } else { %>
+              <a class="btn secondary" href="/hr/departments">Department Status</a>
+              <a class="btn secondary" href="/hr/communications">Communications</a>
+              <a class="btn secondary" href="/hr/audit">Audit Trail</a>
+              <a class="btn secondary" href="/hr/reports">Reports</a>
+              <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+              <a class="btn secondary" href="/hr/applications">Back to HR Queue</a>
+            <% } %>
             <form action="/hr/logout" method="post">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <button class="btn secondary" type="submit">Logout</button>
@@ -36,8 +39,8 @@
         <% } %>
 
         <div class="summary">
-          <p><strong>ID:</strong> <%= application.id %></p>
-          <p><strong>Tracking Number:</strong> <%= application.placementNumber || application.id %></p>
+          <p><strong>ID:</strong> <%= (application.id || application.idNumber || '').toString().replace(/^ATT-/i, '') %></p>
+          <p><strong>Tracking Number:</strong> <%= application.placementNumber || application.trackingNumber || application.referenceNo || application.id %></p>
           <p><strong>Name:</strong> <%= application.fullName %></p>
           <p><strong>Email:</strong> <%= application.email %></p>
           <p><strong>Phone:</strong> <%= application.phone %></p>
@@ -47,6 +50,9 @@
           <p><strong>Course Level:</strong> <%= getCourseLevelLabel(application.courseLevel) %></p>
           <p><strong>Course:</strong> <%= application.course %></p>
           <p><strong>Applied Department:</strong> <%= application.appliedDepartment ? getDepartmentLabel(application.appliedDepartment) : 'Not set' %></p>
+          <% if (application.appliedDepartment === 'health' || application.preferredHealthStation) { %>
+            <p><strong>Preferred Health Station / Facility:</strong> <%= application.preferredHealthStation || 'Not specified' %></p>
+          <% } %>
           <p><strong>Assigned Department:</strong> <%= application.assignedDepartment ? getDepartmentLabel(application.assignedDepartment) : 'Not assigned' %></p>
           <p><strong>Period:</strong> <%= application.period ? getPeriodLabel(application.period) : 'Not set' %></p>
           <p><strong>Requested Dates:</strong> <%= application.startDate %> to <%= application.endDate %></p>
@@ -61,6 +67,110 @@
           <p><strong>NITA Student Return Marker:</strong> <%= application.nitaWorkflow.studentResubmissionCount > 0 ? `Already re-submitted (${application.nitaWorkflow.studentResubmissionCount})` : 'Awaiting student re-upload' %></p>
           <p><strong>Department/HR Comment:</strong> <%= application.reviewerComment || 'No comment yet.' %></p>
         </div>
+
+        <h2>Edit Applicant Information</h2>
+        <form action="/hr/applications/<%= application.id %>/edit" method="post" class="form-grid">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <label>
+            Full Name *
+            <input type="text" name="fullName" value="<%= application.fullName %>" required />
+          </label>
+
+          <label>
+            Email Address *
+            <input type="email" name="email" value="<%= application.email %>" required />
+          </label>
+
+          <label>
+            Phone Number *
+            <input type="text" name="phone" value="<%= application.phone %>" required />
+          </label>
+
+          <label>
+            ID Number *
+            <input
+              type="text"
+              name="idNumber"
+              value="<%= application.idNumber || '' %>"
+              placeholder="Example: 12345678"
+              required
+            />
+          </label>
+
+          <label>
+            Institution *
+            <span class="field-hint">Use full institution name (no abbreviations).</span>
+            <input type="text" name="institution" value="<%= application.institution %>" required />
+          </label>
+
+          <label>
+            Course/Program *
+            <input type="text" name="course" value="<%= application.course %>" required />
+          </label>
+
+          <label>
+            Course Level *
+            <select name="courseLevel" required>
+              <option value="">Select course level</option>
+              <% (courseLevelOptions || []).forEach((option) => { %>
+                <option value="<%= option.key %>" <%= application.courseLevel === option.key ? 'selected' : '' %>>
+                  <%= option.label %>
+                </option>
+              <% }) %>
+            </select>
+          </label>
+
+          <label>
+            Applied Department *
+            <select name="appliedDepartment" required>
+              <option value="">Select department</option>
+              <% (departmentOptions || []).forEach((department) => { %>
+                <option value="<%= department.key %>" <%= application.appliedDepartment === department.key ? 'selected' : '' %>>
+                  <%= department.label %>
+                </option>
+              <% }) %>
+            </select>
+          </label>
+
+          <label>
+            Preferred Health Station / Facility
+            <input type="text" name="preferredHealthStation" value="<%= application.preferredHealthStation || '' %>" placeholder="e.g. MTRH, County Hospital..." />
+          </label>
+
+          <label>
+            Attachment Period *
+            <select name="period" required>
+              <option value="">Select period</option>
+              <% (periodOptions || []).forEach((period) => { %>
+                <option value="<%= period.key %>" <%= application.period === period.key ? 'selected' : '' %>>
+                  <%= period.label %> <%= period.quarterLabel ? `(${period.quarterLabel})` : '' %> - <%= period.statusLabel %>
+                </option>
+              <% }) %>
+            </select>
+          </label>
+
+          <label>
+            Attachment Start Date *
+            <input type="date" name="startDate" value="<%= application.startDate %>" required />
+          </label>
+
+          <label>
+            Attachment End Date *
+            <input type="date" name="endDate" value="<%= application.endDate %>" required />
+          </label>
+
+          <label class="full-width">
+            Cover Note / Self Introduction
+            <span class="field-hint">
+              Student brief explanation or self-introduction.
+            </span>
+            <textarea name="coverNote" rows="3"><%= application.coverNote %></textarea>
+          </label>
+
+          <div class="actions full-width">
+            <button class="btn" type="submit" <%= application.isFrozen ? 'disabled' : '' %>>Save Applicant Changes</button>
+          </div>
+        </form>
 
         <h2>Submitted Documents</h2>
         <% if (application.combinedDocument && application.combinedDocument.filename) { %>
@@ -183,36 +293,7 @@
           <p>No county supervisor assigned yet.</p>
         <% } %>
 
-        <% if (application.status === 'Admitted') { %>
-          <form action="/hr/applications/<%= application.id %>/supervisor" method="post" class="form-grid">
-            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-            <label class="full-width">
-              County Supervisor
-              <select name="supervisorId">
-                <option value="">Clear supervisor assignment</option>
-                <% supervisorOptions.forEach((supervisor) => { %>
-                  <option value="<%= supervisor.supervisorId %>" <%= application.supervisorAssignment && application.supervisorAssignment.supervisorId === supervisor.supervisorId ? 'selected' : '' %>>
-                    <%= supervisor.fullName %>
-                    <% if (supervisor.employeeNumber) { %> - <%= supervisor.employeeNumber %><% } %>
-                    <% if (supervisor.department) { %> - <%= getDepartmentLabel(supervisor.department) %><% } %>
-                    <% if (supervisor.workStation) { %> - <%= supervisor.workStation %><% } %>
-                    (Assigned: <%= supervisor.assignedStudents %>)
-                  </option>
-                <% }) %>
-              </select>
-              <% if (!supervisorOptions.length) { %>
-                <span class="field-hint">No active supervisors are available for this department yet. Sync the supervisor directory first.</span>
-              <% } %>
-            </label>
 
-            <div class="actions full-width">
-              <button class="btn" type="submit"><%= application.supervisorAssignment ? 'Update Supervisor Assignment' : 'Assign Supervisor' %></button>
-              <a class="btn secondary" href="/hr/supervisors">Open Supervisor Directory</a>
-            </div>
-          </form>
-        <% } else { %>
-          <p class="muted-note">Supervisor assignment becomes available after HR changes the final status to <strong>Admitted</strong>.</p>
-        <% } %>
 
         <h2>Student Communication History</h2>
         <p>General HR broadcasts and workflow-triggered notifications for this student appear below. Use the main HR Communications page to send updates to all applicant contacts.</p>

@@ -8,10 +8,11 @@ const path = require("path");
 const crypto = require("crypto");
 const { createDatabase } = require("./database");
 const { createFileStorage } = require("./file-storage");
-const { createCountyEndorsedNitaPdf } = require("./county-nita-pdf");
+const { createCountyEndorsedNitaPdf, loadPdfTextAnchors } = require("./county-nita-pdf");
 const { createNotificationService } = require("./notification-service");
 const { createJoiningLetterTemplatePdf } = require("./joining-letter-template");
 const backupsService = require("./backups-service");
+const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,6 +26,7 @@ const PUBLIC_DIR = path.join(APP_ROOT, "public");
 const VIEWS_DIR = path.join(APP_ROOT, "views");
 const KENYA_INSTITUTIONS_FILE = path.join(APP_ROOT, "data", "kenya-institutions.json");
 const COUNTY_LOGO_JPG_FILE = path.join(PUBLIC_DIR, "uasin-gishu-logo.jpg");
+const COUNTY_SIGNATURE_PNG_FILE = path.join(PUBLIC_DIR, "director-signature.png");
 
 const FILE_TYPE_HEADERS = {
   pdf: Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d]), // %PDF-
@@ -42,7 +44,7 @@ const EICAR_SIGNATURE =
 const STATUS_OPTIONS = ["Pending", "Needs Correction", "Verified", "Admitted", "Rejected"];
 const FINAL_DECISION_STATUSES = new Set(["Admitted", "Rejected"]);
 const HR_VISIBLE_STATUSES = new Set(["Verified", "Admitted", "Rejected"]);
-const DEFAULT_INSTITUTION_MAX_SHARE_PERCENT = 40;
+const DEFAULT_INSTITUTION_MAX_SHARE_PERCENT = 30;
 const PASSWORD_HASH_PREFIX = "scrypt";
 const APP_AUDIT_TRAIL_LIMIT = 80;
 const SYSTEM_AUDIT_TRAIL_LIMIT = 150;
@@ -108,18 +110,32 @@ const LEGACY_PERIOD_LABELS = {
   SEP_DEC: "September - December"
 };
 
-const DEPARTMENTS = [
-  { key: "ict", label: "ICT, E-Governonance & Innovation" },
-  { key: "finance", label: "Finance and Economic Planning" },
-  { key: "health", label: "Health Services" },
-  { key: "agriculture", label: "Agriculture, Livestock and Fisheries" },
+const DEFAULT_DEPARTMENTS = [
+  { key: "agriculture", label: "Agriculture & Agri-Business" },
+  { key: "livestock_fisheries", label: "Livestock & Fisheries" },
+  { key: "devolution", label: "Devolution & Administration" },
+  { key: "public_service", label: "Public Service Management" },
+  { key: "partnerships", label: "Partnerships, Liaison and Linkages" },
+  { key: "education", label: "Education, Vocational Training & Culture" },
+  { key: "gender", label: "Gender & Social Protection" },
+  { key: "environment", label: "Environment, Natural Resources & Climate Change" },
+  { key: "water", label: "Water, Irrigation, Sanitation & Energy" },
+  { key: "economic_planning", label: "Economic Planning" },
+  { key: "finance", label: "Finance" },
+  { key: "health", label: "Health Service" },
+  { key: "ict", label: "ICT, E-Government & Innovation" },
+  { key: "youth_sports", label: "Youth & Sports" },
+  { key: "housing_urban", label: "Housing & Urban Development" },
+  { key: "lands", label: "Lands & Physical Planning" },
+  { key: "cooperative", label: "Cooperative & Enterprise Development" },
+  { key: "trade", label: "Trade, Industry & Investment, Tourism" },
   { key: "roads", label: "Roads, Transport and Public Works" },
-  { key: "education", label: "Education, Vocational Training, Youth and Sports" },
-  { key: "lands", label: "Lands, Housing, Physical Planning and Urban Development" },
-  { key: "water", label: "Water, Irrigation, Environment and Climate Change" },
-  { key: "trade", label: "Trade, Cooperatives, Tourism and Industrialization" },
-  { key: "public_service", label: "Public Service Management and Administration" }
+  { key: "county_attorney", label: "County Attorney's Office" },
+  { key: "city_eldoret", label: "City of Eldoret" },
+  { key: "urwasco", label: "URWASCO" }
 ];
+
+let DEPARTMENTS = [...DEFAULT_DEPARTMENTS];
 
 const DOCUMENT_DEFINITIONS = [
   {
@@ -224,6 +240,9 @@ const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 const HR_USERNAME = process.env.HR_USERNAME || DEFAULT_HR_USERNAME;
 const HR_PASSWORD = process.env.HR_PASSWORD || DEFAULT_HR_PASSWORD;
+const DEFAULT_DEVELOPER_USERNAME = "developer";
+const DEVELOPER_USERNAME = process.env.DEVELOPER_USERNAME || DEFAULT_DEVELOPER_USERNAME;
+const DEVELOPER_PASSWORD = process.env.DEVELOPER_PASSWORD || "dev123";
 const PRESENTATION_LOGIN_USERNAME = process.env.PRESENTATION_LOGIN_USERNAME || "";
 const PRESENTATION_LOGIN_PASSWORD = process.env.PRESENTATION_LOGIN_PASSWORD || "";
 const SESSION_SECRET = process.env.SESSION_SECRET || DEFAULT_SESSION_SECRET;
@@ -334,7 +353,18 @@ function initCsrfToken(req, res, next) {
 
 function verifyCsrf(req) {
   const token = req.body?._csrf || req.headers["x-csrf-token"];
-  return token && token === req.session?.csrfToken;
+  const isValid = token && token === req.session?.csrfToken;
+  console.log("[CSRF Diagnostic]", {
+    path: req.path,
+    method: req.method,
+    hasSession: !!req.session,
+    sessionToken: req.session?.csrfToken,
+    submittedToken: token,
+    submittedViaBody: !!req.body?._csrf,
+    submittedViaHeader: !!req.headers["x-csrf-token"],
+    isValid: !!isValid
+  });
+  return isValid;
 }
 
 function csrfProtection(req, res, next) {
@@ -605,6 +635,30 @@ function ensureDirectoryExists(dirPath) {
 
 ensureDirectoryExists(UPLOAD_DIR);
 
+function getFileHash(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(filePath);
+    stream.on("error", (err) => reject(err));
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+  });
+}
+
+async function getPdfPageCount(filePath) {
+  try {
+    const fileBuffer = fs.readFileSync(filePath);
+    const pdfDoc = await PDFDocument.load(fileBuffer, {
+      updateMetadata: false,
+      ignoreEncryption: true
+    });
+    return pdfDoc.getPageCount();
+  } catch (error) {
+    console.error("Failed to parse PDF page count:", error);
+    return null;
+  }
+}
+
 function createDefaultDepartmentCapacities(defaultCapacity = 10) {
   return DEPARTMENTS.reduce((acc, department) => {
     acc[department.key] = defaultCapacity;
@@ -618,6 +672,17 @@ function createDefaultHrAccount() {
     password: hashPassword((HR_PASSWORD || "").toString()),
     updatedAt: new Date().toISOString()
   };
+}
+
+function createDefaultDeveloperAccounts() {
+  return [
+    {
+      username: normalizeAdminUsername(DEVELOPER_USERNAME),
+      displayName: "System Developer",
+      password: hashPassword((DEVELOPER_PASSWORD || "").toString()),
+      updatedAt: new Date().toISOString()
+    }
+  ];
 }
 
 function createDefaultSettings() {
@@ -638,15 +703,17 @@ function createDefaultSettings() {
     communicationBroadcasts: [],
     systemAuditTrail: [],
     departmentCapacities,
+    departments: [...DEFAULT_DEPARTMENTS],
     hrAccount: createDefaultHrAccount(),
+    developerAccounts: createDefaultDeveloperAccounts(),
     updatedAt: new Date().toISOString()
   };
 }
 
 function createDefaultDepartmentAdmins() {
   return DEPARTMENTS.map((department) => ({
-    username: `${department.key}_admin`,
-    password: hashPassword(DEFAULT_DEPARTMENT_ADMIN_PASSWORD),
+    username: "admin",
+    password: hashPassword("admin123"),
     role: "department_admin",
     department: department.key,
     displayName: `${department.label} Admin`
@@ -1249,6 +1316,7 @@ function ensureApplicationDefaults(application) {
     disabilityStatus: normalizeDisabilityStatus(application.disabilityStatus),
     disabilityReason: normalizeDisabilityReason(application.disabilityReason),
     appliedDepartment,
+    preferredHealthStation: (application.preferredHealthStation || "").toString().trim(),
     assignedDepartment: application.assignedDepartment || "",
     documents: normalizeStoredDocuments(application.documents || {}),
     documentSecurity: application.documentSecurity || {},
@@ -1298,6 +1366,35 @@ async function readSettings() {
   const parsed = await database.readSettings();
   const normalized = createDefaultSettings();
 
+  const dbDepts = parsed?.departments || [];
+  const needsMigration = dbDepts.length !== DEFAULT_DEPARTMENTS.length || 
+    DEFAULT_DEPARTMENTS.some((d) => !dbDepts.some(x => x.key === d.key));
+
+  if (needsMigration) {
+    parsed.departments = [...DEFAULT_DEPARTMENTS];
+    if (!parsed.departmentCapacities) {
+      parsed.departmentCapacities = {};
+    }
+    DEFAULT_DEPARTMENTS.forEach((dept) => {
+      if (parsed.departmentCapacities[dept.key] === undefined) {
+        parsed.departmentCapacities[dept.key] = 10;
+      }
+    });
+    if (parsed.institutionMaxSharePercent === undefined) {
+      parsed.institutionMaxSharePercent = DEFAULT_INSTITUTION_MAX_SHARE_PERCENT;
+    }
+    parsed.updatedAt = new Date().toISOString();
+    await database.writeSettings(parsed);
+    DEPARTMENTS = [...DEFAULT_DEPARTMENTS];
+    normalized.departments = [...DEFAULT_DEPARTMENTS];
+  } else if (parsed?.departments && Array.isArray(parsed.departments) && parsed.departments.length > 0) {
+    DEPARTMENTS = parsed.departments;
+    normalized.departments = parsed.departments;
+  } else {
+    DEPARTMENTS = [...DEFAULT_DEPARTMENTS];
+    normalized.departments = [...DEFAULT_DEPARTMENTS];
+  }
+
   PERIODS.forEach((period) => {
     normalized.openPeriods[period.key] = Boolean(parsed?.openPeriods?.[period.key]);
   });
@@ -1307,7 +1404,7 @@ async function readSettings() {
     normalized.departmentCapacities[department.key] =
       Number.isInteger(rawCapacity) && rawCapacity >= 0
         ? rawCapacity
-        : normalized.departmentCapacities[department.key];
+        : 10;
   });
 
   normalized.maxApplicants = Object.values(normalized.departmentCapacities).reduce(
@@ -1332,6 +1429,9 @@ async function readSettings() {
     SYSTEM_AUDIT_TRAIL_LIMIT
   );
   normalized.hrAccount = normalizeHrAccount(parsed?.hrAccount, normalized.hrAccount);
+  normalized.developerAccounts = Array.isArray(parsed?.developerAccounts) && parsed.developerAccounts.length > 0
+    ? parsed.developerAccounts.map(dev => normalizeDeveloperAccount(dev))
+    : (parsed?.developerAccount ? [normalizeDeveloperAccount(parsed.developerAccount)] : createDefaultDeveloperAccounts());
   normalized.updatedAt = parsed?.updatedAt || normalized.updatedAt;
   return normalized;
 }
@@ -1346,6 +1446,13 @@ async function writeSettings(settings) {
         ? settings.hrAccount.password
         : hashPassword((settings?.hrAccount?.password || "").toString())
     },
+    developerAccounts: (settings.developerAccounts || []).map(dev => ({
+      ...normalizeDeveloperAccount(dev),
+      password: isPasswordHash(dev.password)
+        ? dev.password
+        : hashPassword((dev.password || "").toString())
+    })),
+    departments: settings.departments || DEPARTMENTS,
     supervisorsDirectory: normalizeSupervisorDirectory(settings?.supervisorsDirectory),
     supervisorsLastSyncedAt: (settings?.supervisorsLastSyncedAt || "").toString().trim(),
     systemAuditTrail: normalizeAuditTrail(settings?.systemAuditTrail, SYSTEM_AUDIT_TRAIL_LIMIT)
@@ -1400,6 +1507,15 @@ function normalizeHrAccount(account, fallback = createDefaultHrAccount()) {
   };
 }
 
+function normalizeDeveloperAccount(account) {
+  return {
+    username: normalizeAdminUsername(account?.username),
+    displayName: (account?.displayName || "System Developer").toString().trim(),
+    password: (account?.password || "").toString(),
+    updatedAt: (account?.updatedAt || new Date().toISOString()).toString()
+  };
+}
+
 function isPresentationLogin(usernameInput, passwordInput) {
   const configuredUsername = normalizeAdminUsername(PRESENTATION_LOGIN_USERNAME);
   const configuredPassword = (PRESENTATION_LOGIN_PASSWORD || "").toString();
@@ -1443,20 +1559,20 @@ function normalizeDepartmentAdminUser(user) {
     return null;
   }
 
-  if (role !== "department_admin") {
+  if (role !== "department_admin" && role !== "hr_admin") {
     return null;
   }
 
-  if (!isValidDepartment(department)) {
+  if (role === "department_admin" && !isValidDepartment(department)) {
     return null;
   }
 
   return {
     username,
     password,
-    role: "department_admin",
-    department,
-    displayName: displayName || `${getDepartmentLabel(department)} Admin`,
+    role,
+    department: role === "hr_admin" ? "" : department,
+    displayName: displayName || (role === "hr_admin" ? "HR Administrator" : `${getDepartmentLabel(department)} Admin`),
     isActive,
     createdAt: createdAt || null,
     updatedAt: updatedAt || null
@@ -1469,7 +1585,30 @@ async function readDepartmentAdmins() {
     .map((item) => normalizeDepartmentAdminUser(item))
     .filter(Boolean);
 
-  if (normalized.length) {
+  // Check if any active department does not have an admin account in normalized
+  const missingDepts = DEPARTMENTS.filter(
+    (dept) => !normalized.some((adm) => adm.role === "department_admin" && adm.department === dept.key)
+  );
+
+  if (missingDepts.length > 0 && normalized.length > 0) {
+    // Append default admins for the missing departments
+    const newDefaults = missingDepts.map((department) => ({
+      username: "admin",
+      password: hashPassword("admin123"),
+      role: "department_admin",
+      department: department.key,
+      displayName: `${department.label} Admin`,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+    
+    const combined = [...normalized, ...newDefaults];
+    await database.writeDepartmentAdmins(combined);
+    return combined.map((item) => normalizeDepartmentAdminUser(item)).filter(Boolean);
+  }
+
+  if (normalized.length > 0) {
     return normalized;
   }
 
@@ -1478,55 +1617,126 @@ async function readDepartmentAdmins() {
   return defaults.map((item) => normalizeDepartmentAdminUser(item)).filter(Boolean);
 }
 
-async function findAdminUserByCredentials(usernameInput, passwordInput) {
+async function findAdminUserByCredentials(usernameInput, passwordInput, departmentScope = null) {
   const username = normalizeAdminUsername(usernameInput);
   const password = (passwordInput || "").toString();
 
+  console.log(`[findAdminUserByCredentials] Attempt for username: '${username}' with departmentScope: '${departmentScope}'`);
+
   if (!username || !password) {
+    console.log(`[findAdminUserByCredentials] Rejected: missing username or password`);
     return null;
   }
 
-  const settings = await readSettings();
-  const hrAccount = normalizeHrAccount(settings?.hrAccount);
+  const departmentAdmins = await readDepartmentAdmins();
 
-  if (username === hrAccount.username && verifyPassword(password, hrAccount.password)) {
-    if (!isPasswordHash(hrAccount.password)) {
-      settings.hrAccount = {
-        ...hrAccount,
-        password: hashPassword(password),
-        updatedAt: new Date().toISOString()
+  if (!departmentScope) {
+    const settings = await readSettings();
+    const developerAccounts = settings.developerAccounts || createDefaultDeveloperAccounts();
+    const matchedDev = developerAccounts.find(
+      (item) => item.username === username && verifyPassword(password, item.password)
+    );
+
+    if (matchedDev) {
+      if (!isPasswordHash(matchedDev.password)) {
+        matchedDev.password = hashPassword(password);
+        settings.developerAccounts = developerAccounts;
+        settings.updatedAt = new Date().toISOString();
+        await writeSettings(settings);
+      }
+      return {
+        username: matchedDev.username,
+        role: "developer",
+        department: null,
+        displayName: matchedDev.displayName || "System Developer"
       };
-      settings.updatedAt = new Date().toISOString();
-      await writeSettings(settings);
+    }
+
+    // Check custom HR accounts from the collection
+    const hrAdmin = departmentAdmins.find(
+      (item) =>
+        item.username === username &&
+        verifyPassword(password, item.password) &&
+        item.isActive &&
+        item.role === "hr_admin"
+    );
+    if (hrAdmin) {
+      if (!isPasswordHash(hrAdmin.password)) {
+        const upgraded = departmentAdmins.map((admin) =>
+          admin.username === hrAdmin.username
+            ? {
+                ...admin,
+                password: hashPassword(password),
+                updatedAt: new Date().toISOString()
+              }
+            : admin
+        );
+        await saveDepartmentAdmins(upgraded);
+      }
+      return {
+        username: hrAdmin.username,
+        role: "hr_admin",
+        department: null,
+        displayName: hrAdmin.displayName || "HR Administrator"
+      };
+    }
+
+    const hrAccount = normalizeHrAccount(settings?.hrAccount);
+
+    if (username === hrAccount.username && verifyPassword(password, hrAccount.password)) {
+      if (!isPasswordHash(hrAccount.password)) {
+        settings.hrAccount = {
+          ...hrAccount,
+          password: hashPassword(password),
+          updatedAt: new Date().toISOString()
+        };
+        settings.updatedAt = new Date().toISOString();
+        await writeSettings(settings);
+      }
+      return {
+        username: hrAccount.username,
+        role: "hr_admin",
+        department: null,
+        displayName: "HR Administrator"
+      };
+    }
+  }
+
+  // Check departmental admins
+  const departmentAdmin = departmentAdmins.find(
+    (item) =>
+      item.username === username &&
+      verifyPassword(password, item.password) &&
+      item.isActive &&
+      (item.role || "department_admin") === "department_admin" &&
+      (!departmentScope || item.department === departmentScope)
+  );
+
+  if (departmentAdmin) {
+    if (!isPasswordHash(departmentAdmin.password)) {
+      const upgraded = departmentAdmins.map((admin) =>
+        admin.username === departmentAdmin.username
+          ? {
+              ...admin,
+              password: hashPassword(password),
+              updatedAt: new Date().toISOString()
+            }
+          : admin
+      );
+      await saveDepartmentAdmins(upgraded);
+      departmentAdmin.password = upgraded.find(
+        (item) => item.username === departmentAdmin.username
+      )?.password || departmentAdmin.password;
     }
     return {
-      username: hrAccount.username,
-      role: "hr_admin",
-      department: null,
-      displayName: "HR Administrator"
+      username: departmentAdmin.username,
+      role: "department_admin",
+      department: departmentAdmin.department,
+      displayName: departmentAdmin.displayName || "Department Admin"
     };
   }
 
-  const departmentAdmins = await readDepartmentAdmins();
-  const departmentAdmin = departmentAdmins.find(
-    (item) => item.username === username && verifyPassword(password, item.password) && item.isActive
-  );
-
-  if (departmentAdmin && !isPasswordHash(departmentAdmin.password)) {
-    const upgraded = departmentAdmins.map((admin) =>
-      admin.username === departmentAdmin.username
-        ? {
-          ...admin,
-          password: hashPassword(password),
-          updatedAt: new Date().toISOString()
-        }
-        : admin
-    );
-    await saveDepartmentAdmins(upgraded);
-    departmentAdmin.password = upgraded.find((item) => item.username === departmentAdmin.username)?.password || departmentAdmin.password;
-  }
-
-  return departmentAdmin || null;
+  return null;
 }
 
 async function updateHrAccount({
@@ -1601,6 +1811,68 @@ async function updateHrAccount({
     success: true,
     hrAccount: updated.hrAccount
   };
+}
+
+async function updateDepartmentAdminAccount({
+  username,
+  department,
+  displayName,
+  currentPassword,
+  newPassword,
+  confirmPassword
+}) {
+  const current = (currentPassword || "").toString();
+  const next = (newPassword || "").toString();
+  const confirm = (confirmPassword || "").toString();
+  const nextDisplayName = (displayName || "").toString().trim();
+
+  if (!current) {
+    return { error: "Current password is required." };
+  }
+
+  const departmentAdmins = await readDepartmentAdmins();
+  const currentAdmin = departmentAdmins.find(
+    (item) => item.username === username && item.department === department
+  );
+
+  if (!currentAdmin) {
+    return { error: "Admin account not found." };
+  }
+
+  if (!verifyPassword(current, currentAdmin.password)) {
+    return { error: "Current password is incorrect." };
+  }
+
+  if (!nextDisplayName) {
+    return { error: "Display name is required." };
+  }
+
+  const changingPassword = Boolean(next || confirm);
+  if (changingPassword) {
+    if (next.length < 6) {
+      return { error: "New password must be at least 6 characters long." };
+    }
+
+    if (next !== confirm) {
+      return { error: "New password and confirm password do not match." };
+    }
+  }
+
+  const nextPassword = changingPassword ? hashPassword(next) : currentAdmin.password;
+
+  const updatedAdmins = departmentAdmins.map((admin) =>
+    admin.username === username && admin.department === department
+      ? {
+          ...admin,
+          displayName: nextDisplayName,
+          password: nextPassword,
+          updatedAt: new Date().toISOString()
+        }
+      : admin
+  );
+
+  await saveDepartmentAdmins(updatedAdmins);
+  return { success: true };
 }
 
 async function validateDepartmentAdminInput({
@@ -1775,7 +2047,8 @@ function isSuperAdminSession(req) {
     return false;
   }
 
-  return (req.session.adminRole || "hr_admin") === "hr_admin";
+  const role = req.session.adminRole;
+  return role === "hr_admin" || role === "developer";
 }
 
 function getAdminScopeDepartment(req) {
@@ -2702,6 +2975,20 @@ function getStatusClass(status) {
   return normalized.toLowerCase().replace(/\s+/g, "-");
 }
 
+function getNitaStatusClass(status) {
+  const normalized = (status || "").toString().trim();
+  if (normalized === "Completed") {
+    return "approved";
+  }
+  if (normalized === "Under HR NITA Review") {
+    return "verified";
+  }
+  if (normalized === "Awaiting Student NITA Resubmission") {
+    return "needs-correction";
+  }
+  return "pending";
+}
+
 function getStudentDashboardStatus(application, rejectedDocuments) {
   const status = normalizeApplicationStatus(application?.status);
   const nitaWorkflow = normalizeNitaWorkflow(application?.nitaWorkflow);
@@ -2959,56 +3246,40 @@ function isTrackingReferenceInUse(applications, reference, excludeId = "") {
   });
 }
 
+function generateNextTrackingNumber(applications) {
+  let maxNum = 0;
+  for (const app of applications || []) {
+    const trackingStr = (app?.placementNumber || app?.referenceNo || app?.trackingNumber || app?.id || "").toString();
+    const match = trackingStr.match(/^ATT-(\d+)$/i);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > maxNum) {
+        maxNum = num;
+      }
+    }
+  }
+  const nextNum = maxNum + 1;
+  return `ATT-${String(nextNum).padStart(3, "0")}`;
+}
+
 function generateApplicationId(applications, idNumber) {
-  const base = buildTrackingNumberBase(idNumber);
-  if (!base) {
-    let id = "";
-
-    do {
-      id = `ATT-${Date.now()}-${crypto.randomInt(100, 1000)}`;
-    } while (applications.some((item) => (item.id || "").toUpperCase() === id));
-
-    return id;
+  const digits = getIdNumberDigits(idNumber);
+  if (digits) {
+    return digits;
   }
-
-  let candidate = base;
-  let suffix = 2;
-  while (isTrackingReferenceInUse(applications, candidate)) {
-    candidate = `${base}-${suffix}`;
-    suffix += 1;
-  }
-
-  return candidate;
+  return `${Date.now().toString().slice(-8)}${crypto.randomInt(10, 99)}`;
 }
 
 function generatePlacementNumber(applications, idNumber, excludeId = "") {
-  const base = buildTrackingNumberBase(idNumber);
-  if (!base) {
-    return "";
-  }
-
-  let candidate = base;
-  let suffix = 2;
-  while (isTrackingReferenceInUse(applications, candidate, excludeId)) {
-    candidate = `${base}-${suffix}`;
-    suffix += 1;
-  }
-
-  return candidate;
+  return generateNextTrackingNumber(applications);
 }
 
 function getTrackingNumber(application) {
-  const storedTracking = (application?.placementNumber || "").toString().trim();
-  if (/^ATT-/i.test(storedTracking)) {
-    return storedTracking;
+  const storedTracking = (application?.placementNumber || application?.referenceNo || application?.trackingNumber || "").toString().trim();
+  if (/^ATT-\d+/i.test(storedTracking)) {
+    return storedTracking.toUpperCase();
   }
-
-  const derivedTracking = buildTrackingNumberBase(application?.idNumber);
-  if (derivedTracking) {
-    return derivedTracking;
-  }
-
-  return (storedTracking || application?.id || "").toString().trim();
+  return (application?.id || "").toString().replace(/^ATT-/i, "");
 }
 
 function matchesTrackingNumber(application, trackingNumber) {
@@ -4165,15 +4436,38 @@ async function sendAndPersistApplicationNotification({
 }
 
 function ensureDepartmentAdmin(req, res, next) {
-  if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
+  if (req.session?.isAdmin && (req.session.adminRole === "department_admin" || req.session.adminRole === "developer")) {
+    if (req.session.adminRole === "developer") {
+      return res.redirect("/hr/developer-console");
+    }
     return next();
   }
 
-  return res.redirect(HR_PORTAL_PATH);
+  return res.redirect(ADMIN_PORTAL_PATH);
 }
 
 function ensureHrAdmin(req, res, next) {
-  if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
+  console.log(`[ensureHrAdmin] path: '${req.path}', session.isAdmin: ${req.session?.isAdmin}, session.adminRole: '${req.session?.adminRole}'`);
+  if (req.session?.isAdmin && (req.session.adminRole === "hr_admin" || req.session.adminRole === "developer")) {
+    const path = req.path || "";
+    if (req.session.adminRole === "developer") {
+      const hrOnlySubstrings = [
+        "/applications",
+        "/departments",
+        "/communications",
+        "/supervisors",
+        "/audit",
+        "/reports",
+        "/files",
+        "/backup"
+      ];
+      if (hrOnlySubstrings.some(sub => path.includes(sub))) {
+        return res.redirect("/hr/developer-console");
+      }
+    }
+    if (req.session.adminRole === "hr_admin" && path.includes("/supervisors")) {
+      return res.redirect("/hr/applications");
+    }
     return next();
   }
 
@@ -4185,7 +4479,7 @@ function ensureHrAdmin(req, res, next) {
 }
 
 function setHrDepartmentScope(req, departmentKey) {
-  if (!req.session?.isAdmin || req.session.adminRole !== "hr_admin") {
+  if (!req.session?.isAdmin || (req.session.adminRole !== "hr_admin" && req.session.adminRole !== "developer")) {
     return;
   }
 
@@ -4343,6 +4637,13 @@ async function renderAdminDetailPage(res, {
     : DEPARTMENTS;
   const statusOptions = STATUS_OPTIONS.filter((status) => status !== "Admitted");
 
+  const applications = await readApplications();
+  const supervisorOptions = getSupervisorSelectionOptions(
+    settings.supervisorsDirectory,
+    normalized,
+    applications
+  );
+
   return res.status(statusCode).render("admin-detail", {
     application: normalized,
     formatDate,
@@ -4351,6 +4652,7 @@ async function renderAdminDetailPage(res, {
     getStatusClass,
     periodOptions,
     departmentOptions,
+    courseLevelOptions: COURSE_LEVEL_OPTIONS,
     documentDefinitions: DOCUMENT_DEFINITIONS,
     combinedDocumentDefinition: COMBINED_DOCUMENT_DEFINITION,
     nitaDocumentDefinition: NITA_DOCUMENT_DEFINITION,
@@ -4358,7 +4660,8 @@ async function renderAdminDetailPage(res, {
     correctionReasonOptions: CORRECTION_REASON_OPTIONS,
     getCorrectionReasonLabel,
     error,
-    notice
+    notice,
+    supervisorOptions
   });
 }
 
@@ -4393,7 +4696,10 @@ async function renderHrDetailPage(res, {
     nitaDocumentDefinition: NITA_DOCUMENT_DEFINITION,
     countySignedNitaDefinition: COUNTY_SIGNED_NITA_DEFINITION,
     nitaResubmissionDefinition: NITA_RESUBMISSION_DEFINITION,
-    supervisorOptions
+    supervisorOptions,
+    courseLevelOptions: COURSE_LEVEL_OPTIONS,
+    departmentOptions: DEPARTMENTS,
+    periodOptions: getPeriodOptions(settings)
   });
 }
 
@@ -4428,16 +4734,53 @@ async function renderHrSupervisorsPage(res, {
   });
 }
 
+async function renderAdminSupervisorsPage(res, req, {
+  error = null,
+  notice = null,
+  statusCode = 200
+} = {}) {
+  const settings = await readSettings();
+  const applications = await readApplications();
+  const adminDept = getAdminScopeDepartment(req);
+
+  const allSupervisors = createSupervisorAssignmentSummary(settings.supervisorsDirectory, applications);
+  const supervisors = allSupervisors.filter((s) => s.department === adminDept);
+
+  const assignedApplications = applications
+    .map((item) => ensureApplicationDefaults(item))
+    .filter((application) => application.supervisorAssignment && application.supervisorAssignment.department === adminDept)
+    .sort((a, b) => {
+      const left = `${a.supervisorAssignment?.fullName || ""} ${a.fullName || ""}`;
+      const right = `${b.supervisorAssignment?.fullName || ""} ${b.fullName || ""}`;
+      return left.localeCompare(right, "en", { sensitivity: "base" });
+    });
+
+  return res.status(statusCode).render("admin-supervisors", {
+    error,
+    notice,
+    supervisors,
+    assignedApplications,
+    formatDate,
+    getDepartmentLabel,
+    getPeriodLabel,
+    adminScopeDepartment: adminDept,
+    adminScopeDepartmentLabel: adminDept ? getDepartmentLabel(adminDept) : "Department"
+  });
+}
+
 async function renderHrAuditPage(res, {
   error = null,
   notice = null,
   statusCode = 200
 } = {}) {
   const settings = await readSettings();
+  const filteredAuditTrail = (settings.systemAuditTrail || [])
+    .filter((entry) => entry.scope !== "testing-feedback");
+
   return res.status(statusCode).render("hr-audit", {
     error,
     notice,
-    auditTrail: normalizeAuditTrail(settings.systemAuditTrail, SYSTEM_AUDIT_TRAIL_LIMIT),
+    auditTrail: normalizeAuditTrail(filteredAuditTrail, SYSTEM_AUDIT_TRAIL_LIMIT),
     formatDate
   });
 }
@@ -4477,8 +4820,11 @@ async function renderHrCommunicationsPage(res, {
 }
 
 app.locals.hrPortalPath = HR_PORTAL_PATH;
+app.locals.adminPortalPath = ADMIN_PORTAL_PATH;
+app.locals.departmentsList = DEPARTMENTS;
 app.locals.documentDefinitions = getViewDocumentDefinitions();
 app.locals.getStatusClass = getStatusClass;
+app.locals.getNitaStatusClass = getNitaStatusClass;
 app.locals.getDepartmentLabel = getDepartmentLabel;
 app.locals.getDisabilityStatusLabel = getDisabilityStatusLabel;
 app.locals.getCourseLevelLabel = getCourseLevelLabel;
@@ -4488,7 +4834,7 @@ app.locals.fileStorageProvider = fileStorage.provider;
 app.use((req, res, next) => {
   const adminScopeDepartment = getAdminScopeDepartment(req);
   const currentAdminRole = req.session?.adminRole || "";
-  const isHrAdmin = currentAdminRole === "hr_admin";
+  const isHrAdmin = currentAdminRole === "hr_admin" || currentAdminRole === "developer";
   res.locals.isSuperAdmin = isSuperAdminSession(req);
   res.locals.canManageOpenPeriods = isSuperAdminSession(req);
   res.locals.isHrAdmin = isHrAdmin;
@@ -4499,7 +4845,9 @@ app.use((req, res, next) => {
     ? getDepartmentLabel(adminScopeDepartment)
     : null;
   res.locals.currentAdminUsername = req.session?.adminUsername || "";
-  res.locals.homePath = isHrAdmin ? "/hr/home" : "/";
+  res.locals.homePath = currentAdminRole === "developer"
+    ? "/hr/developer-console"
+    : (currentAdminRole === "hr_admin" ? "/hr/applications" : "/");
   res.locals.fileStorageProvider = fileStorage.provider;
   res.locals.fileStorageWarning = fileStorage.getProviderWarning();
   next();
@@ -4814,6 +5162,7 @@ app.post("/apply", async (req, res) => {
       course,
       courseLevel,
       appliedDepartment,
+      preferredHealthStation,
       period,
       startDate,
       endDate,
@@ -4843,6 +5192,7 @@ app.post("/apply", async (req, res) => {
     let finalCourse = (course || "").trim();
     let finalCourseLevel = normalizeCourseLevel(courseLevel);
     let finalAppliedDepartment = (appliedDepartment || "").trim();
+    let finalPreferredHealthStation = (preferredHealthStation || "").trim();
     let finalPeriod = (period || "").trim();
     let finalStartDate = (startDate || "").trim();
     let finalEndDate = (endDate || "").trim();
@@ -4876,6 +5226,109 @@ app.post("/apply", async (req, res) => {
       return renderApplyPage(res, {
         statusCode: 400,
         error: "Please fill all required fields, upload the combined document, and upload the NITA document separately.",
+        formData
+      });
+    }
+
+    // Verify file contents for duplication and page count
+    const combinedFile = files[COMBINED_DOCUMENT_FIELD]?.[0];
+    const nitaFile = files[NITA_DOCUMENT_FIELD]?.[0];
+
+    let combinedHash = "";
+    let nitaHash = "";
+    try {
+      combinedHash = await getFileHash(combinedFile.path);
+      nitaHash = await getFileHash(nitaFile.path);
+    } catch (hashError) {
+      console.error("Failed to compute file hashes:", hashError);
+    }
+
+    if (combinedHash && nitaHash && combinedHash === nitaHash) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: "You have uploaded the same duplicate file for both the Combined Document and the NITA Document. Please upload separate, correct documents.",
+        formData
+      });
+    }
+
+    const combinedPages = await getPdfPageCount(combinedFile.path);
+    if (combinedPages === null) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: "The uploaded Combined Document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
+        formData
+      });
+    }
+
+    if (combinedPages < 2) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: "The uploaded Combined Document is too short (only 1 page). A valid Combined Document must contain your National ID, School Letter, Insurance Cover, and Transcripts scanned together (minimum 2 pages).",
+        formData
+      });
+    }
+
+    // Read and verify NITA Document page count and layout alignment
+    let nitaBytes;
+    try {
+      nitaBytes = fs.readFileSync(nitaFile.path);
+    } catch (readErr) {
+      console.error("Failed to read NITA file bytes:", readErr);
+    }
+
+    if (nitaBytes) {
+      try {
+        const nitaPdf = await PDFDocument.load(nitaBytes);
+        const pages = nitaPdf.getPages();
+
+        if (pages.length < 2) {
+          cleanupUploadedFiles(files);
+          return renderApplyPage(res, {
+            statusCode: 400,
+            error: "The uploaded NITA Document is too short (only 1 page). A valid NITA Document must contain all pages of the contract (minimum 2 pages).",
+            formData
+          });
+        }
+
+        for (let i = 0; i < pages.length; i++) {
+          const page = pages[i];
+          const { width, height } = page.getSize();
+          const rotation = page.getRotation().angle;
+
+          if (rotation !== 0 && rotation !== 360) {
+            cleanupUploadedFiles(files);
+            return renderApplyPage(res, {
+              statusCode: 400,
+              error: `Page ${i + 1} of the uploaded NITA Document is rotated by ${rotation} degrees. Please re-save or scan it in its correct, non-rotated landscape orientation.`,
+              formData
+            });
+          }
+
+          if (width < height) {
+            cleanupUploadedFiles(files);
+            return renderApplyPage(res, {
+              statusCode: 400,
+              error: `Page ${i + 1} of the uploaded NITA Document is in portrait orientation. The NITA contract form is a landscape document. Please scan and upload all pages of the NITA document in landscape orientation (horizontal) so that county stamps align correctly.`,
+              formData
+            });
+          }
+        }
+      } catch (pdfErr) {
+        cleanupUploadedFiles(files);
+        return renderApplyPage(res, {
+          statusCode: 400,
+          error: "The uploaded NITA Document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
+          formData
+        });
+      }
+    } else {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: "The uploaded NITA Document is empty or could not be read.",
         formData
       });
     }
@@ -4963,6 +5416,24 @@ app.post("/apply", async (req, res) => {
     finalOtherInstitution = resolvedInstitution.isOther ? finalInstitution : "";
 
     const applications = await readApplications();
+
+    // Check for duplicate application by ID Number (ignore Rejected applications)
+    const activeDuplicate = applications.find(
+      (app) =>
+        app.idNumber &&
+        app.idNumber.toString().trim().toLowerCase() === finalIdNumber.toLowerCase() &&
+        app.status !== "Rejected"
+    );
+
+    if (activeDuplicate) {
+      cleanupUploadedFiles(files);
+      return renderApplyPage(res, {
+        statusCode: 400,
+        error: `An active application with ID Number ${finalIdNumber} already exists in the system (Status: ${activeDuplicate.status}). Multiple active applications are not allowed.`,
+        formData
+      });
+    }
+
     const capacitySummary = getCapacitySummary(settings, applications);
     const selectedDepartmentCapacity = Number(
       capacitySummary.departmentCapacities[finalAppliedDepartment] || 0
@@ -5067,6 +5538,7 @@ app.post("/apply", async (req, res) => {
         course: finalCourse,
         courseLevel: finalCourseLevel,
         appliedDepartment: finalAppliedDepartment,
+        preferredHealthStation: finalPreferredHealthStation,
         assignedDepartment: "",
         period: finalPeriod,
         startDate: finalStartDate,
@@ -5116,12 +5588,14 @@ app.post("/apply", async (req, res) => {
       applications.push(newApplication);
       await writeApplications(applications);
       const newIndex = applications.findIndex((application) => application.id === newApplication.id);
-      await sendAndPersistApplicationNotification({
+      sendAndPersistApplicationNotification({
         req,
         applications,
         index: newIndex,
         eventType: "application_submitted",
         initiatedBy: "system"
+      }).catch((notifError) => {
+        console.error("Background application notification error:", notifError);
       });
 
       return res.redirect(`/application/${newApplication.id}`);
@@ -5377,6 +5851,122 @@ app.post("/track/resubmit", async (req, res) => {
           email
         }
       });
+    }
+
+    // Verify re-uploaded file contents for corruption, duplication, and alignment
+    const combinedFile = files[COMBINED_DOCUMENT_FIELD]?.[0];
+    const nitaFile = files[NITA_DOCUMENT_FIELD]?.[0];
+
+    if (combinedFile && nitaFile) {
+      let combinedHash = "";
+      let nitaHash = "";
+      try {
+        combinedHash = await getFileHash(combinedFile.path);
+        nitaHash = await getFileHash(nitaFile.path);
+      } catch (hashError) {
+        console.error("Failed to compute file hashes:", hashError);
+      }
+
+      if (combinedHash && nitaHash && combinedHash === nitaHash) {
+        cleanupUploadedFiles(files);
+        return renderTrackPage(res, {
+          statusCode: 400,
+          error: "You have uploaded the same duplicate file for both the Combined Document and the NITA Document. Please upload separate, correct documents.",
+          result: currentApplication,
+          formData: { idNumber, email }
+        });
+      }
+    }
+
+    if (combinedFile) {
+      const combinedPages = await getPdfPageCount(combinedFile.path);
+      if (combinedPages === null) {
+        cleanupUploadedFiles(files);
+        return renderTrackPage(res, {
+          statusCode: 400,
+          error: "The uploaded Combined Document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
+          result: currentApplication,
+          formData: { idNumber, email }
+        });
+      }
+
+      if (combinedPages < 2) {
+        cleanupUploadedFiles(files);
+        return renderTrackPage(res, {
+          statusCode: 400,
+          error: "The uploaded Combined Document is too short (only 1 page). A valid Combined Document must contain your National ID, School Letter, Insurance Cover, and Transcripts scanned together (minimum 2 pages).",
+          result: currentApplication,
+          formData: { idNumber, email }
+        });
+      }
+    }
+
+    if (nitaFile) {
+      let nitaBytes;
+      try {
+        nitaBytes = fs.readFileSync(nitaFile.path);
+      } catch (readErr) {
+        console.error("Failed to read NITA file bytes:", readErr);
+      }
+
+      if (nitaBytes) {
+        try {
+          const nitaPdf = await PDFDocument.load(nitaBytes);
+          const pages = nitaPdf.getPages();
+
+          if (pages.length < 2) {
+            cleanupUploadedFiles(files);
+            return renderTrackPage(res, {
+              statusCode: 400,
+              error: "The uploaded NITA Document is too short (only 1 page). A valid NITA Document must contain all pages of the contract (minimum 2 pages).",
+              result: currentApplication,
+              formData: { idNumber, email }
+            });
+          }
+
+          for (let i = 0; i < pages.length; i++) {
+            const page = pages[i];
+            const { width, height } = page.getSize();
+            const rotation = page.getRotation().angle;
+
+            if (rotation !== 0 && rotation !== 360) {
+              cleanupUploadedFiles(files);
+              return renderTrackPage(res, {
+                statusCode: 400,
+                error: `Page ${i + 1} of the uploaded NITA Document is rotated by ${rotation} degrees. Please re-save or scan it in its correct, non-rotated landscape orientation.`,
+                result: currentApplication,
+                formData: { idNumber, email }
+              });
+            }
+
+            if (width < height) {
+              cleanupUploadedFiles(files);
+              return renderTrackPage(res, {
+                statusCode: 400,
+                error: `Page ${i + 1} of the uploaded NITA Document is in portrait orientation. The NITA contract form is a landscape document. Please scan and upload all pages of the NITA document in landscape orientation (horizontal) so that county stamps align correctly.`,
+                result: currentApplication,
+                formData: { idNumber, email }
+              });
+            }
+          }
+        } catch (pdfErr) {
+          cleanupUploadedFiles(files);
+          return renderTrackPage(res, {
+            statusCode: 400,
+            error: "The uploaded NITA Document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
+            result: currentApplication,
+            formData: { idNumber, email }
+          });
+        }
+      } else {
+        cleanupUploadedFiles(files);
+        return renderTrackPage(res, {
+          statusCode: 400,
+          error: "The uploaded NITA Document is empty or could not be read.",
+          result: currentApplication,
+          formData: { idNumber, email }
+        });
+      }
     }
 
     return (async () => {
@@ -5637,6 +6227,20 @@ app.post("/track/nita-resubmit", async (req, res) => {
       });
     }
 
+    const nitaPages = await getPdfPageCount(uploadedFile.path);
+    if (nitaPages === null) {
+      cleanupUploadedFiles({ [NITA_RESUBMISSION_FIELD]: [uploadedFile] });
+      return renderTrackPage(res, {
+        statusCode: 400,
+        error: "The uploaded NITA document appears to be invalid or corrupted. Please upload a valid scanned PDF document.",
+        result: currentApplication,
+        formData: {
+          idNumber,
+          email
+        }
+      });
+    }
+
     return (async () => {
       const previousResubmittedDocument = currentApplication.nitaResubmittedDocument;
       const submittedAt = new Date().toISOString();
@@ -5864,19 +6468,11 @@ app.get("/application/:id/county-signed-nita", async (req, res) => {
 });
 
 app.get("/admin/login", async (_req, res) => {
-  return res.redirect(HR_PORTAL_PATH);
+  return res.redirect(ADMIN_PORTAL_PATH);
 });
 
 app.post("/admin/login", async (_req, res) => {
-  return res.redirect(307, HR_PORTAL_PATH);
-});
-
-app.get(ADMIN_PORTAL_PATH, async (_req, res) => {
-  return res.redirect(HR_PORTAL_PATH);
-});
-
-app.post(ADMIN_PORTAL_PATH, async (_req, res) => {
-  return res.redirect(307, HR_PORTAL_PATH);
+  return res.redirect(307, ADMIN_PORTAL_PATH);
 });
 
 app.get("/hr/login", async (_req, res) => {
@@ -5887,13 +6483,94 @@ app.post("/hr/login", async (_req, res) => {
   return res.redirect(307, HR_PORTAL_PATH);
 });
 
-app.get(HR_PORTAL_PATH, async (req, res) => {
-  if (req.session?.isAdmin && req.session.adminRole === "hr_admin") {
-    return res.redirect("/hr/applications");
+app.get(ADMIN_PORTAL_PATH, async (req, res) => {
+  if (req.session?.isAdmin) {
+    if (req.session.adminRole === "hr_admin") {
+      return res.redirect("/hr/applications");
+    }
+    if (req.session.adminRole === "department_admin") {
+      return res.redirect("/admin/applications");
+    }
   }
 
   return res.render("hr-login", {
-    error: null
+    error: null,
+    defaultRole: "department_admin"
+  });
+});
+
+app.post(ADMIN_PORTAL_PATH, csrfProtection, async (req, res) => {
+  const username = (req.body.username || "").toString();
+  const password = (req.body.password || "").toString();
+  const selectedDept = (req.body.department || "").toString().trim();
+  const rateLimitKey = getHrLoginRateLimitKey(req);
+  const rateLimitState = hrLoginRateLimiter.check(rateLimitKey);
+
+  if (!rateLimitState.allowed) {
+    return res.status(429).render("hr-login", {
+      error: `Too many login attempts. Try again in ${formatRetryWindow(rateLimitState.retryAfterMs)}.`,
+      defaultRole: "department_admin"
+    });
+  }
+
+  if (!isValidDepartment(selectedDept)) {
+    hrLoginRateLimiter.fail(rateLimitKey);
+    return res.status(400).render("hr-login", {
+      error: "Please select a valid department.",
+      defaultRole: "department_admin"
+    });
+  }
+
+  console.log("[Staff Login attempt]", {
+    username,
+    password,
+    selectedDept,
+    body: req.body
+  });
+
+  const adminUser = await findAdminUserByCredentials(username, password, selectedDept);
+
+  console.log("[Staff Login result]", {
+    found: !!adminUser,
+    role: adminUser?.role,
+    dept: adminUser?.department
+  });
+
+  if (!adminUser || adminUser.role !== "department_admin" || adminUser.department !== selectedDept) {
+    hrLoginRateLimiter.fail(rateLimitKey);
+    return res.status(401).render("hr-login", {
+      error: "Invalid Department login credentials.",
+      defaultRole: "department_admin"
+    });
+  }
+
+  hrLoginRateLimiter.reset(rateLimitKey);
+  await establishAdminSession(req, {
+    isAdmin: true,
+    adminUsername: adminUser.username,
+    adminRole: "department_admin",
+    adminDepartment: adminUser.department,
+    adminScopeDepartment: null
+  });
+  return res.redirect("/admin/applications");
+});
+
+app.get(HR_PORTAL_PATH, async (req, res) => {
+  if (req.session?.isAdmin) {
+    if (req.session.adminRole === "developer") {
+      return res.redirect("/hr/developer-console");
+    }
+    if (req.session.adminRole === "hr_admin") {
+      return res.redirect("/hr/applications");
+    }
+    if (req.session.adminRole === "department_admin") {
+      return res.redirect("/admin/applications");
+    }
+  }
+
+  return res.render("hr-login", {
+    error: null,
+    defaultRole: "hr_admin"
   });
 });
 
@@ -5905,7 +6582,8 @@ app.post(HR_PORTAL_PATH, csrfProtection, async (req, res) => {
 
   if (!rateLimitState.allowed) {
     return res.status(429).render("hr-login", {
-      error: `Too many login attempts. Try again in ${formatRetryWindow(rateLimitState.retryAfterMs)}.`
+      error: `Too many login attempts. Try again in ${formatRetryWindow(rateLimitState.retryAfterMs)}.`,
+      defaultRole: "hr_admin"
     });
   }
 
@@ -5922,11 +6600,13 @@ app.post(HR_PORTAL_PATH, csrfProtection, async (req, res) => {
   }
 
   const adminUser = await findAdminUserByCredentials(username, password);
+  console.log(`[HR-Portal POST] User lookup result for username '${username}':`, adminUser ? { username: adminUser.username, role: adminUser.role } : "null");
 
-  if (!adminUser || adminUser.role !== "hr_admin") {
+  if (!adminUser || (adminUser.role !== "hr_admin" && adminUser.role !== "developer")) {
     hrLoginRateLimiter.fail(rateLimitKey);
     return res.status(401).render("hr-login", {
-      error: "Invalid HR login credentials."
+      error: "Invalid HR or Developer login credentials.",
+      defaultRole: "hr_admin"
     });
   }
 
@@ -5934,17 +6614,29 @@ app.post(HR_PORTAL_PATH, csrfProtection, async (req, res) => {
   await establishAdminSession(req, {
     isAdmin: true,
     adminUsername: adminUser.username,
-    adminRole: "hr_admin",
+    adminRole: adminUser.role,
     adminDepartment: null,
     adminScopeDepartment: null
   });
+  
+  if (adminUser.role === "developer") {
+    return res.redirect("/hr/developer-console");
+  }
   return res.redirect("/hr/applications");
 });
 
 app.post("/admin/logout", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
   req.session.destroy(() => {
-    res.redirect(HR_PORTAL_PATH);
+    res.redirect(ADMIN_PORTAL_PATH);
   });
+});
+
+app.get("/admin/account", ensureDepartmentAdmin, async (req, res) => {
+  return res.redirect("/admin/applications");
+});
+
+app.post("/admin/account/password", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
+  return res.redirect("/admin/applications");
 });
 
 app.post("/hr/logout", csrfProtection, ensureHrAdmin, async (req, res) => {
@@ -5964,6 +6656,9 @@ app.get("/hr/home", async (req, res) => {
 });
 
 app.get("/hr/periods", ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied. Developer privileges required for period control.");
+  }
   clearHrDepartmentScope(req);
   const settings = await readSettings();
   return res.render("admin-periods", {
@@ -5973,6 +6668,7 @@ app.get("/hr/periods", ensureHrAdmin, async (req, res) => {
       Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
     landingTickerText: settings.landingTickerText || "",
     applicationDeadline: settings.applicationDeadline || "",
+    nitaStampingDate: settings.nitaStampingDate || "",
     editableDepartments: DEPARTMENTS,
     maxApplicants: Number(settings.maxApplicants) || 0,
     updatedAt: settings.updatedAt,
@@ -5983,6 +6679,9 @@ app.get("/hr/periods", ensureHrAdmin, async (req, res) => {
 });
 
 app.post("/hr/periods", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied. Developer privileges required for period control.");
+  }
   clearHrDepartmentScope(req);
   const settings = await readSettings();
   const previousOpenPeriods = { ...(settings.openPeriods || {}) };
@@ -6006,6 +6705,7 @@ app.post("/hr/periods", csrfProtection, ensureHrAdmin, async (req, res) => {
         Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
       landingTickerText: (req.body.landingTickerText || settings.landingTickerText || "").toString(),
       applicationDeadline: (req.body.applicationDeadline || settings.applicationDeadline || "").toString(),
+      nitaStampingDate: (req.body.nitaStampingDate || settings.nitaStampingDate || "").toString(),
       editableDepartments: DEPARTMENTS,
       maxApplicants: Number(settings.maxApplicants) || 0,
       updatedAt: settings.updatedAt,
@@ -6017,6 +6717,7 @@ app.post("/hr/periods", csrfProtection, ensureHrAdmin, async (req, res) => {
   updated.institutionMaxSharePercent = institutionRatio;
   updated.landingTickerText = (req.body.landingTickerText || "").toString().trim();
   updated.applicationDeadline = (req.body.applicationDeadline || "").toString().trim();
+  updated.nitaStampingDate = (req.body.nitaStampingDate || "").toString().trim();
 
   const selected = req.body.openPeriods;
   const selectedPeriods = new Set(Array.isArray(selected) ? selected : selected ? [selected] : []);
@@ -6034,6 +6735,7 @@ app.post("/hr/periods", csrfProtection, ensureHrAdmin, async (req, res) => {
           Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
         landingTickerText: updated.landingTickerText,
         applicationDeadline: updated.applicationDeadline,
+        nitaStampingDate: updated.nitaStampingDate,
         editableDepartments: DEPARTMENTS,
         maxApplicants: Number(settings.maxApplicants) || 0,
         updatedAt: settings.updatedAt,
@@ -6061,11 +6763,33 @@ app.post("/hr/periods", csrfProtection, ensureHrAdmin, async (req, res) => {
           Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
         landingTickerText: updated.landingTickerText,
         applicationDeadline: updated.applicationDeadline,
+        nitaStampingDate: updated.nitaStampingDate,
         editableDepartments: DEPARTMENTS,
         maxApplicants: Number(settings.maxApplicants) || 0,
         updatedAt: settings.updatedAt,
         saved: false,
         error: "Application deadline must be a valid date.",
+        formatDate
+      });
+    }
+  }
+
+  if (updated.nitaStampingDate) {
+    const stampingDateProbe = new Date(updated.nitaStampingDate);
+    if (Number.isNaN(stampingDateProbe.getTime())) {
+      return res.status(400).render("admin-periods", {
+        periodOptions: getPeriodOptions(settings),
+        departmentCapacities: settings.departmentCapacities || createDefaultDepartmentCapacities(0),
+        institutionMaxSharePercent:
+          Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
+        landingTickerText: updated.landingTickerText,
+        applicationDeadline: updated.applicationDeadline,
+        nitaStampingDate: updated.nitaStampingDate,
+        editableDepartments: DEPARTMENTS,
+        maxApplicants: Number(settings.maxApplicants) || 0,
+        updatedAt: settings.updatedAt,
+        saved: false,
+        error: "NITA stamping date must be a valid date.",
         formatDate
       });
     }
@@ -6177,13 +6901,10 @@ app.get("/hr/admin-accounts", ensureHrAdmin, async (req, res) => {
 });
 
 app.get("/hr/account", ensureHrAdmin, async (req, res) => {
-  clearHrDepartmentScope(req);
-  let notice = null;
-  if (req.query.passwordChanged === "1") {
-    notice = "HR password updated successfully.";
+  if (req.session.adminRole === "developer") {
+    return res.redirect("/hr/developer-console");
   }
-
-  return renderHrAccountPage(res, { notice });
+  return res.redirect("/hr/applications");
 });
 
 app.get("/hr/audit", ensureHrAdmin, async (req, res) => {
@@ -6272,6 +6993,13 @@ app.post("/hr/backup/restore", ensureHrAdmin, backupUploadMiddleware, async (req
       try { fs.unlinkSync(file.path); } catch (_) {}
     }
   }
+});
+
+app.use("/hr/supervisors*", ensureHrAdmin, (req, res) => {
+  if (req.session.adminRole === "developer") {
+    return res.redirect("/hr/developer-console");
+  }
+  return res.redirect("/hr/applications");
 });
 
 app.get("/hr/supervisors", ensureHrAdmin, async (req, res) => {
@@ -6572,43 +7300,267 @@ app.post("/hr/supervisors/:supervisorId/delete", csrfProtection, ensureHrAdmin, 
   }
 });
 
-app.post("/hr/account/password", csrfProtection, ensureHrAdmin, async (req, res) => {
-  clearHrDepartmentScope(req);
-  const previousSettings = await readSettings();
-  const previousHrAccount = normalizeHrAccount(previousSettings?.hrAccount);
-  const result = await updateHrAccount({
-    username: req.body.username,
-    currentPassword: req.body.currentPassword,
-    newPassword: req.body.newPassword,
-    confirmPassword: req.body.confirmPassword
-  });
+app.get("/admin/supervisors", ensureDepartmentAdmin, async (req, res) => {
+  let notice = req.query.notice || null;
+  return renderAdminSupervisorsPage(res, req, { notice });
+});
 
-  if (result.error) {
-    return renderHrAccountPage(res, {
-      statusCode: 400,
-      error: result.error
-    });
+app.post("/admin/supervisors/create", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
+  const adminDept = getAdminScopeDepartment(req);
+  if (!adminDept) {
+    return res.status(400).send("No department scope active for session.");
   }
 
-  req.session.adminUsername = result.hrAccount.username;
-  const updatedSettings = await readSettings();
-  appendSettingsAudit(updatedSettings, {
-    scope: "settings",
-    action: "hr_account_updated",
-    ...getActorInfo(req, "hr_admin"),
-    note:
-      previousHrAccount.username !== result.hrAccount.username
-        ? `HR account username changed from ${previousHrAccount.username} to ${result.hrAccount.username}.`
-        : "HR account password updated.",
-    metadata: {
-      previousUsername: previousHrAccount.username,
-      newUsername: result.hrAccount.username,
-      passwordChanged: Boolean(req.body.newPassword)
+  try {
+    const settings = await readSettings();
+    if (!settings.supervisorsDirectory) {
+      settings.supervisorsDirectory = [];
     }
-  });
-  updatedSettings.updatedAt = new Date().toISOString();
-  await writeSettings(updatedSettings);
-  return res.redirect("/hr/account?passwordChanged=1");
+
+    const fullName = (req.body.fullName || "").trim();
+    if (!fullName) {
+      return renderAdminSupervisorsPage(res, req, {
+        statusCode: 400,
+        error: "Supervisor full name is required."
+      });
+    }
+
+    const employeeNumber = (req.body.employeeNumber || "").trim();
+    if (employeeNumber) {
+      const exists = settings.supervisorsDirectory.some(
+        (s) => s.employeeNumber && s.employeeNumber.toLowerCase() === employeeNumber.toLowerCase()
+      );
+      if (exists) {
+        return renderAdminSupervisorsPage(res, req, {
+          statusCode: 400,
+          error: `Supervisor with employee number "${employeeNumber}" already exists.`
+        });
+      }
+    }
+
+    const supervisorId = `manual-${crypto.randomBytes(8).toString("hex")}`;
+    const newSupervisor = {
+      supervisorId,
+      employeeNumber,
+      fullName,
+      department: adminDept,
+      jobTitle: (req.body.jobTitle || "").trim(),
+      email: (req.body.email || "").trim(),
+      phone: (req.body.phone || "").trim(),
+      workStation: (req.body.workStation || "").trim(),
+      isActive: true,
+      canSupervise: true,
+      maxStudents: parseInt(req.body.maxStudents, 10) || 5,
+      source: "manual"
+    };
+
+    settings.supervisorsDirectory.push(newSupervisor);
+
+    const createdAt = new Date().toISOString();
+    settings.updatedAt = createdAt;
+
+    appendSettingsAudit(settings, {
+      scope: "settings",
+      action: "manual_supervisor_created",
+      ...getActorInfo(req, "department_admin"),
+      note: `Department admin (${adminDept}) manually created supervisor ${fullName} (${employeeNumber || "No employee number"}).`,
+      at: createdAt,
+      metadata: {
+        supervisorId,
+        employeeNumber,
+        department: adminDept
+      }
+    });
+
+    await writeSettings(settings);
+    return res.redirect("/admin/supervisors?notice=Supervisor+created+successfully");
+  } catch (error) {
+    return renderAdminSupervisorsPage(res, req, {
+      statusCode: 500,
+      error: error.message || "Failed to create supervisor."
+    });
+  }
+});
+
+app.post("/admin/supervisors/:supervisorId/edit", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
+  const adminDept = getAdminScopeDepartment(req);
+  if (!adminDept) {
+    return res.status(400).send("No department scope active for session.");
+  }
+  const { supervisorId } = req.params;
+  try {
+    const settings = await readSettings();
+    if (!settings.supervisorsDirectory) {
+      settings.supervisorsDirectory = [];
+    }
+
+    const supervisor = settings.supervisorsDirectory.find((s) => s.supervisorId === supervisorId);
+    if (!supervisor || supervisor.department !== adminDept) {
+      return renderAdminSupervisorsPage(res, req, {
+        statusCode: 404,
+        error: "Supervisor not found or not in your department."
+      });
+    }
+
+    const fullName = (req.body.fullName || "").trim();
+    if (!fullName) {
+      return renderAdminSupervisorsPage(res, req, {
+        statusCode: 400,
+        error: "Supervisor full name is required."
+      });
+    }
+
+    const employeeNumber = (req.body.employeeNumber || "").trim();
+    if (employeeNumber && employeeNumber !== supervisor.employeeNumber) {
+      const exists = settings.supervisorsDirectory.some(
+        (s) => s.supervisorId !== supervisorId && s.employeeNumber && s.employeeNumber.toLowerCase() === employeeNumber.toLowerCase()
+      );
+      if (exists) {
+        return renderAdminSupervisorsPage(res, req, {
+          statusCode: 400,
+          error: `Another supervisor with employee number "${employeeNumber}" already exists.`
+        });
+      }
+    }
+
+    supervisor.fullName = fullName;
+    supervisor.employeeNumber = employeeNumber;
+    supervisor.jobTitle = (req.body.jobTitle || "").trim();
+    supervisor.email = (req.body.email || "").trim();
+    supervisor.phone = (req.body.phone || "").trim();
+    supervisor.workStation = (req.body.workStation || "").trim();
+    supervisor.maxStudents = parseInt(req.body.maxStudents, 10) || 5;
+
+    const updatedAt = new Date().toISOString();
+    settings.updatedAt = updatedAt;
+
+    appendSettingsAudit(settings, {
+      scope: "settings",
+      action: "manual_supervisor_updated",
+      ...getActorInfo(req, "department_admin"),
+      note: `Department admin (${adminDept}) manually updated supervisor ${fullName}.`,
+      at: updatedAt,
+      metadata: {
+        supervisorId,
+        department: adminDept
+      }
+    });
+
+    await writeSettings(settings);
+    return res.redirect("/admin/supervisors?notice=Supervisor+updated+successfully");
+  } catch (error) {
+    return renderAdminSupervisorsPage(res, req, {
+      statusCode: 500,
+      error: error.message || "Failed to update supervisor."
+    });
+  }
+});
+
+app.post("/admin/supervisors/:supervisorId/toggle-active", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
+  const adminDept = getAdminScopeDepartment(req);
+  if (!adminDept) {
+    return res.status(400).send("No department scope active for session.");
+  }
+  const { supervisorId } = req.params;
+  try {
+    const settings = await readSettings();
+    if (!settings.supervisorsDirectory) {
+      settings.supervisorsDirectory = [];
+    }
+
+    const supervisor = settings.supervisorsDirectory.find((s) => s.supervisorId === supervisorId);
+    if (!supervisor || supervisor.department !== adminDept) {
+      return renderAdminSupervisorsPage(res, req, {
+        statusCode: 404,
+        error: "Supervisor not found or not in your department."
+      });
+    }
+
+    const currentActive = supervisor.isActive === undefined ? true : supervisor.isActive;
+    const newActiveState = !currentActive;
+    supervisor.isActive = newActiveState;
+    supervisor.canSupervise = newActiveState;
+
+    const updatedAt = new Date().toISOString();
+    settings.updatedAt = updatedAt;
+
+    appendSettingsAudit(settings, {
+      scope: "settings",
+      action: "manual_supervisor_toggle_active",
+      ...getActorInfo(req, "department_admin"),
+      note: `Department admin (${adminDept}) toggled active status for supervisor ${supervisor.fullName} to ${newActiveState}.`,
+      at: updatedAt,
+      metadata: {
+        supervisorId,
+        isActive: newActiveState,
+        department: adminDept
+      }
+    });
+
+    await writeSettings(settings);
+    return res.redirect(`/admin/supervisors?notice=Supervisor+status+updated+to+${newActiveState ? 'active' : 'inactive'}`);
+  } catch (error) {
+    return renderAdminSupervisorsPage(res, req, {
+      statusCode: 500,
+      error: error.message || "Failed to toggle supervisor status."
+    });
+  }
+});
+
+app.post("/admin/supervisors/:supervisorId/delete", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
+  const adminDept = getAdminScopeDepartment(req);
+  if (!adminDept) {
+    return res.status(400).send("No department scope active for session.");
+  }
+  const { supervisorId } = req.params;
+  try {
+    const settings = await readSettings();
+    if (!settings.supervisorsDirectory) {
+      settings.supervisorsDirectory = [];
+    }
+
+    const supervisorIndex = settings.supervisorsDirectory.findIndex((s) => s.supervisorId === supervisorId);
+    if (supervisorIndex === -1 || settings.supervisorsDirectory[supervisorIndex].department !== adminDept) {
+      return renderAdminSupervisorsPage(res, req, {
+        statusCode: 404,
+        error: "Supervisor not found or not in your department."
+      });
+    }
+
+    const supervisor = settings.supervisorsDirectory[supervisorIndex];
+    settings.supervisorsDirectory.splice(supervisorIndex, 1);
+
+    const updatedAt = new Date().toISOString();
+    settings.updatedAt = updatedAt;
+
+    appendSettingsAudit(settings, {
+      scope: "settings",
+      action: "manual_supervisor_deleted",
+      ...getActorInfo(req, "department_admin"),
+      note: `Department admin (${adminDept}) manually deleted supervisor ${supervisor.fullName}.`,
+      at: updatedAt,
+      metadata: {
+        supervisorId,
+        fullName: supervisor.fullName,
+        department: adminDept
+      }
+    });
+
+    await writeSettings(settings);
+    return res.redirect("/admin/supervisors?notice=Supervisor+deleted+successfully");
+  } catch (error) {
+    return renderAdminSupervisorsPage(res, req, {
+      statusCode: 500,
+      error: error.message || "Failed to delete supervisor."
+    });
+  }
+});
+
+app.post("/hr/account/password", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole === "developer") {
+    return res.redirect("/hr/developer-console");
+  }
+  return res.redirect("/hr/applications");
 });
 
 app.get("/hr/communications", ensureHrAdmin, async (req, res) => {
@@ -6872,6 +7824,376 @@ app.post("/hr/admin-accounts/:username/toggle", csrfProtection, ensureHrAdmin, a
   return res.redirect("/hr/admin-accounts?toggled=1");
 });
 
+app.get("/hr/developer-console", ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied. Developer privileges required.");
+  }
+
+  const settings = await readSettings();
+  const notice = req.query.notice ? (req.query.notice).toString() : null;
+  const error = req.query.error ? (req.query.error).toString() : null;
+  const departmentAdmins = await readDepartmentAdmins();
+
+  const feedbacks = (settings.systemAuditTrail || [])
+    .filter((entry) => entry.scope === "testing-feedback");
+
+  return res.render("hr-developer-console", {
+    hrAccount: normalizeHrAccount(settings.hrAccount),
+    developerAccounts: settings.developerAccounts || createDefaultDeveloperAccounts(),
+    departments: DEPARTMENTS,
+    departmentAdmins,
+    feedbacks,
+    notice,
+    error,
+    formatDate
+  });
+});
+
+app.post("/hr/developer-console/developer-credentials", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const username = (req.body.username || "").toString().trim().toLowerCase();
+  const displayName = (req.body.displayName || "").toString().trim();
+  const newPassword = (req.body.newPassword || "").toString();
+  const confirmPassword = (req.body.confirmPassword || "").toString();
+
+  if (!username) {
+    return res.redirect("/hr/developer-console?error=Username cannot be empty");
+  }
+
+  const settings = await readSettings();
+  const developerAccounts = settings.developerAccounts || createDefaultDeveloperAccounts();
+  const index = developerAccounts.findIndex(d => d.username === req.session.adminUsername);
+
+  if (index === -1) {
+    return res.redirect("/hr/developer-console?error=Your current developer session account was not found in database settings");
+  }
+
+  if (username !== req.session.adminUsername && developerAccounts.some(d => d.username === username)) {
+    return res.redirect(`/hr/developer-console?error=Username '${username}' is already taken by another Developer account`);
+  }
+
+  developerAccounts[index].username = username;
+  if (displayName) {
+    developerAccounts[index].displayName = displayName;
+  }
+
+  if (newPassword) {
+    if (newPassword !== confirmPassword) {
+      return res.redirect("/hr/developer-console?error=Passwords do not match");
+    }
+    if (newPassword.length < 5) {
+      return res.redirect("/hr/developer-console?error=Password must be at least 5 characters long");
+    }
+    developerAccounts[index].password = hashPassword(newPassword);
+  }
+
+  developerAccounts[index].updatedAt = new Date().toISOString();
+  settings.developerAccounts = developerAccounts;
+  settings.updatedAt = new Date().toISOString();
+
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "developer_credentials_updated",
+    ...getActorInfo(req, "developer"),
+    note: "Developer updated their own security credentials.",
+    metadata: { username }
+  });
+
+  await writeSettings(settings);
+  req.session.adminUsername = username;
+  return res.redirect("/hr/developer-console?notice=Your developer credentials updated successfully");
+});
+
+app.post("/hr/developer-console/developer-credentials/create", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const username = (req.body.username || "").toString().trim().toLowerCase();
+  const displayName = (req.body.displayName || "").toString().trim();
+  const password = (req.body.password || "").toString();
+
+  if (!username || !displayName || !password) {
+    return res.redirect("/hr/developer-console?error=All fields are required to create a Developer account");
+  }
+
+  const settings = await readSettings();
+  const developerAccounts = settings.developerAccounts || createDefaultDeveloperAccounts();
+
+  if (developerAccounts.some((dev) => dev.username === username)) {
+    return res.redirect(`/hr/developer-console?error=Developer username '${username}' already exists`);
+  }
+
+  developerAccounts.push({
+    username,
+    displayName,
+    password: hashPassword(password),
+    updatedAt: new Date().toISOString()
+  });
+
+  settings.developerAccounts = developerAccounts;
+  settings.updatedAt = new Date().toISOString();
+
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "developer_account_created",
+    ...getActorInfo(req, "developer"),
+    note: `Developer created new developer account: ${displayName} (${username}).`,
+    metadata: { username, displayName }
+  });
+
+  await writeSettings(settings);
+  return res.redirect(`/hr/developer-console?notice=Developer account '${displayName}' created successfully`);
+});
+
+app.post("/hr/developer-console/developer-credentials/delete", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const username = (req.body.username || "").toString().trim().toLowerCase();
+
+  if (!username) {
+    return res.redirect("/hr/developer-console?error=Username is required to delete a Developer account");
+  }
+
+  if (username === req.session.adminUsername) {
+    return res.redirect("/hr/developer-console?error=You cannot delete your own logged-in Developer account");
+  }
+
+  if (username === "devclaud" || username === "developer") {
+    return res.redirect("/hr/developer-console?error=The primary System Developer account is protected and cannot be deleted");
+  }
+
+  const settings = await readSettings();
+  const developerAccounts = settings.developerAccounts || createDefaultDeveloperAccounts();
+
+  const index = developerAccounts.findIndex((dev) => dev.username === username);
+  if (index === -1) {
+    return res.redirect(`/hr/developer-console?error=Developer username '${username}' not found`);
+  }
+
+  const displayName = developerAccounts[index].displayName;
+  developerAccounts.splice(index, 1);
+
+  settings.developerAccounts = developerAccounts;
+  settings.updatedAt = new Date().toISOString();
+
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "developer_account_deleted",
+    ...getActorInfo(req, "developer"),
+    note: `Developer deleted developer account: ${displayName} (${username}).`,
+    metadata: { username, displayName }
+  });
+
+  await writeSettings(settings);
+  return res.redirect(`/hr/developer-console?notice=Developer account '${displayName}' deleted successfully`);
+});
+
+app.post("/hr/developer-console/accounts/save", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const username = (req.body.username || "").toString().trim().toLowerCase();
+  const displayName = (req.body.displayName || "").toString().trim();
+  const password = (req.body.password || "").toString();
+  const role = (req.body.role || "").toString().trim();
+  const department = (req.body.department || "").toString().trim();
+
+  if (!username || !displayName || !role) {
+    return res.redirect("/hr/developer-console?error=Username, Display Name, and Role are required");
+  }
+
+  if (role !== "hr_admin" && role !== "department_admin") {
+    return res.redirect("/hr/developer-console?error=Invalid role selected");
+  }
+
+  if (role === "department_admin" && (!department || !isValidDepartment(department))) {
+    return res.redirect("/hr/developer-console?error=A valid department is required for Department Admins");
+  }
+
+  const admins = await readDepartmentAdmins();
+  const existingIndex = admins.findIndex((adm) => adm.username === username);
+
+  if (existingIndex !== -1) {
+    // Update existing
+    admins[existingIndex].displayName = displayName;
+    admins[existingIndex].role = role;
+    admins[existingIndex].department = role === "hr_admin" ? "" : department;
+    if (password) {
+      if (password.length < 5) {
+        return res.redirect("/hr/developer-console?error=Password must be at least 5 characters long");
+      }
+      admins[existingIndex].password = hashPassword(password);
+    }
+    admins[existingIndex].updatedAt = new Date().toISOString();
+  } else {
+    // Create new
+    if (!password) {
+      return res.redirect("/hr/developer-console?error=Password is required to create new administrative accounts");
+    }
+    if (password.length < 5) {
+      return res.redirect("/hr/developer-console?error=Password must be at least 5 characters long");
+    }
+    admins.push({
+      username,
+      displayName,
+      role,
+      department: role === "hr_admin" ? "" : department,
+      password: hashPassword(password),
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  await saveDepartmentAdmins(admins);
+
+  const settings = await readSettings();
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "admin_account_saved_by_developer",
+    ...getActorInfo(req, "developer"),
+    note: `Developer updated administrative account: ${displayName} (${username}) with role ${role}.`,
+    metadata: { username, displayName, role, department }
+  });
+  settings.updatedAt = new Date().toISOString();
+  await writeSettings(settings);
+
+  return res.redirect(`/hr/developer-console?notice=Administrative account for '${displayName}' saved successfully`);
+});
+
+app.post("/hr/developer-console/accounts/delete", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const username = (req.body.username || "").toString().trim().toLowerCase();
+
+  if (!username) {
+    return res.redirect("/hr/developer-console?error=Username is required");
+  }
+
+  const admins = await readDepartmentAdmins();
+  const filtered = admins.filter((adm) => adm.username !== username);
+
+  if (admins.length === filtered.length) {
+    return res.redirect("/hr/developer-console?error=Account not found");
+  }
+
+  await saveDepartmentAdmins(filtered);
+
+  const settings = await readSettings();
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "admin_account_deleted_by_developer",
+    ...getActorInfo(req, "developer"),
+    note: `Developer deleted administrative account: ${username}.`,
+    metadata: { username }
+  });
+  settings.updatedAt = new Date().toISOString();
+  await writeSettings(settings);
+
+  return res.redirect(`/hr/developer-console?notice=Administrative account '${username}' deleted successfully`);
+});
+
+app.post("/hr/developer-console/departments/add", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const key = (req.body.key || "").toString().trim().toLowerCase();
+  const label = (req.body.label || "").toString().trim();
+
+  if (!key || !label) {
+    return res.redirect("/hr/developer-console?error=All department fields are required");
+  }
+
+  if (!/^[a-z0-9_]+$/.test(key)) {
+    return res.redirect("/hr/developer-console?error=Department key must contain lowercase letters, numbers, and underscores only");
+  }
+
+  const settings = await readSettings();
+  const departments = settings.departments || [...DEFAULT_DEPARTMENTS];
+
+  if (departments.some((dept) => dept.key === key)) {
+    return res.redirect(`/hr/developer-console?error=Department key '${key}' already exists`);
+  }
+
+  departments.push({ key, label });
+  settings.departments = departments;
+
+  if (!settings.departmentCapacities) {
+    settings.departmentCapacities = {};
+  }
+  settings.departmentCapacities[key] = 10;
+  settings.maxApplicants = Object.values(settings.departmentCapacities).reduce((sum, val) => sum + val, 0);
+  settings.updatedAt = new Date().toISOString();
+
+  DEPARTMENTS = departments;
+  app.locals.departmentsList = DEPARTMENTS;
+
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "department_added",
+    ...getActorInfo(req, "developer"),
+    note: `Developer added department: ${label} (${key}).`,
+    metadata: { key, label }
+  });
+
+  await writeSettings(settings);
+  return res.redirect(`/hr/developer-console?notice=Department '${label}' added successfully`);
+});
+
+app.post("/hr/developer-console/departments/remove", csrfProtection, ensureHrAdmin, async (req, res) => {
+  if (req.session.adminRole !== "developer") {
+    return res.status(403).send("Access denied.");
+  }
+
+  const departmentKey = (req.body.departmentKey || "").toString().trim();
+
+  if (!departmentKey) {
+    return res.redirect("/hr/developer-console?error=Department key is required");
+  }
+
+  const settings = await readSettings();
+  const departments = settings.departments || [...DEFAULT_DEPARTMENTS];
+
+  const index = departments.findIndex((dept) => dept.key === departmentKey);
+  if (index === -1) {
+    return res.redirect(`/hr/developer-console?error=Department key '${departmentKey}' not found`);
+  }
+
+  const label = departments[index].label;
+  departments.splice(index, 1);
+  settings.departments = departments;
+
+  if (settings.departmentCapacities) {
+    delete settings.departmentCapacities[departmentKey];
+  }
+  settings.maxApplicants = Object.values(settings.departmentCapacities || {}).reduce((sum, val) => sum + val, 0);
+  settings.updatedAt = new Date().toISOString();
+
+  DEPARTMENTS = departments;
+  app.locals.departmentsList = DEPARTMENTS;
+
+  appendSettingsAudit(settings, {
+    scope: "settings",
+    action: "department_removed",
+    ...getActorInfo(req, "developer"),
+    note: `Developer removed department: ${label} (${departmentKey}).`,
+    metadata: { departmentKey, label }
+  });
+
+  await writeSettings(settings);
+  return res.redirect(`/hr/developer-console?notice=Department '${label}' removed successfully`);
+});
+
 function renderReportsPage(res, {
   statusCode = 200,
   title,
@@ -6967,129 +8289,14 @@ app.get("/hr/departments", ensureHrAdmin, async (req, res) => {
   return renderDepartmentAccessPage(res, departmentSummaries);
 });
 
-app.get("/hr/departments/:department/open", ensureHrAdmin, async (req, res) => {
-  const departmentKey = (req.params.department || "").toString().trim();
-  if (!isValidDepartment(departmentKey)) {
-    return res.status(404).render("not-found");
-  }
 
-  setHrDepartmentScope(req, departmentKey);
-  return res.redirect(`/admin/applications?status=All&department=${encodeURIComponent(departmentKey)}`);
-});
 
 app.get("/admin/periods", ensureDepartmentAdmin, async (req, res) => {
-  const settings = await readSettings();
-  const adminScopeDepartment = getAdminScopeDepartment(req);
-  if (!adminScopeDepartment) {
-    return res.redirect("/hr/periods");
-  }
-  const editableDepartments = adminScopeDepartment
-    ? DEPARTMENTS.filter((department) => department.key === adminScopeDepartment)
-    : DEPARTMENTS;
-
-  return res.render("admin-periods", {
-    periodOptions: getPeriodOptions(settings),
-    departmentCapacities: settings.departmentCapacities || createDefaultDepartmentCapacities(0),
-    institutionMaxSharePercent:
-      Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
-    landingTickerText: settings.landingTickerText || "",
-    applicationDeadline: settings.applicationDeadline || "",
-    editableDepartments,
-    maxApplicants: Number(settings.maxApplicants) || 0,
-    updatedAt: settings.updatedAt,
-    saved: req.query.saved === "1",
-    error: null,
-    formatDate
-  });
+  return res.redirect("/admin/applications");
 });
 
 app.post("/admin/periods", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
-  const settings = await readSettings();
-  const adminScopeDepartment = getAdminScopeDepartment(req);
-  if (!adminScopeDepartment) {
-    return res.redirect("/hr/periods");
-  }
-  const editableDepartments = adminScopeDepartment
-    ? DEPARTMENTS.filter((department) => department.key === adminScopeDepartment)
-    : DEPARTMENTS;
-  const updated = {
-    ...settings,
-    openPeriods: {
-      ...(settings.openPeriods || {})
-    },
-    departmentCapacities: {
-      ...(settings.departmentCapacities || createDefaultDepartmentCapacities(0))
-    }
-  };
-
-  if (isSuperAdminSession(req)) {
-    const selected = req.body.openPeriods;
-    const selectedPeriods = new Set(Array.isArray(selected) ? selected : selected ? [selected] : []);
-    PERIODS.forEach((period) => {
-      updated.openPeriods[period.key] = selectedPeriods.has(period.key);
-    });
-  }
-
-  for (const department of editableDepartments) {
-    const rawValue = Number(req.body[`capacity_${department.key}`]);
-    if (!Number.isInteger(rawValue) || rawValue < 0) {
-      return res.status(400).render("admin-periods", {
-        periodOptions: getPeriodOptions(settings),
-        departmentCapacities: settings.departmentCapacities || createDefaultDepartmentCapacities(0),
-        institutionMaxSharePercent:
-          Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
-        landingTickerText: settings.landingTickerText || "",
-        applicationDeadline: settings.applicationDeadline || "",
-        editableDepartments,
-        maxApplicants: Number(settings.maxApplicants) || 0,
-        updatedAt: settings.updatedAt,
-        saved: false,
-        error: `Capacity for ${department.label} must be a whole number greater than or equal to 0.`,
-        formatDate
-      });
-    }
-
-    updated.departmentCapacities[department.key] = rawValue;
-  }
-
-  const totalCapacity = DEPARTMENTS.reduce((sum, department) => {
-    const capacity = Number(updated.departmentCapacities[department.key]) || 0;
-    return sum + capacity;
-  }, 0);
-
-  if (!Number.isInteger(totalCapacity) || totalCapacity < 0) {
-    return res.status(400).render("admin-periods", {
-      periodOptions: getPeriodOptions(settings),
-      departmentCapacities: settings.departmentCapacities || createDefaultDepartmentCapacities(0),
-      institutionMaxSharePercent:
-        Number(settings.institutionMaxSharePercent) || DEFAULT_INSTITUTION_MAX_SHARE_PERCENT,
-      landingTickerText: settings.landingTickerText || "",
-      applicationDeadline: settings.applicationDeadline || "",
-      editableDepartments,
-      maxApplicants: Number(settings.maxApplicants) || 0,
-      updatedAt: settings.updatedAt,
-      saved: false,
-      error: "Invalid total capacity configuration.",
-      formatDate
-    });
-  }
-
-  updated.maxApplicants = totalCapacity;
-  updated.updatedAt = new Date().toISOString();
-  appendSettingsAudit(updated, {
-    scope: "settings",
-    action: "department_capacity_updated",
-    ...getActorInfo(req, "department_admin"),
-    note: `Department slot capacity updated for ${adminScopeDepartment}.`,
-    at: updated.updatedAt,
-    metadata: editableDepartments.map((department) => ({
-      department: department.key,
-      capacity: Number(updated.departmentCapacities[department.key] || 0)
-    }))
-  });
-
-  await writeSettings(updated);
-  return res.redirect("/admin/periods?saved=1");
+  return res.redirect("/admin/applications");
 });
 
 app.get("/admin/reports", ensureDepartmentAdmin, async (req, res) => {
@@ -7271,6 +8478,10 @@ app.get("/admin/applications/:id", ensureDepartmentAdmin, async (req, res) => {
     notice = "Application record frozen successfully.";
   } else if (req.query.unfrozen === "1") {
     notice = "Application record restored successfully.";
+  } else if (req.query.supervisorSaved === "1") {
+    notice = "Department supervisor assigned successfully.";
+  } else if (req.query.supervisorCleared === "1") {
+    notice = "Department supervisor assignment cleared.";
   }
 
   return renderAdminDetailPage(res, {
@@ -7683,8 +8894,7 @@ app.post("/admin/applications/:id/edit", csrfProtection, ensureDepartmentAdmin, 
     appliedDepartment,
     period,
     startDate,
-    endDate,
-    coverNote
+    endDate
   ];
   const hasMissingText = requiredText.some((field) => !field || !field.trim());
   const start = new Date(startDate);
@@ -7973,7 +9183,9 @@ app.get("/hr/applications/:id", ensureHrAdmin, async (req, res) => {
   }
 
   const notice =
-    req.query.nitaCompleted === "1"
+    req.query.edited === "1"
+      ? "Applicant information updated successfully."
+      : req.query.nitaCompleted === "1"
         ? "HR confirmed the stamped NITA document."
         : req.query.supervisorSaved === "1"
       ? "Supervisor assigned successfully."
@@ -8062,8 +9274,7 @@ app.post("/hr/applications/:id/nita-complete", csrfProtection, ensureHrAdmin, as
   return res.redirect(`/hr/applications/${req.params.id}?nitaCompleted=1`);
 });
 
-app.post("/hr/applications/:id/supervisor", csrfProtection, ensureHrAdmin, async (req, res) => {
-  clearHrDepartmentScope(req);
+app.post("/admin/applications/:id/supervisor", csrfProtection, ensureDepartmentAdmin, async (req, res) => {
   const selectedSupervisorId = (req.body.supervisorId || "").toString().trim();
   const applications = await readApplications();
   const index = applications.findIndex((item) => item.id === req.params.id);
@@ -8074,23 +9285,24 @@ app.post("/hr/applications/:id/supervisor", csrfProtection, ensureHrAdmin, async
 
   const application = ensureApplicationDefaults(applications[index]);
 
-  if (!HR_VISIBLE_STATUSES.has(application.status)) {
-    return res.status(400).send("Application is not yet in HR review queue.");
+  const adminDept = getAdminScopeDepartment(req);
+  if (adminDept && application.appliedDepartment !== adminDept) {
+    return res.status(403).send("Forbidden: You cannot access applications outside your department.");
   }
 
   if (isApplicationFrozen(application)) {
-    return renderHrDetailPage(res, {
+    return renderAdminDetailPage(res, {
       application,
       statusCode: 400,
-      error: "This application record is frozen. Unfreeze it from department review before continuing the HR workflow."
+      error: "This application record is frozen. Restore it before assigning a supervisor."
     });
   }
 
   if (!isAdmittedStatus(application.status)) {
-    return renderHrDetailPage(res, {
+    return renderAdminDetailPage(res, {
       application,
       statusCode: 400,
-      error: "Admit the student first before assigning a county supervisor."
+      error: "Students must be admitted before a supervisor can be assigned."
     });
   }
 
@@ -8105,10 +9317,10 @@ app.post("/hr/applications/:id/supervisor", csrfProtection, ensureHrAdmin, async
     : null;
 
   if (selectedSupervisorId && !matchedSupervisor) {
-    return renderHrDetailPage(res, {
+    return renderAdminDetailPage(res, {
       application,
       statusCode: 400,
-      error: "Select a valid active supervisor from the current HR supervisor directory."
+      error: "Select a valid active supervisor from the supervisor directory."
     });
   }
 
@@ -8116,15 +9328,15 @@ app.post("/hr/applications/:id/supervisor", csrfProtection, ensureHrAdmin, async
   const nextSupervisorId = matchedSupervisor?.supervisorId || "";
 
   if (!nextSupervisorId && !previousAssignment) {
-    return renderHrDetailPage(res, {
+    return renderAdminDetailPage(res, {
       application,
       statusCode: 400,
-      error: "Select a supervisor from the list first. If the list is empty, create a supervisor manually or sync the HR supervisor directory."
+      error: "Select a supervisor from the list first."
     });
   }
 
   if ((previousAssignment?.supervisorId || "") === nextSupervisorId) {
-    return res.redirect(`/hr/applications/${req.params.id}?supervisorSaved=1`);
+    return res.redirect(`/admin/applications/${req.params.id}?supervisorSaved=1`);
   }
 
   const updatedAt = new Date().toISOString();
@@ -8133,17 +9345,17 @@ app.post("/hr/applications/:id/supervisor", csrfProtection, ensureHrAdmin, async
     ? normalizeSupervisorAssignment({
       ...matchedSupervisor,
       assignedAt: updatedAt,
-      assignedBy: req.session?.adminUsername || "hr"
+      assignedBy: req.session?.adminUsername || "admin"
     })
     : null;
   application.updatedAt = updatedAt;
   appendApplicationAudit(application, {
     scope: "application",
     action: matchedSupervisor ? "supervisor_assigned" : "supervisor_assignment_cleared",
-    ...getActorInfo(req, "hr_admin"),
+    ...getActorInfo(req, "department_admin"),
     note: matchedSupervisor
-      ? `HR assigned supervisor ${matchedSupervisor.fullName} to the admitted student.`
-      : "HR cleared the assigned supervisor from this admitted student record.",
+      ? `Department assigned supervisor ${matchedSupervisor.fullName} to the admitted student.`
+      : "Department cleared the assigned supervisor from this admitted student record.",
     at: updatedAt,
     metadata: {
       previousSupervisorId: previousAssignment?.supervisorId || "",
@@ -8157,7 +9369,7 @@ app.post("/hr/applications/:id/supervisor", csrfProtection, ensureHrAdmin, async
   await writeApplications(applications);
 
   return res.redirect(
-    `/hr/applications/${req.params.id}?${matchedSupervisor ? "supervisorSaved=1" : "supervisorCleared=1"}`
+    `/admin/applications/${req.params.id}?${matchedSupervisor ? "supervisorSaved=1" : "supervisorCleared=1"}`
   );
 });
 
@@ -8256,6 +9468,167 @@ app.post("/hr/applications/:id/status", csrfProtection, ensureHrAdmin, async (re
   return res.redirect(`/hr/applications/${req.params.id}?statusSaved=1`);
 });
 
+app.post("/hr/applications/:id/edit", csrfProtection, ensureHrAdmin, async (req, res) => {
+  const {
+    fullName,
+    email,
+    phone,
+    idNumber,
+    institution,
+    course,
+    courseLevel,
+    appliedDepartment,
+    period,
+    startDate,
+    endDate,
+    coverNote
+  } = req.body;
+
+  const applications = await readApplications();
+  const index = applications.findIndex((item) => item.id === req.params.id);
+
+  if (index === -1) {
+    return res.status(404).render("not-found");
+  }
+
+  const existingApplication = ensureApplicationDefaults(applications[index]);
+
+  if (isApplicationFrozen(existingApplication)) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: existingApplication,
+      error: "This application record is frozen under department review. Restore it before editing."
+    });
+  }
+
+  const requiredText = [
+    fullName,
+    email,
+    phone,
+    idNumber,
+    institution,
+    course,
+    courseLevel,
+    appliedDepartment,
+    period,
+    startDate,
+    endDate
+  ];
+  const hasMissingText = requiredText.some((field) => !field || !field.trim());
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const isValidPeriod = PERIODS.some((option) => option.key === period);
+  const validDepartment = isValidDepartment(appliedDepartment);
+
+  const draftApplication = ensureApplicationDefaults({
+    ...applications[index],
+    fullName: (fullName || "").trim(),
+    email: (email || "").trim().toLowerCase(),
+    phone: (phone || "").trim(),
+    idNumber: (idNumber || "").trim(),
+    institution: (institution || "").trim(),
+    course: (course || "").trim(),
+    courseLevel: normalizeCourseLevel(courseLevel),
+    appliedDepartment,
+    period,
+    startDate,
+    endDate,
+    coverNote: (coverNote || "").trim()
+  });
+
+  if (hasMissingText) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: "All required applicant fields must be filled."
+    });
+  }
+
+  const institutionValidationError = getInstitutionFullNameError(draftApplication.institution);
+  if (institutionValidationError) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: institutionValidationError
+    });
+  }
+
+  const coverNoteError = getCoverNoteError(draftApplication.coverNote);
+  if (coverNoteError) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: coverNoteError
+    });
+  }
+
+  const idNumberError = getIdNumberValidationError(draftApplication.idNumber);
+  if (idNumberError) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: idNumberError
+    });
+  }
+
+  if (!isValidPeriod) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: "Invalid attachment period selected."
+    });
+  }
+
+  if (!validDepartment) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: "Invalid department selected."
+    });
+  }
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
+    return renderHrDetailPage(res, {
+      statusCode: 400,
+      application: draftApplication,
+      error: "Please provide valid attachment dates. End date must be after start date."
+    });
+  }
+
+  draftApplication.placementNumber =
+    generatePlacementNumber(applications, draftApplication.idNumber, draftApplication.id) ||
+    draftApplication.placementNumber ||
+    draftApplication.id;
+  draftApplication.updatedAt = new Date().toISOString();
+  appendApplicationAudit(draftApplication, {
+    scope: "application",
+    action: "applicant_details_updated_by_hr",
+    ...getActorInfo(req, "hr_admin"),
+    note: "HR review updated applicant profile details.",
+    at: draftApplication.updatedAt,
+    metadata: {
+      changedFields: [
+        "fullName",
+        "email",
+        "phone",
+        "idNumber",
+        "institution",
+        "course",
+        "courseLevel",
+        "appliedDepartment",
+        "period",
+        "startDate",
+        "endDate",
+        "coverNote"
+      ].filter((field) => (existingApplication[field] || "") !== (draftApplication[field] || ""))
+    }
+  });
+  applications[index] = draftApplication;
+  await writeApplications(applications);
+
+  return res.redirect(`/hr/applications/${req.params.id}?edited=1`);
+});
+
 app.post("/hr/applications/:id/joining-letter-template", csrfProtection, ensureHrAdmin, async (req, res) => {
   const selectedTemplate = (req.body.templateKey || JOINING_LETTER_TEMPLATES[0].key).toString().trim();
   if (!JOINING_LETTER_TEMPLATES.some((template) => template.key === selectedTemplate)) {
@@ -8313,6 +9686,7 @@ app.post("/hr/applications/:id/joining-letter-template", csrfProtection, ensureH
       generatedAt,
       timeZone: DISPLAY_TIMEZONE,
       logoPath: COUNTY_LOGO_JPG_FILE,
+      signaturePath: COUNTY_SIGNATURE_PNG_FILE,
       countyName: "COUNTY GOVERNMENT OF UASIN GISHU"
     });
 
@@ -8386,8 +9760,6 @@ app.use((error, _req, res, _next) => {
 app.use((_req, res) => {
   res.status(404).render("not-found");
 });
-
-const { PDFDocument, StandardFonts, rgb } = require("pdf-lib");
 
 async function ensureTestingNitaTemplate() {
   const filePath = path.join(__dirname, "public", "testing-nita-template.pdf");

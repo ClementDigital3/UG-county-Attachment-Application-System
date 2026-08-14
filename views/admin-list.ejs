@@ -4,13 +4,10 @@
         <div class="row-between">
           <h1>Department Review Queue</h1>
           <div class="actions tight">
-            <a class="btn secondary" href="/hr/applications">HR Queue</a>
-            <a class="btn secondary" href="/hr/departments">Department Access</a>
-            <a class="btn secondary" href="/hr/audit">Audit Trail</a>
             <a class="btn secondary" href="/admin/reports">Department Report</a>
-            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
-            <form action="/hr/logout" method="post">
-          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <a class="btn secondary" href="/admin/supervisors">Manage Supervisors</a>
+            <form action="/admin/logout" method="post">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <button class="btn secondary" type="submit">Logout</button>
             </form>
           </div>
@@ -100,8 +97,8 @@
 
               <% applications.forEach((application) => { %>
                 <tr>
-                  <td class="table-number-cell"><%= application.id %></td>
-                  <td><%= application.placementNumber || application.id %></td>
+                  <td class="table-number-cell"><%= (application.id || application.idNumber || '').toString().replace(/^ATT-/i, '') %></td>
+                  <td><%= application.placementNumber || application.trackingNumber || application.referenceNo || application.id %></td>
                   <td><%= application.fullName %></td>
                   <td><%= application.email %></td>
                   <td><%= application.institution %></td>

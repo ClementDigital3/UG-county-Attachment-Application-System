@@ -1,22 +1,26 @@
-<%- include("partials/layout-open", { pageTitle: "Department Review Access", activePortal: "hr" }) %>
+<%- include("partials/layout-open", { pageTitle: "Department Slot Status", activePortal: "hr" }) %>
 <main class="container wide">
       <section class="card">
         <div class="row-between">
-          <h1>Department Review Access</h1>
+          <h1>Department Slot Status</h1>
           <div class="actions tight">
-            <a class="btn secondary" href="/hr/applications">HR Queue</a>
-            <a class="btn secondary" href="/hr/reports">Reports</a>
-            <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+            <% if (currentAdminRole === 'developer') { %>
+              <a class="btn primary" href="/hr/developer-console">Developer Console</a>
+              <a class="btn secondary" href="/hr/periods">Period and Slot Settings</a>
+              <a class="btn secondary" href="/hr/admin-accounts">Admin Accounts</a>
+            <% } else { %>
+              <a class="btn secondary" href="/hr/applications">HR Queue</a>
+              <a class="btn secondary" href="/hr/reports">Reports</a>
+            <% } %>
             <form action="/hr/logout" method="post">
-          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <button class="btn secondary" type="submit">Logout</button>
             </form>
           </div>
         </div>
 
         <p>
-          HR authorizes department review. Open any department below to review applications, request
-          corrections, verify records, or export that department's records.
+          View current application metrics and export records for each individual department.
         </p>
 
         <section class="portal-grid">
@@ -29,8 +33,7 @@
                 <p><strong>Pending:</strong> <%= department.pendingCount %></p>
               </div>
               <div class="actions">
-                <a class="btn" href="/hr/departments/<%= department.key %>/open">Open Department Review</a>
-                <a class="btn secondary" href="/hr/reports/export.csv?status=All&period=All&department=<%= department.key %>">Export Department Records</a>
+                <a class="btn secondary" style="width: 100%;" href="/hr/reports/export.csv?status=All&period=All&department=<%= department.key %>">Export Department Records</a>
               </div>
             </article>
           <% }) %>

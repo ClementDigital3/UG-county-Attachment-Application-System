@@ -50,6 +50,33 @@ function formatShortStampDate(dateValue, timeZone = "Africa/Nairobi") {
   }).format(safeDate);
 }
 
+function formatNitaStampRedDate(dateValue, timeZone = "Africa/Nairobi") {
+  const safeDate = dateValue ? new Date(dateValue) : new Date();
+  if (Number.isNaN(safeDate.getTime())) {
+    return "";
+  }
+
+  const day = safeDate.getDate().toString().padStart(2, "0");
+  const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+  const month = monthNames[safeDate.getMonth()];
+  const year = safeDate.getFullYear();
+
+  return `${day} ${month} ${year}`;
+}
+
+function formatNitaHandwrittenDate(dateValue, timeZone = "Africa/Nairobi") {
+  const safeDate = dateValue ? new Date(dateValue) : new Date();
+  if (Number.isNaN(safeDate.getTime())) {
+    return "";
+  }
+
+  const day = safeDate.getDate();
+  const month = safeDate.getMonth() + 1;
+  const year = safeDate.getFullYear();
+
+  return `${day}/${month}/${year}`;
+}
+
 function getSourceExtension(file) {
   return path.extname((file?.originalname || file?.filename || "").toString()).toLowerCase();
 }
@@ -65,31 +92,31 @@ function clampLine(text, maxLength = 64) {
 
 function buildCountyPartCDetails(details = {}) {
   const providerName = clampLine(
-    details.providerName || "County Government of Uasin Gishu",
+    details.providerName || "Uasin Gishu County",
     44
   );
-  const postalAddress = clampLine(details.postalAddress || "P.O. Box 40", 18);
+  const postalAddress = clampLine(details.postalAddress || "40", 18);
   const postalCode = clampLine(details.postalCode || "30100", 8);
-  const town = clampLine(details.town || "Eldoret", 14);
-  const physicalAddress = clampLine(details.physicalAddress || "County Headquarters", 20);
-  const region = clampLine(details.region || "Uasin Gishu", 14);
-  const telephone = clampLine(details.telephone || "05320160000", 16);
-  const email = clampLine(details.email || "info@uasingishu.go.ke", 28);
-  const fax = clampLine(details.fax || "N/A", 10);
+  const town = clampLine(details.town || "Eld.", 14);
+  const physicalAddress = clampLine(details.physicalAddress || "U G Rd", 20);
+  const region = clampLine(details.region || "N/R", 14);
+  const telephone = clampLine(details.telephone || "053 2016306", 16);
+  const email = clampLine(details.email || " ", 28);
+  const fax = clampLine(details.fax || " ", 10);
   const officerInCharge = clampLine(
-    details.officerInCharge || "Director, Human Resource Management",
+    details.officerInCharge || "Josephat",
     36
   );
   const officerTelephone = clampLine(
-    details.officerTelephone || telephone,
+    details.officerTelephone || " ",
     16
   );
   const signatoryName = clampLine(
-    details.signatoryName || officerInCharge,
+    details.signatoryName || "Jo Rotich",
     32
   );
   const designation = clampLine(
-    details.designation || "Authorized County HR Signatory",
+    details.designation || "Dir T&D.",
     28
   );
 
@@ -257,64 +284,85 @@ function drawPartCSignatureStamp(page, {
   height,
   fonts,
   logoImage,
-  stampDateShort
+  signatureImage,
+  stampDateRed
 }) {
+  const stampBlue = rgb(0.05, 0.25, 0.65);
+  const stampRed = rgb(0.85, 0.1, 0.1);
+
   page.drawRectangle({
     x,
     y,
     width,
     height,
     color: rgb(1, 1, 1),
-    borderColor: rgb(0.15, 0.43, 0.24),
-    borderWidth: 0.9,
-    opacity: 0.9
+    borderColor: stampBlue,
+    borderWidth: 1.5,
+    opacity: 0.94
   });
 
-  const logoInset = logoImage ? 10 : 0;
+  const fontSizeFactor = height / 68;
 
-  if (logoImage) {
-    const scaled = logoImage.scaleToFit(12.5, 12.5);
-    page.drawImage(logoImage, {
-      x: x + 4,
-      y: y + 3.5,
-      width: scaled.width,
-      height: scaled.height
+  if (signatureImage) {
+    const sig = signatureImage.scaleToFit(width * 0.55, height * 0.55);
+    page.drawImage(signatureImage, {
+      x: x + (width - sig.width) / 2 - 5,
+      y: y + (height - sig.height) / 2,
+      width: sig.width,
+      height: sig.height,
+      opacity: 1.0
     });
   }
 
-  const textX = x + 4 + logoInset;
-  page.drawText("UG COUNTY HR", {
-    x: textX,
-    y: y + height - 8,
-    size: 6.1,
+  // Line 1: COUNTY HUMAN RESOURCE
+  page.drawText("COUNTY HUMAN RESOURCE", {
+    x: x + (10 * (width / 135)),
+    y: y + height - (14 * fontSizeFactor),
+    size: 7.5 * fontSizeFactor,
     font: fonts.bold,
-    color: rgb(0.08, 0.18, 0.12)
+    color: stampBlue
   });
-  page.drawText("ENDORSED", {
-    x: textX,
-    y: y + 4,
-    size: 5.5,
+
+  // Line 2: MANAGER
+  page.drawText("MANAGER", {
+    x: x + (44 * (width / 135)),
+    y: y + height - (25 * fontSizeFactor),
+    size: 7.5 * fontSizeFactor,
     font: fonts.bold,
-    color: rgb(0.14, 0.36, 0.22)
+    color: stampBlue
   });
-  page.drawText(stampDateShort || "", {
-    x: x + width - 34,
-    y: y + 4,
-    size: 5.1,
-    font: fonts.regular,
-    color: rgb(0.24, 0.31, 0.28)
+
+  // Line 3: Red Date Stamp (e.g. 15 JUL 2026) - drawn on top of signature for maximum visibility
+  page.drawText(stampDateRed, {
+    x: x + (36 * (width / 135)),
+    y: y + height - (45 * fontSizeFactor),
+    size: 10.5 * fontSizeFactor,
+    font: fonts.bold,
+    color: stampRed
+  });
+
+  // Line 4: UASIN GISHU COUNTY GOVERNMENT
+  page.drawText("UASIN GISHU COUNTY GOVERNMENT", {
+    x: x + (5 * (width / 135)),
+    y: y + (10 * fontSizeFactor),
+    size: 6.8 * fontSizeFactor,
+    font: fonts.bold,
+    color: stampBlue
   });
 }
 
 function drawPartCOverlay(page, {
   fonts,
   logoImage,
+  signatureImage,
   anchors,
   pageSize,
   countyDetails,
   placementNumber,
   stampDate,
-  stampDateShort
+  stampDateShort,
+  stampDateRed,
+  stampDateHandwritten
 }) {
   const provider = anchors.providerName;
   const postal = anchors.postal;
@@ -325,8 +373,9 @@ function drawPartCOverlay(page, {
   const signedAndStamped = anchors.signedAndStamped;
   const scaleX = pageSize.width / NITA_TEMPLATE_PAGE_SIZE.width;
   const scaleY = pageSize.height / NITA_TEMPLATE_PAGE_SIZE.height;
-  const fontColor = rgb(0.07, 0.39, 0.2);
-  const mutedColor = rgb(0.48, 0.35, 0.08);
+  
+  // Royal blue ballpoint pen ink color for all handwritten inputs
+  const fontColor = rgb(0.05, 0.2, 0.6);
 
   drawFieldEntry(page, {
     x: provider.x + (134 * scaleX),
@@ -435,112 +484,119 @@ function drawPartCOverlay(page, {
     text: countyDetails.designation,
     font: fonts.bold,
     size: 5.9 * scaleY,
-    color: mutedColor
+    color: fontColor
   });
 
   drawFieldEntry(page, {
     x: signedAndStamped.x + (255 * scaleX),
     y: signedAndStamped.y + (1.5 * scaleY),
-    text: stampDateShort || stampDate,
+    text: stampDateHandwritten,
     font: fonts.bold,
     size: 6.4 * scaleY,
-    color: mutedColor
+    color: fontColor
   });
 
   drawPartCSignatureStamp(page, {
-    x: signedAndStamped.x + (132 * scaleX),
-    y: signedAndStamped.y - (3 * scaleY),
-    width: 96 * scaleX,
-    height: 22 * scaleY,
+    x: signedAndStamped.x + (110 * scaleX),
+    y: signedAndStamped.y - (25 * scaleY),
+    width: 135 * scaleX,
+    height: 68 * scaleY,
     fonts,
     logoImage,
-    stampDateShort
+    signatureImage,
+    stampDateRed
   });
 }
 
 async function loadPdfTextAnchors(sourceBytes) {
-  try {
-    const pdfjsModuleUrl = pathToFileURL(
-      path.join(__dirname, "node_modules", "pdfjs-dist", "legacy", "build", "pdf.mjs")
-    ).href;
-    const pdfjsLib = await import(pdfjsModuleUrl);
-    const standardFontDataUrl =
-      pathToFileURL(path.join(__dirname, "node_modules", "pdfjs-dist", "standard_fonts")).href + "/";
-    const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(sourceBytes),
-      disableWorker: true,
-      standardFontDataUrl,
-      verbosity: pdfjsLib.VerbosityLevel.ERRORS
-    });
-    const document = await loadingTask.promise;
-    const anchorMatchers = [
-      ["providerName", /^Name of Attachment Provider/i],
-      ["postal", /^Postal Address/i],
-      ["physical", /^Physical Address/i],
-      ["telephone", /^Telephone:/i],
-      ["officer", /^Name of Officer in charge of Training/i],
-      ["signedBy", /^Signed by \(Name\)/i],
-      ["signedAndStamped", /^Signed and Stamped/i]
-    ];
+  const parsePromise = (async () => {
+    try {
+      const pdfjsModuleUrl = pathToFileURL(
+        path.join(__dirname, "node_modules", "pdfjs-dist", "legacy", "build", "pdf.mjs")
+      ).href;
+      const pdfjsLib = await import(pdfjsModuleUrl);
+      const standardFontDataUrl =
+        pathToFileURL(path.join(__dirname, "node_modules", "pdfjs-dist", "standard_fonts")).href + "/";
+      const loadingTask = pdfjsLib.getDocument({
+        data: new Uint8Array(sourceBytes),
+        disableWorker: true,
+        standardFontDataUrl,
+        verbosity: pdfjsLib.VerbosityLevel.ERRORS
+      });
+      const document = await loadingTask.promise;
+      const anchorMatchers = [
+        ["providerName", /^Name of Attachment Provider/i],
+        ["postal", /^Postal Address/i],
+        ["physical", /^Physical Address/i],
+        ["telephone", /^Telephone:/i],
+        ["officer", /^Name of Officer in charge of Training/i],
+        ["signedBy", /^Signed by \(Name\)/i],
+        ["signedAndStamped", /^Signed and Stamped/i]
+      ];
 
-    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-      const page = await document.getPage(pageNumber);
-      const viewport = page.getViewport({ scale: 1 });
-      const textContent = await page.getTextContent();
-      const items = textContent.items
-        .map((item) => ({
-          str: (item.str || "").trim(),
-          x: item.transform[4],
-          y: item.transform[5],
-          width: item.width,
-          height: item.height
-        }))
-        .filter((item) => item.str);
-      const partCLabel = items.find((item) => /^PART C$/i.test(item.str));
-      const partDLabel = items.find((item) => /^PART D/i.test(item.str));
-      const regionXMin = partCLabel ? partCLabel.x - 6 : viewport.width * 0.48;
-      const regionYMax = partCLabel ? partCLabel.y + 18 : viewport.height;
-      const regionYMin = partDLabel ? partDLabel.y + 8 : 0;
-      const anchors = {};
+      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+        const page = await document.getPage(pageNumber);
+        const viewport = page.getViewport({ scale: 1 });
+        const textContent = await page.getTextContent();
+        const items = textContent.items
+          .map((item) => ({
+            str: (item.str || "").trim(),
+            x: item.transform[4],
+            y: item.transform[5],
+            width: item.width,
+            height: item.height
+          }))
+          .filter((item) => item.str);
+        const partCLabel = items.find((item) => /^PART C$/i.test(item.str));
+        const partDLabel = items.find((item) => /^PART D/i.test(item.str));
+        const regionXMin = partCLabel ? partCLabel.x - 6 : viewport.width * 0.48;
+        const regionYMax = partCLabel ? partCLabel.y + 18 : viewport.height;
+        const regionYMin = partDLabel ? partDLabel.y + 8 : 0;
+        const anchors = {};
 
-      for (const [key, matcher] of anchorMatchers) {
-        const regionMatches = items
-          .filter(
-            (item) =>
-              matcher.test(item.str) &&
-              item.x >= regionXMin &&
-              item.y >= regionYMin &&
-              item.y <= regionYMax
-          )
-          .sort((a, b) => b.x - a.x || b.y - a.y);
+        for (const [key, matcher] of anchorMatchers) {
+          const regionMatches = items
+            .filter(
+              (item) =>
+                matcher.test(item.str) &&
+                item.x >= regionXMin &&
+                item.y >= regionYMin &&
+                item.y <= regionYMax
+            )
+            .sort((a, b) => b.x - a.x || b.y - a.y);
 
-        const fallbackMatches = items
-          .filter((item) => matcher.test(item.str))
-          .sort((a, b) => b.x - a.x || b.y - a.y);
+          const fallbackMatches = items
+            .filter((item) => matcher.test(item.str))
+            .sort((a, b) => b.x - a.x || b.y - a.y);
 
-        const selected = regionMatches[0] || fallbackMatches[0] || null;
-        if (selected) {
-          anchors[key] = {
-            x: selected.x,
-            y: selected.y,
-            width: selected.width,
-            height: selected.height
+          const selected = regionMatches[0] || fallbackMatches[0] || null;
+          if (selected) {
+            anchors[key] = {
+              x: selected.x,
+              y: selected.y,
+              width: selected.width,
+              height: selected.height
+            };
+          }
+        }
+
+        if (anchorMatchers.every(([key]) => anchors[key])) {
+          return {
+            pageIndex: pageNumber - 1,
+            anchors
           };
         }
       }
-
-      if (anchorMatchers.every(([key]) => anchors[key])) {
-        return {
-          pageIndex: pageNumber - 1,
-          anchors
-        };
-      }
+    } catch (_error) {
+      return null;
     }
-  } catch (_error) {
-    return null;
-  }
 
-  return null;
+    return null;
+  })();
+
+  const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 250));
+
+  return Promise.race([parsePromise, timeoutPromise]);
 }
 
 function resolvePartCTarget(pdfAnchors, pageIndex, page) {
@@ -582,6 +638,7 @@ async function createCountyEndorsedNitaPdf({
   generatedAt,
   timeZone = "Africa/Nairobi",
   logoPath,
+  signaturePath,
   countyPartCDetails
 }) {
   if (!sourceFile?.path || !fs.existsSync(sourceFile.path)) {
@@ -594,8 +651,11 @@ async function createCountyEndorsedNitaPdf({
   const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const logoImage = await embedLogo(pdfDoc, logoPath);
+  const signatureImage = await embedLogo(pdfDoc, signaturePath);
   const stampDate = formatStampDate(generatedAt, timeZone);
   const stampDateShort = formatShortStampDate(generatedAt, timeZone);
+  const stampDateRed = formatNitaStampRedDate(generatedAt, timeZone);
+  const stampDateHandwritten = formatNitaHandwrittenDate(generatedAt, timeZone);
   const partCDetails = buildCountyPartCDetails(countyPartCDetails);
 
   if (ext === ".pdf" || (sourceFile.mimetype || "").toLowerCase() === "application/pdf") {
@@ -612,12 +672,15 @@ async function createCountyEndorsedNitaPdf({
         drawPartCOverlay(page, {
           fonts: { regular: regularFont, bold: boldFont },
           logoImage,
+          signatureImage,
           anchors: partCTarget.anchors,
           pageSize: partCTarget.pageSize,
           countyDetails: partCDetails,
           placementNumber,
           stampDate,
-          stampDateShort
+          stampDateShort,
+          stampDateRed,
+          stampDateHandwritten
         });
         drewPartCOverlay = true;
       }
@@ -683,5 +746,6 @@ async function createCountyEndorsedNitaPdf({
 }
 
 module.exports = {
-  createCountyEndorsedNitaPdf
+  createCountyEndorsedNitaPdf,
+  loadPdfTextAnchors
 };
